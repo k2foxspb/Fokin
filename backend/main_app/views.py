@@ -1,3 +1,8 @@
-from django.shortcuts import render
+from django.views.generic import ListView
+from main_app import models
 
-# Create your views here.
+
+class NewsListView(ListView):
+    model = models.News
+    paginate_by = 3
+    template_name = 'main/main.html'
