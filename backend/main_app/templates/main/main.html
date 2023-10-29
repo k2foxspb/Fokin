@@ -2,6 +2,8 @@
 {% load static %}
 {% block css %}
     <link rel="stylesheet" href="{% static 'css/carousel.css' %}">
+    <link rel="stylesheet" href="{% static 'css/delimiter.css' %}">
+
 {% endblock %}
 
 {% block content %}
@@ -16,6 +18,48 @@
             <div id="ground"></div>
         </div>
     </div>
+
+
+    <svg class="wave-divider" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
+         viewBox="0 24 150 28" preserveAspectRatio="none">
+        <defs>
+            <path id="gentle-wave"
+                  d="M-160 44c30 0
+        58-18 88-18s
+        58 18 88 18
+        58-18 88-18
+        58 18 88 18
+        v44h-352z"></path>
+        </defs>
+        <g class="wave-parallax1">
+            <use xlink:href="#gentle-wave" x="50" y="3" fill="#BFE2FF"></use>
+        </g>
+        <g class="wave-parallax2">
+            <use xlink:href="#gentle-wave" x="50" y="0" fill="#5e9cd1"></use>
+        </g>
+        <g class="wave-parallax3">
+            <use xlink:href="#gentle-wave" x="50" y="9" fill="#73bbf5"></use>
+        </g>
+        <g class="wave-parallax4">
+            <use xlink:href="#gentle-wave" x="50" y="6" fill="#337AB7"></use>
+        </g>
+    </svg>
+
+    <svg class="wave-divider dark-bg" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
+         viewBox="0 24 150 28" preserveAspectRatio="none">
+        <g class="wave-parallax1">
+            <use xlink:href="#gentle-wave" x="50" y="3" fill="#5e9cd1"></use>
+        </g>
+        <g class="wave-parallax2">
+            <use xlink:href="#gentle-wave" x="50" y="0" fill="#73bbf5"></use>
+        </g>
+        <g class="wave-parallax3">
+            <use xlink:href="#gentle-wave" x="50" y="9" fill="#BFE2FF"></use>
+        </g>
+        <g class="wave-parallax4">
+            <use xlink:href="#gentle-wave" x="50" y="6" fill="#FFFFFF"></use>
+        </g>
+    </svg>
     <script src="{% static 'js/carousel.js' %}"></script>
 
 

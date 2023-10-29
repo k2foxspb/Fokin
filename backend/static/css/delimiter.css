@@ -1,0 +1,79 @@
+.wave-divider {
+    width: 100%;
+    height: 60px;
+    display: block;
+}
+
+.wave-parallax1 {
+    animation: wave-move1 10s linear infinite;
+}
+
+.wave-parallax2 {
+    animation: wave-move2 8s linear infinite;
+}
+
+.wave-parallax3 {
+    animation: wave-move3 6s linear infinite;
+}
+
+.wave-parallax4 {
+    animation: wave-move4 4s linear infinite;
+}
+
+@keyframes wave-move1 {
+    0% {
+        transform: translateX(85px);
+    }
+    100% {
+        transform: translateX(-90px);
+    }
+}
+
+@keyframes wave-move2 {
+    0% {
+        transform: translateX(-90px);
+    }
+    100% {
+        transform: translateX(85px);
+    }
+}
+
+@keyframes wave-move3 {
+    0% {
+        transform: translateX(85px);
+    }
+    100% {
+        transform: translateX(-90px);
+    }
+}
+
+@keyframes wave-move4 {
+    0% {
+        transform: translateX(-90px);
+    }
+    100% {
+        transform: translateX(85px);
+    }
+}
+
+.dark-block {
+    background: #337AB7;
+    padding: 50px 0;
+    font-size: 26px;
+    font-family: 'Roboto', sans-serif;
+    text-align: center;
+    color: #FFF;
+}
+
+.dark-bg {
+    background: #337AB7;
+}
+
+.light-block {
+    background: #FFF;
+    padding: 50px 0;
+    font-size: 26px;
+    font-family: 'Roboto', sans-serif;
+    text-align: center;
+    color: #337AB7;
+}
