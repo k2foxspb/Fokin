@@ -2,6 +2,9 @@ from pathlib import Path
 from time import time
 
 from django.db import models
+from django.urls import reverse
+
+from main_app.services.utils import unique_slugify
 
 
 def news_image_path(instance, filename):
@@ -13,19 +16,18 @@ def news_image_path(instance, filename):
 
 
 class News(models.Model):
-    class News(models.Model):
-        title = models.CharField(max_length=256, unique=True, verbose_name="Заголовок")
-        preamble = models.CharField(max_length=1024, verbose_name="Преамбула")
-        body = models.TextField(blank=True, null=True, verbose_name="Текст")
-        created = models.DateTimeField(auto_now_add=True, verbose_name="Создано", editable=False)
-        updated = models.DateTimeField(auto_now=True, verbose_name="Отредактировано", editable=False)
-        deleted = models.BooleanField(default=False, verbose_name='Пометить как удалённую')
-        slug = models.CharField(verbose_name='URL-адрес', max_length=255, blank=True, unique=True, editable=False)
-        image = models.ImageField(upload_to=news_image_path, null=True, blank=True, verbose_name='Иконка')
-        image1 = models.ImageField(upload_to=news_image_path, blank=True)
-        image2 = models.ImageField(upload_to=news_image_path, blank=True)
-        image3 = models.ImageField(upload_to=news_image_path, blank=True)
-        keyword = models.CharField(max_length=255, blank=True, verbose_name='ключевые слова')
+    title = models.CharField(max_length=256, unique=True, verbose_name="Заголовок")
+    preamble = models.CharField(max_length=1024, verbose_name="Преамбула")
+    body = models.TextField(blank=True, null=True, verbose_name="Текст")
+    created = models.DateTimeField(auto_now_add=True, verbose_name="Создано", editable=False)
+    updated = models.DateTimeField(auto_now=True, verbose_name="Отредактировано", editable=False)
+    deleted = models.BooleanField(default=False, verbose_name='Пометить как удалённую')
+    slug = models.CharField(verbose_name='URL-адрес', max_length=255, blank=True, unique=True, editable=False)
+    image = models.ImageField(upload_to=news_image_path, null=True, blank=True, verbose_name='Иконка')
+    image1 = models.ImageField(upload_to=news_image_path, blank=True)
+    image2 = models.ImageField(upload_to=news_image_path, blank=True)
+    image3 = models.ImageField(upload_to=news_image_path, blank=True)
+    keyword = models.CharField(max_length=255, blank=True, verbose_name='ключевые слова')
 
     def get_absolute_url(self):
         return reverse("exp:news_detail", kwargs={"slug": self.slug})
