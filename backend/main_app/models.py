@@ -26,3 +26,26 @@ class News(models.Model):
         image2 = models.ImageField(upload_to=news_image_path, blank=True)
         image3 = models.ImageField(upload_to=news_image_path, blank=True)
         keyword = models.CharField(max_length=255, blank=True, verbose_name='ключевые слова')
+
+    def get_absolute_url(self):
+        return reverse("exp:news_detail", kwargs={"slug": self.slug})
+
+    def __str__(self) -> str:
+        return f"{self.pk} {self.title}"
+
+    def delete(self, *args):
+        self.deleted = True
+        self.save()
+
+    def save(self, *args, **kwargs):
+        """
+        Сохранение полей модели при их отсутствии заполнения
+        """
+        if not self.slug:
+            self.slug = unique_slugify(self, self.title)
+        super().save(*args, **kwargs)
+
+    class Meta:
+        verbose_name = "Новость"
+        verbose_name_plural = "Новости"
+        ordering = ("-created",)
