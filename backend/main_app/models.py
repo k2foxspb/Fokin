@@ -15,7 +15,7 @@ def news_image_path(instance, filename):
     return f'news_{instance.title}/image/pic_{num}{suf}'
 
 
-class News(models.Model):
+class Article(models.Model):
     title = models.CharField(max_length=256, unique=True, verbose_name="Заголовок")
     preamble = models.CharField(max_length=1024, verbose_name="Преамбула")
     body = models.TextField(blank=True, null=True, verbose_name="Текст")
@@ -30,7 +30,7 @@ class News(models.Model):
     keyword = models.CharField(max_length=255, blank=True, verbose_name='ключевые слова')
 
     def get_absolute_url(self):
-        return reverse("exp:news_detail", kwargs={"slug": self.slug})
+        return reverse("main:news_detail", kwargs={"slug": self.slug})
 
     def __str__(self) -> str:
         return f"{self.pk} {self.title}"
@@ -48,6 +48,6 @@ class News(models.Model):
         super().save(*args, **kwargs)
 
     class Meta:
-        verbose_name = "Новость"
-        verbose_name_plural = "Новости"
+        verbose_name = "Статья"
+        verbose_name_plural = "Статьи"
         ordering = ("-created",)

@@ -6,17 +6,18 @@
     {% block css %}{% endblock %}
     <meta charset="UTF-8">
     <link rel="stylesheet" href="{% static 'css/bootstrap.css' %}">
-    <title>Title</title>
+    <title>{% block title %}заметки програмиста{% endblock %}</title>
+    <meta name="description" content='{% block description %}{% endblock description %}'>
+    <meta name="keywords"
+          content='{% block keywords %}{% endblock keywords %}'/>
+
 </head>
 <body>
 {% include 'navbar.html' %}
 {% block content %}{% endblock %}
 
 
-
-
-
 <script src="{% static 'js/bootstrap.bundle.js' %}"></script>
-
+{% block js %} {% endblock %}
 </body>
 </html>

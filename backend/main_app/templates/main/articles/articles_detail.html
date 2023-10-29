@@ -1,0 +1,46 @@
+{% extends 'base.html' %}
+{% block description %}
+    {{ object.preamble }}
+{% endblock description %}
+{% block keywords %}
+    {{ object.keyword }}
+{% endblock keywords %}
+{% block title %}
+    {{ object.title|default:"Статья" }}
+{% endblock title %}
+{% block content %}
+
+<div class=" row justify-content-center pt-3 ">
+
+    <div class="col-md-12 col-lg-8">
+        <div class="card shadow ">
+            <div class="card-body">
+                <div style="text-align: center;">
+                    {% autoescape off %}
+                        <h3 class="card-title ">{{ object.title }}</h3>
+                        <h6 class="card-title ">{{ object.created }}</h6>
+                        <h5 class="card-title ">{{ object.preamble }}</h5>
+                        </div>
+                        <p class="card-text">
+                            {{ object.body }}
+                        </p>
+                    {% endautoescape %}
+                <div class="text-end">
+                {% if perms.exp.change_news %}
+                    <a class="btn btn-outline-primary" href="{% url 'main:article_update'  slug=object.slug %}">
+                        редактировать
+                    </a>
+                {% endif %}
+                {% if perms.exp.delete_news %}
+                    <a class="btn btn-outline-primary" href="{% url 'main:article_delete'  slug=object.slug %}">
+                        удалить
+                    </a>
+                {% endif %}
+
+                    <a href="{% url 'main:main' %}" class="btn btn-outline-primary pull-right">Назад</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

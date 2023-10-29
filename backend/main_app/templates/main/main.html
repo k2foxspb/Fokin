@@ -3,65 +3,78 @@
 {% block css %}
     <link rel="stylesheet" href="{% static 'css/carousel.css' %}">
     <link rel="stylesheet" href="{% static 'css/delimiter.css' %}">
+    <link rel="stylesheet" href="{% static 'css/article.css' %}">
 
 {% endblock %}
-
+{% block description %}Заметки программиста{% endblock description %}
+{% block keywords %}програмирование, разработка{% endblock keywords %}
+{% block title %}статьи{% endblock %}
 {% block content %}
-    <div id="carousel">
-        <div id="drag-container">
-            <div id="spin-container">
-                <a href="{% url 'main:main' %}}"><img src="{% static 'img/1.jpg' %}" alt=""/></a>
-                <!-- Еще фото -->
-                <a href="{% url 'main:main' %}"><img src="{% static 'img/2.jpg' %}" alt=""/></a>
-                <p>ghbdtn</p>
-            </div>
-            <div id="ground"></div>
+    {% include 'tools/carousel.html' %}
+    {% include 'tools/delimiter.html' %}
+
+    {% if perms.exp.add_news %}
+        <div class="d-grid gap-2 col-6 mx-auto">
+        <a class="btn btn-primary" style="margin-bottom:20px" role="button"
+           href="{% url 'main:article_create' %}">Добавить новость</a>
         </div>
-    </div>
+    {% endif %}
+
+    {% for list in object_list %}
+        {% autoescape off %}
+            <div class="block-figure-2">
+                <div class="figure-1"></div>
+                <div class="figure-2"></div>
+                <div class="figure-txt">
+                    <h3>{{ list.title }}</h3>
+                    <h5>{{ list.preamble }}</h5>
+                    <p>{{ list.body|truncatewords:50|linebreaks }}</p>
+                    {% if list.updated != list.created %}
+                        <h6 class="del-update">Обновлено {{ list.updated }}
+                        </h6>
+                    {% endif %}
+                    <h6 class="del-update">{{ list.created }}</h6>
+                    <div class="col-12">
+                        <a href="{% url 'main:article_detail'  slug=list.slug %}"
+                           class=" stretched-link"></a>
+                    </div>
+                </div>
+            </div>
+        {% endautoescape %}
+    {% endfor %}
 
 
-    <svg class="wave-divider" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
-         viewBox="0 24 150 28" preserveAspectRatio="none">
-        <defs>
-            <path id="gentle-wave"
-                  d="M-160 44c30 0
-        58-18 88-18s
-        58 18 88 18
-        58-18 88-18
-        58 18 88 18
-        v44h-352z"></path>
-        </defs>
-        <g class="wave-parallax1">
-            <use xlink:href="#gentle-wave" x="50" y="3" fill="#BFE2FF"></use>
-        </g>
-        <g class="wave-parallax2">
-            <use xlink:href="#gentle-wave" x="50" y="0" fill="#5e9cd1"></use>
-        </g>
-        <g class="wave-parallax3">
-            <use xlink:href="#gentle-wave" x="50" y="9" fill="#73bbf5"></use>
-        </g>
-        <g class="wave-parallax4">
-            <use xlink:href="#gentle-wave" x="50" y="6" fill="#337AB7"></use>
-        </g>
-    </svg>
 
-    <svg class="wave-divider dark-bg" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
-         viewBox="0 24 150 28" preserveAspectRatio="none">
-        <g class="wave-parallax1">
-            <use xlink:href="#gentle-wave" x="50" y="3" fill="#5e9cd1"></use>
-        </g>
-        <g class="wave-parallax2">
-            <use xlink:href="#gentle-wave" x="50" y="0" fill="#73bbf5"></use>
-        </g>
-        <g class="wave-parallax3">
-            <use xlink:href="#gentle-wave" x="50" y="9" fill="#BFE2FF"></use>
-        </g>
-        <g class="wave-parallax4">
-            <use xlink:href="#gentle-wave" x="50" y="6" fill="#FFFFFF"></use>
-        </g>
-    </svg>
+
+
+
+
+        <ul class="pagination justify-content-center">
+            {% if page_obj.has_previous %}
+                <li class="page-item"><a class="page-link"
+                                         href="?page={{ page_obj.previous_page_number }}">Предыдущая</a>
+                </li>
+            {% endif %}
+
+            {% for item in page_obj.paginator.page_range %}
+                <li class="page-item
+        {% if item == page_obj.number %}active{% endif %}">
+                    <a class="page-link" href="?page={{ item }}">{{ item }}</a>
+                </li>
+            {% endfor %}
+
+            {% if page_obj.has_next %}
+                <li class="page-item"><a class="page-link"
+                                         href="?page={{ page_obj.next_page_number }}">Следующая</a></li>
+            {% endif %}
+        </ul>
+
+
+
+
+
+
+
+
     <script src="{% static 'js/carousel.js' %}"></script>
-
-
-
 {% endblock %}
