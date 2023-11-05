@@ -1,6 +1,7 @@
 from pathlib import Path
 from time import time
 
+
 from django.contrib.auth.base_user import AbstractBaseUser
 from django.contrib.auth.models import PermissionsMixin, UserManager
 from django.contrib.auth.validators import ASCIIUsernameValidator
@@ -21,6 +22,7 @@ class CustomUser(PermissionsMixin, AbstractBaseUser):
     username = models.CharField(
         "Псевдоним",
         max_length=35,
+        unique=True,
         help_text="не более 35 символов. Только буквы, цифры и @/./+/-/_.",
         validators=[username_validator],
         error_messages={"Пользователь с таким именем уже существует"},
@@ -28,25 +30,25 @@ class CustomUser(PermissionsMixin, AbstractBaseUser):
     first_name = models.CharField("Имя", max_length=150, blank=True)
     last_name = models.CharField("Фамилия", max_length=150, blank=True)
     age = models.PositiveIntegerField("Возраст", blank=True, null=True)
-    avatar = models.ImageField(upload_to=users_avatars_path, blank=True, null=True)
+    avatar = models.ImageField(
+        "Ваше фото", upload_to=users_avatars_path, blank=True, null=True
+    )
     email = models.CharField(
-        "email address",
+        "адрес электронной почты",
         max_length=256,
         unique=True,
         error_messages={
             "Пользователь с таким адресом электронной почты уже существует.",
         },
     )
-
-    is_staff = (
-        models.BooleanField(
-            "staff status",
-            default=False,
-            help_text="Определяет, может ли пользователь войти в панель администратора",
-        ),
+    is_staff = models.BooleanField(
+        "статус администратора",
+        default=False,
+        help_text="Определяет, может ли пользователь войти в панель администратора.",
     )
+
     is_active = models.BooleanField(
-        "active",
+        "Активен",
         default=True,
         help_text="Определяет, следует ли считать этого пользователя активным. \
             Снимите этот флажок вместо удаления учетных записей.",
@@ -55,7 +57,7 @@ class CustomUser(PermissionsMixin, AbstractBaseUser):
     objects = UserManager()
     USERNAME_FIELD = "email"
     EMAIL_FIELD = "email"
-    REQUIRED_FIELDS = []
+    REQUIRED_FIELDS = ["username"]
 
     class Meta:
         verbose_name = "Пользователь"

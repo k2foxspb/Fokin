@@ -38,7 +38,7 @@ INSTALLED_APPS = [
     "main_app.apps.MainAppConfig",
     "crispy_forms",
     "crispy_bootstrap5",
-    "authapp.apps.AuthappConfig",
+    "authapp",
 ]
 
 MIDDLEWARE = [
@@ -132,6 +132,6 @@ MEDIA_URL = "/media/"
 CRISPY_TEMPLATE_PACK = "bootstrap5"
 CRISPY_ALLOWED_TEMPLATE_PACKS = "bootstrap5"
 
-AUTH_USER_MODEL = 'authapp.CustomUser'
+AUTH_USER_MODEL = "authapp.CustomUser"
 # LOGIN_REDIRECT_URL =
 # LOGOUT_REDIRECT_URL =
