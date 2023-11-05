@@ -20,7 +20,7 @@ class CustomUser(PermissionsMixin, AbstractBaseUser):
     username_validator = ASCIIUsernameValidator()
 
     username = models.CharField(
-        "Псевдоним",
+        "Логин",
         max_length=35,
         unique=True,
         help_text="не более 35 символов. Только буквы, цифры и @/./+/-/_.",

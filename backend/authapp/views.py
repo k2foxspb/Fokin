@@ -16,12 +16,16 @@ class RegisterView(CreateView):
     model = get_user_model()
     form_class = forms.CustomUserCreationForm
     success_url = reverse_lazy("main:main")
-    template_name = 'customuser_form.html'
+    template_name = "customuser_form.html"
 
 
 class ProfileEditView(UserPassesTestMixin, UpdateView):
     model = get_user_model()
     form_class = forms.CustomUserChangeForm
+    template_name = "customuser_form.html"
+
+    def test_func(self):
+        return True if self.request.user.pk == self.kwargs.get("pk") else False
 
     # def get_success_url(self):
     #     return reverse_lazy("authapp:profile_edit", args=[self.request.user.pk])
