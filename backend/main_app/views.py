@@ -10,12 +10,12 @@ class ArticleListView(ListView):
     template_name = 'main/main.html'
 
     def get_queryset(self):
-        return super().get_queryset().filter(deleted=False)
+        return super().get_queryset().filter(status='pu')
 
 
 class ArticleCreateView(PermissionRequiredMixin, CreateView):
     model = models.Article
-    fields = ('title', 'preamble', 'body', 'keyword', 'image')
+    fields = ('title', 'preamble', 'body', 'keyword', 'category', 'image')
     success_url = reverse_lazy("main:main")
     permission_required = ('main_app.add_article',)
     template_name = 'main/articles/articles_form.html'
