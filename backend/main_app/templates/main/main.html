@@ -21,12 +21,14 @@
 
 
 {% for category in article_list %}
-
-    <li><a class="dropdown-item" href="#">{{ category.category }}</a></li>
+    <nav class="nav flex-column">
+    <a class="nav-link active" aria-current="page" href="#">{{ category.category }}</a>
 
     {% for art in category.category.article_set.all %}
+        <a class="nav-link" href="#">{{ art }}</a>
         <p>{{ art }}</p>
-    {% endfor %}
+    </nav>
+{% endfor %}
 
 {% endfor %}
 {% for list in article_list %}
