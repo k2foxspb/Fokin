@@ -62,11 +62,11 @@
     font-size: 26px;
     font-family: 'Roboto', sans-serif;
     text-align: center;
-    color: #FFF;
+    color: #000000;
 }
 
 .dark-bg {
-    background: #337AB7;
+    background: #000000;
 }
 
 .light-block {

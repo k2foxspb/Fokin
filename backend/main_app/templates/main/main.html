@@ -19,15 +19,11 @@
     </div>
 {% endif %}
 
-
+<div class="">
 {% for category in article_list %}
-    <nav class="nav flex-column">
-    <a class="nav-link active" aria-current="page" href="#">{{ category.category }}</a>
-
+    <a href="#">{{ category.category }}</a>
     {% for art in category.category.article_set.all %}
-        <a class="nav-link" href="#">{{ art }}</a>
-        <p>{{ art }}</p>
-    </nav>
+        <a  href="#">{{ art }}</a>
 {% endfor %}
 
 {% endfor %}
@@ -37,14 +33,14 @@
     <div class="figure-1"></div>
     <div class="figure-2"></div>
     <div class="figure-txt">
-        <h3>{{ list.title }}</h3>
-        <h5>{{ list.preamble }}</h5>
-        <p>{{ list.body|truncatewords:50|linebreaks }}</p>
+        <h3 class="text-center">{{ list.title }}</h3>
+        <h5 class="text-center">{{ list.preamble }}</h5>
+        <p class="text-justify">{{ list.body|truncatewords:50|linebreaks }}</p>
         {% if list.updated != list.created %}
-            <h6 class="del-update">Обновлено {{ list.updated }}
+            <h6 class="del-update text-end">Обновлено {{ list.updated }}
             </h6>
         {% endif %}
-        <h6 class="del-update">{{ list.created }}</h6>
+        <h6 class="text-end">{{ list.created }}</h6>
         <div class="col-12">
             <a href="{% url 'main:article_detail' slug=list.slug %}"
                class=" stretched-link"></a>
@@ -55,15 +51,15 @@
 {% endfor %}
 
 
-<ul class="pagination justify-content-center">
+<ul class="pagination justify-content-center ">
     {% if page_obj.has_previous %}
         <li class="page-item"><a class="page-link"
-                                 href="?page={{ page_obj.previous_page_number }}">Предыдущая</a>
+                                 href="?page={{ page_obj.previous_page_number }}">&laquo</a>
         </li>
     {% endif %}
 
     {% for item in page_obj.paginator.page_range %}
-        <li class="page-item
+        <li class="page-item btn-dark
         {% if item == page_obj.number %}active{% endif %}">
             <a class="page-link" href="?page={{ item }}">{{ item }}</a>
         </li>
@@ -71,10 +67,10 @@
 
     {% if page_obj.has_next %}
         <li class="page-item"><a class="page-link"
-                                 href="?page={{ page_obj.next_page_number }}">Следующая</a></li>
+                                 href="?page={{ page_obj.next_page_number }}">&raquo</a></li>
     {% endif %}
 </ul>
 
 
-<script src="{% static 'js/carousel.js' %}"></script>
+{#<script src="{% static 'js/carousel.js' %}"></script>#}
 {% endblock %}
