@@ -1,6 +1,10 @@
+{% load static %}
+
 <nav class="navbar sticky-top bg-dark border-bottom border-body" data-bs-theme="dark">
     <div class="container-fluid">
-        <a class="navbar-brand" href="#">Navbar</a>
+        <a class="navbar-brand" href="#">
+            <img src="{% static 'img/logo/FF.webp' %} " alt="" style="width: 30px">
+        </a>
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNavDropdown"
                 aria-controls="navbarNavDropdown" aria-expanded="false" aria-label="Toggle navigation">
             <span class="navbar-toggler-icon"></span>
@@ -11,7 +15,9 @@
                     <a class="nav-link active" aria-current="page" href="{% url 'auth:login' %}">вход</a>
                 </li>
                 <li class="nav-item">
+                    {% if user.is_authenticated %}
                     <a class="nav-link" href="{% url 'auth:profile_edit' pk=user.pk %}">редактирование профиля</a>
+                    {% endif %}
                 </li>
                 <li class="nav-item">
                     <a class="nav-link" href="#">Pricing</a>

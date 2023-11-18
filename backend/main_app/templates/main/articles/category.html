@@ -1,0 +1,15 @@
+{% extends 'base.html' %}
+
+{% block content %}
+    {% for category in category_list %}
+        <p>
+            <li><a class="dropdown-item" href="#">{{ category }}</a></li>
+            {% for art in category.article_set.all %}
+                {{ art }}
+                </p>
+
+            {% endfor %}
+    {% endfor %}
+{% endblock %}
+
+
