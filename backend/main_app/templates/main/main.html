@@ -4,73 +4,101 @@
     <link rel="stylesheet" href="{% static 'css/carousel.css' %}">
     <link rel="stylesheet" href="{% static 'css/delimiter.css' %}">
     <link rel="stylesheet" href="{% static 'css/article.css' %}">
+    <link rel="stylesheet" href="{% static 'css/category.css' %}">
+    <link rel="stylesheet" href="{% static 'css/my.css' %}">
 
 {% endblock %}
 {% block description %}Заметки программиста{% endblock description %}
 {% block keywords %}програмирование, разработка{% endblock keywords %}
 {% block title %}статьи{% endblock %}
 {% block content %}
-{% include 'tools/carousel.html' %}
-{% include 'tools/delimiter.html' %}
-{% if perms.exp.add_news %}
-    <div class="d-grid gap-2 col-6 mx-auto">
-        <a class="btn btn-primary" style="margin-bottom:20px" role="button"
-           href="{% url 'main:article_create' %}">Добавить новость</a>
-    </div>
-{% endif %}
-
-<div class="">
-{% for category in article_list %}
-    <a href="#">{{ category.category }}</a>
-    {% for art in category.category.article_set.all %}
-        <a  href="#">{{ art }}</a>
-{% endfor %}
-
-{% endfor %}
-{% for list in article_list %}
-{% autoescape off %}
-<div class="block-figure-2">
-    <div class="figure-1"></div>
-    <div class="figure-2"></div>
-    <div class="figure-txt">
-        <h3 class="text-center">{{ list.title }}</h3>
-        <h5 class="text-center">{{ list.preamble }}</h5>
-        <p class="text-justify">{{ list.body|truncatewords:50|linebreaks }}</p>
-        {% if list.updated != list.created %}
-            <h6 class="del-update text-end">Обновлено {{ list.updated }}
-            </h6>
-        {% endif %}
-        <h6 class="text-end">{{ list.created }}</h6>
-        <div class="col-12">
-            <a href="{% url 'main:article_detail' slug=list.slug %}"
-               class=" stretched-link"></a>
+    {% include 'tools/carousel.html' %}
+    {% include 'tools/delimiter.html' %}
+    {% if perms.exp.add_news %}
+        <div class="d-grid gap-2 col-6 mx-auto">
+            <a class="btn btn-primary" style="margin-bottom:20px" role="button"
+               href="{% url 'main:article_create' %}">Добавить новость</a>
         </div>
-    </div>
-</div>
-{% endautoescape %}
-{% endfor %}
-
-
-<ul class="pagination justify-content-center ">
-    {% if page_obj.has_previous %}
-        <li class="page-item"><a class="page-link"
-                                 href="?page={{ page_obj.previous_page_number }}">&laquo</a>
-        </li>
     {% endif %}
 
-    {% for item in page_obj.paginator.page_range %}
-        <li class="page-item btn-dark
-        {% if item == page_obj.number %}active{% endif %}">
-            <a class="page-link" href="?page={{ item }}">{{ item }}</a>
-        </li>
+
+
+
+    <div class="vertmenu block-left">
+
+            <ul>{% for category in article_list %}
+                <li>
+
+                    {% if category.category_id == category.category.pk%}
+                    <a href="#">{{ category.category }}</a>
+                {% endif %}
+                    <input type="checkbox" class="subCat" id="{{ category.id }}"/>
+                    <label class="chka" for="{{ category.id }}"></label>
+                    <ul style="display:none">
+                        {% for cat in article_list %}
+
+                            {% if cat.category_id == category.category.pk %}
+                                <li>
+                                    <a href="#">{{ cat.title }}</a>
+                                </li>
+                            {% endif %}
+                        {% endfor %}
+                    </ul>
+                </li>
+                {% endfor %}
+            </ul>
+
+    </div>
+
+
+
+
+    {% for list in article_list %}
+        {% autoescape off %}
+
+            <div class="block-figure-2 block-right">
+                <div class="figure-1 "></div>
+                <div class="figure-2 "></div>
+                <div class="figure-txt">
+                    <h3 class="text-center">{{ list.title }}</h3>
+                    <h5 class="text-center">{{ list.preamble }}</h5>
+                    <p class="text-justify">{{ list.body|truncatewords:50|linebreaks }}</p>
+                    {% if list.updated != list.created %}
+                        <h6 class="del-update text-end">Обновлено {{ list.updated }}
+                        </h6>
+                    {% endif %}
+                    <h6 class="text-end">{{ list.created }}</h6>
+                    <div class="col-12">
+                        <a href="{% url 'main:article_detail' slug=list.slug %}"
+                           class=" stretched-link"></a>
+                    </div>
+                </div>
+            </div>
+
+        {% endautoescape %}
     {% endfor %}
 
-    {% if page_obj.has_next %}
-        <li class="page-item"><a class="page-link"
-                                 href="?page={{ page_obj.next_page_number }}">&raquo</a></li>
-    {% endif %}
-</ul>
+
+    <ul class="pagination justify-content-center ">
+        {% if page_obj.has_previous %}
+            <li class="page-item"><a class="page-link "
+                                     href="?page={{ page_obj.previous_page_number }}">&laquo</a>
+            </li>
+        {% endif %}
+
+        {% for item in page_obj.paginator.page_range %}
+            <li class="page-item
+        {% if item == page_obj.number %}active{% endif %}">
+                <a class="page-link" href="?page={{ item }}">{{ item }}</a>
+            </li>
+        {% endfor %}
+
+        {% if page_obj.has_next %}
+            <li class="page-item"><a class="page-link"
+                                     href="?page={{ page_obj.next_page_number }}">&raquo</a></li>
+        {% endif %}
+    </ul>
 
 
-{#<script src="{% static 'js/carousel.js' %}"></script>#}
+    {#<script src="{% static 'js/carousel.js' %}"></script>#}
 {% endblock %}

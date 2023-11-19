@@ -11,14 +11,14 @@
     content: "";
     transition: all .3s;
     clip-path: polygon(calc(100% - 100px) 0, 100% 50px, 100% 100%, 50px 100%, 0 calc(100% - 100px), 0 0);
-    background: #343131;
+    background: #2f2d2d;
     position: absolute;
     top: 0;
     right: 0;
     bottom: 0;
     left: 0;
-    border-top: 8px solid #333336;
-    border-bottom: 8px solid #333336;
+    border-top: 8px solid #050505;
+    border-bottom: 8px solid #020202;
 }
 .block-figure-2 .figure-1{
     position: absolute;
@@ -26,7 +26,7 @@
     left: -22px;
     width: 300px;
     height: 180px;
-    background: #0c0c0c;
+    background: #000000;
     clip-path: polygon(100% 0, 100% 100%, 56px 100%, 0 70px, 0 0);
     transition: all .3s;
 }
@@ -41,7 +41,7 @@
     transition: all .3s;
 }
 .block-figure-2:hover {
-    filter: drop-shadow(0 16px 20px rgba(0, 0, 0, 0.5));
+    filter: drop-shadow(0 16px 20px rgba(225, 34, 34, 0.5));
 }
 .block-figure-2:hover .figure-1 {
     transform: translate(25px, -25px);
@@ -61,7 +61,7 @@
 }
 .block-figure-2 .figure-txt h3 {
     text-transform: uppercase;
-    color: #ffffff;
+    color: #983535;
     font-weight: bold;
     font-family: Verdana, sans-serif;
     font-size: 20px;

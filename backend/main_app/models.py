@@ -25,7 +25,7 @@ STATUS_CHOICES = [
 class Article(models.Model):
     title = models.CharField(max_length=256, unique=True, verbose_name="Заголовок")
     preamble = models.CharField(max_length=1024, verbose_name="Преамбула")
-    category = models.ForeignKey('Category', on_delete=models.CASCADE, verbose_name='Категория')
+    category = models.ForeignKey('Category', on_delete=models.CASCADE, verbose_name='Категория', default=None)
     body = models.TextField(blank=True, null=True, verbose_name="Текст")
     created = models.DateTimeField(auto_now_add=True, verbose_name="Создано", editable=False)
     updated = models.DateTimeField(auto_now=True, verbose_name="Отредактировано", editable=False)
