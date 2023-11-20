@@ -65,6 +65,9 @@ class Category(models.Model):
     title = models.CharField(max_length=255, unique=True, verbose_name='Заголовок')
     slug = models.CharField(verbose_name='URL-адрес', max_length=255, blank=True, unique=True, editable=False)
 
+    def get_article(self):
+        return self.article_set.all()
+
     def get_absolute_url(self):
         return reverse("", kwargs={"slug": self.slug})
 
@@ -78,3 +81,8 @@ class Category(models.Model):
 
     def __str__(self):
         return self.title
+
+    class Meta:
+        verbose_name = "Категория"
+        verbose_name_plural = "Категории"
+        ordering = ("title",)

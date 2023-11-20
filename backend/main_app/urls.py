@@ -1,13 +1,15 @@
 from django.urls import path
 
-from main_app.views import ArticleListView, ArticleCreateView, ArticleDetailView, ArticleUpdateView, ArticleDeleteView
+from main_app.views import ArticleCreateView, ArticleDetailView, ArticleUpdateView, ArticleDeleteView, \
+    CategoryListView
 
 from main_app.apps import MainAppConfig
 
 app_name = MainAppConfig.name
 
 urlpatterns = [
-    path('', ArticleListView.as_view(), name='main'),
+    # path('r', ArticleListView.as_view(), name='main'),
+    path('', CategoryListView.as_view(), name='main_category'),
     path("article/create/", ArticleCreateView.as_view(), name="article_create"),
     path(
         "article/<slug:slug>/",

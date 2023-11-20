@@ -4,13 +4,18 @@ from django.views.generic import ListView, CreateView, DetailView, UpdateView, D
 from main_app import models
 
 
-class ArticleListView(ListView):
-    model = models.Article
-    paginate_by = 3
-    template_name = 'main/main.html'
+# class ArticleListView(ListView):
+#     model = models.Article
+#     paginate_by = 3
+#     template_name = 'main/main.html'
+#
+#     def get_queryset(self):
+#         return super().get_queryset().filter(status='pu')
 
-    def get_queryset(self):
-        return super().get_queryset().filter(status='pu')
+
+class CategoryListView(ListView):
+    model = models.Category
+    template_name = 'main/articles/category.html'
 
 
 class ArticleCreateView(PermissionRequiredMixin, CreateView):

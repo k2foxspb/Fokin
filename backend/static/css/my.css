@@ -6,5 +6,5 @@
     max-width: 50px;
 }
 
-.block-left{width:25%;height:500px;overflow:auto;float:left;}
-.block-right{width:70%;overflow:auto;}
+.block-left{width:60%;overflow:hidden;}
+.block-right{width:25%;;overflow:auto;float:left;height:1000px;}

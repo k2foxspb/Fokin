@@ -147,8 +147,8 @@ CRISPY_TEMPLATE_PACK = "bootstrap5"
 CRISPY_ALLOWED_TEMPLATE_PACKS = "bootstrap5"
 
 AUTH_USER_MODEL = "authapp.CustomUser"
-LOGIN_REDIRECT_URL = 'main:main'
-LOGOUT_REDIRECT_URL = 'main:main'
+LOGIN_REDIRECT_URL = 'main:main_category'
+LOGOUT_REDIRECT_URL = 'main:main_category'
 AUTHENTICATION_BACKENDS = [
     'authapp.backend.UserModelBackend'
 ]
