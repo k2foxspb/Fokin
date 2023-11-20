@@ -6,5 +6,32 @@
     max-width: 50px;
 }
 
-.block-left{width:60%;overflow:hidden;}
-.block-right{width:25%;;overflow:auto;float:left;height:1000px;}
+.block-right{
+    width:25%;
+    height:500px;
+    overflow:auto;
+    float:right;}
+
+.block-left{
+    width:70%;
+}
+
+
+.page-wrapper {
+  display: inline-flex;
+  min-width: 150px;
+  justify-content: space-between;
+}
+.left-panel-wrapper {
+  width: 200px;
+
+}
+.right-panel-wrapper {
+  width: 200px;
+
+}
+.content-wrapper {
+  /*width: 250px;*/
+  width: calc(100% - 40px);
+  padding: 0 30px;
+}
