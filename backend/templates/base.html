@@ -5,6 +5,7 @@
 <head>
     {% block css %}{% endblock %}
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="shortcut icon" type="image/png" href="{% static 'img/logo/favicon.ico' %}"/>
     <link rel="stylesheet" href="{% static 'css/bootstrap.css' %}">
     <title>{% block title %}заметки програмиста{% endblock %}</title>
@@ -15,13 +16,13 @@
 </head>
 <body class="p-3 mb-2 bg-dark text-white">
 {% include 'navbar.html' %}
-<div class="container-fluid">
+
     {% block content %}{% endblock %}
     {% block category %}{% endblock %}
 
 
     <script src="{% static 'js/bootstrap.bundle.js' %}"></script>
     {% block js %} {% endblock %}
-</div>
+
 </body>
 </html>
