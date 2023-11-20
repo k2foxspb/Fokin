@@ -11,14 +11,15 @@
 
 
 {% block category %}
-{#    {% include 'tools/carousel.html' %}#}
+    {#    {% include 'tools/carousel.html' %}#}
     {% include 'tools/delimiter.html' %}
 
 
 
 
-        <div class="page-wrapper container">
-            <div class="vertmenu left-panel-wrapper">
+    <div class="container-fluid">
+        <div class="row">
+            <div class="vertmenu col-3">
                 {% for cat in category_list %}
                     <ul>
                         <li>
@@ -39,49 +40,49 @@
                         </li>
                     </ul>{% endfor %}
             </div>
-            <div class="content-wrapper">
-                <div class="content">
-                    {% if perms.exp.add_news %}
-                        <div class="d-grid gap-2 col-6 mx-auto">
-                            <a class="btn btn-dark" style="margin-bottom:20px" role="button"
-                               href="{% url 'main:article_create' %}">Добавить новость</a>
-                        </div>
-                    {% endif %}
-                    {% for category in category_list %}
-                        {% for article in category.get_article %}
-                            {% if article.status == 'pu' %}
-                                {% autoescape off %}
 
-                                    <div class="block-figure-2">
-                                        <div class="figure-1 "></div>
-                                        <div class="figure-2 "></div>
-                                        <div class="figure-txt">
-                                            <h3 class="text-center">{{ article.title }}</h3>
-                                            <h5 class="text-center">{{ article.preamble }}</h5>
-                                            <p class="text-justify">{{ article.body|truncatewords:50|linebreaks }}</p>
-                                            {% if article.updated != article.created %}
-                                                <h6 class="del-update text-end">Обновлено {{ article.updated }}
-                                                </h6>
-                                            {% endif %}
-                                            <h6 class="text-end">{{ article.created }}</h6>
-                                            <div class="col-12">
-                                                <a href="{% url 'main:article_detail' slug=article.slug %}"
-                                                   class=" stretched-link"></a>
-                                            </div>
+
+            <div class="col-8">
+                {% if perms.exp.add_news %}
+                    <div class="d-grid gap-2 col-6 mx-auto">
+                        <a class="btn btn-dark" style="margin-bottom:20px" role="button"
+                           href="{% url 'main:article_create' %}">Добавить новость</a>
+                    </div>
+                {% endif %}
+                {% for category in category_list %}
+                    {% for article in category.get_article %}
+                        {% if article.status == 'pu' %}
+                            {% autoescape off %}
+
+                                <div class="block-figure-2">
+                                    <div class="figure-1 "></div>
+                                    <div class="figure-2 "></div>
+                                    <div class="figure-txt">
+                                        <h3 class="text-center">{{ article.title }}</h3>
+                                        <h5 class="text-center">{{ article.preamble }}</h5>
+                                        <p class="text-justify">{{ article.body|truncatewords:50|linebreaks }}</p>
+                                        {% if article.updated != article.created %}
+                                            <h6 class="del-update text-end">Обновлено {{ article.updated }}
+                                            </h6>
+                                        {% endif %}
+                                        <h6 class="text-end">{{ article.created }}</h6>
+                                        <div class="col-12">
+                                            <a href="{% url 'main:article_detail' slug=article.slug %}"
+                                               class=" stretched-link"></a>
                                         </div>
                                     </div>
+                                </div>
 
-                                {% endautoescape %}
-                            {% endif %}
-                        {% endfor %}
+                            {% endautoescape %}
+                        {% endif %}
                     {% endfor %}
+                {% endfor %}
 
-                </div>
             </div>
-
-
         </div>
     </div>
+
+
 
 
     {#    <ul class="pagination justify-content-center ">#}
