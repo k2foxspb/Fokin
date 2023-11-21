@@ -16,13 +16,19 @@
 </head>
 <body class="p-3 mb-2 bg-dark text-white">
 {% include 'navbar.html' %}
+<div class="container-fluid"
+     style="background-image:url({% static 'img/logo/web.webp' %});background-size: contain;background-repeat: no-repeat;background-position: center;
+             height: 300px">
+    <div  style="position: relative; top: 200px;">
+        {% include 'tools/delimiter.html' %}
+    </div>
+</div>
+{% block content %}{% endblock %}
+{% block category %}{% endblock %}
 
-    {% block content %}{% endblock %}
-    {% block category %}{% endblock %}
 
-
-    <script src="{% static 'js/bootstrap.bundle.js' %}"></script>
-    {% block js %} {% endblock %}
+<script src="{% static 'js/bootstrap.bundle.js' %}"></script>
+{% block js %} {% endblock %}
 
 </body>
 </html>
