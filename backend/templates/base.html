@@ -16,10 +16,12 @@
 </head>
 <body class="p-3 mb-2 bg-dark text-white">
 {% include 'navbar.html' %}
-<div class="container-fluid"
+<div class="container"
      style="background-image:url({% static 'img/logo/web.webp' %});background-size: contain;background-repeat: no-repeat;background-position: center;
-             height: 300px">
-    <div  style="position: relative; top: 200px;">
+             height: 300px;
+             width: 300px;
+             position: relative;">
+    <div  style="position: absolute; bottom:0 ;right: 2.5vw; left: 2.5vw ">
         {% include 'tools/delimiter.html' %}
     </div>
 </div>
