@@ -1,7 +1,4 @@
-.vertmenu {
-    margin: 0 20px;
-    font-family: 'Open Sans', sans-serif;
-}
+
 
 .vertmenu ul {
     list-style: none;
@@ -16,13 +13,10 @@
     text-transform: uppercase;
 }
 
-.vertmenu ul li li {
-    padding-left: 20px;
-}
 
 .vertmenu .subCat, .chka {
     top: 0;
-    /*right: 0;*/
+    left: 140px;
     position: absolute;
     cursor: pointer;
 }
@@ -83,7 +77,7 @@
 
 .vertmenu ul li li a:before {
     content: '\203A';
-    font-size: 20px;
+    font-size: 0px;
     padding-right: 6px;
     color: #666;
     font-weight: bold;
