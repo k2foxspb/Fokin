@@ -1,0 +1,9 @@
+.article {
+    margin:10px;
+    word-wrap: break-word;
+    min-width: 400px;
+
+
+
+    border: 3px solid black;
+}

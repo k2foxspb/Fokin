@@ -16,7 +16,7 @@
 
 .vertmenu .subCat, .chka {
     top: 0;
-    left: 140px;
+    left: 0;
     position: absolute;
     cursor: pointer;
 }
