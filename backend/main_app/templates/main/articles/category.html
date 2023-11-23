@@ -29,7 +29,7 @@
                                 {% autoescape off %}
                                     <h3>{{ article.title }}</h3>
                                     <h5 class="text-center">{{ article.preamble }}</h5>
-                                    <p class="text-justify">{{ article.body|truncatewords:50|linebreaks }}</p>
+                                    <p class="text-justify">{{ article.body|truncatewords:20|linebreaks }}</p>
                                     {% if article.updated != article.created %}
                                         <h6 class="del-update text-start">Обновлено {{ article.updated }}</h6>
                                     {% endif %}
