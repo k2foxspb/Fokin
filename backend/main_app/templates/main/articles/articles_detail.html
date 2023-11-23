@@ -1,4 +1,4 @@
-{% extends 'base.html' %}
+{% extends 'main/articles/category.html' %}
 {% block description %}
     {{ object.preamble }}
 {% endblock description %}
@@ -8,13 +8,13 @@
 {% block title %}
     {{ object.title|default:"Статья" }}
 {% endblock title %}
-{% block content %}
+{% block article %}
 
 <div class=" row justify-content-center pt-3 ">
 
     <div class="col-md-12 col-lg-8">
         <div class="card shadow ">
-            <div class="card-body">
+            <div class="card-body text-bg-dark">
                 <div style="text-align: center;">
                     {% autoescape off %}
                         <h3 class="card-title ">{{ object.title }}</h3>

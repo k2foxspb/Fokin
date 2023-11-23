@@ -10,78 +10,73 @@
 {% endblock %}
 
 
-{% block category %}
-{#    {% include 'tools/carousel.html' %}#}
+{% block article %}
+    {#    {% include 'tools/carousel.html' %}#}
+    {% if perms.exp.add_news %}
 
-<div class="container-fluid">
-    <div class="row row-cols-md-2">
-        <div class="col-md-9 text-center">
-            {% if perms.exp.add_news %}
+        <div class="d-grid gap-2 col-6 mx-auto">
+            <a class="btn btn-dark" style="margin-bottom:20px" role="button"
+               href="{% url 'main:article_create' %}">Добавить новость</a>
+        </div>
+    {% endif %}
+    <div class="container-fluid">
+        <div class="row row-cols-md-2">
+            <div class="col-md-9 text-center">
+                {% for category in category_list %}
+                    {% for article in category.get_article %}
+                        {% if article.status == 'pu' %}
+                            <div class="article ">
+                                {% autoescape off %}
+                                    <h3>{{ article.title }}</h3>
+                                    <h5 class="text-center">{{ article.preamble }}</h5>
+                                    <p class="text-justify">{{ article.body|truncatewords:50|linebreaks }}</p>
+                                    {% if article.updated != article.created %}
+                                        <h6 class="del-update text-start">Обновлено {{ article.updated }}</h6>
+                                    {% endif %}
+                                    <h6 class="text-start">{{ article.created }}</h6>
+                                    <div class="text-end">
+                                        <a class="btn btn-outline-primary text-end" role="button"
+                                           href="{% url 'main:article_detail' slug=article.slug %}">Подробнее</a>
+                                    </div>
 
-                    <div class="d-grid gap-2 col-6 mx-auto">
-                        <a class="btn btn-dark" style="margin-bottom:20px" role="button"
-                           href="{% url 'main:article_create' %}">Добавить новость</a>
-                    </div>
-            {% endif %}
+                                    {#class=" stretched-link" все родительские элементы становятся ссылкой#}
 
-
-
-
-
-            {% for category in category_list %}
-                {% for article in category.get_article %}
-                    {% if article.status == 'pu' %}
-                        <div class="article ">
-                            {% autoescape off %}
-                                <h3>{{ article.title }}</h3>
-                                <h5 class="text-center">{{ article.preamble }}</h5>
-                                <p class="text-justify">{{ article.body|truncatewords:50|linebreaks }}</p>
-                                {% if article.updated != article.created %}
-                                    <h6 class="del-update text-start">Обновлено {{ article.updated }}</h6>
-                                {% endif %}
-                                <h6 class="text-start">{{ article.created }}</h6>
-                                <div class="text-end">
-                                    <a class="btn btn-dark text-end" role="button"
-                                       href="{% url 'main:article_detail' slug=article.slug %}">Подробнее</a>
-                                </div>
-
-                                        {#class=" stretched-link" все родительские элементы становятся ссылкой#}
-
-                            {% endautoescape %}
-                        </div>
-                    {% endif %}
+                                {% endautoescape %}
+                            </div>
+                        {% endif %}
+                    {% endfor %}
                 {% endfor %}
-            {% endfor %}
-        </div>
-
-
-        <div class="vertmenu col-sm-5 col-md-3 text-end">
-            {% for cat in category_list %}
-                <ul>
-                    <li>
-                        <p>{{ cat }}</p>
-                        <input type="checkbox" class="subCat" id="{{ cat.id }}"/>
-                        <label class="chka" for="{{ cat.id }}"></label>
-                        <ul style="display:none">
-
-                            {% for article in cat.get_article %}
-                                {% if article.status == 'pu' %}
-                                    <li>
-                                        <a href="#">{{ article }}</a>
-                                    </li>
-                                {% endif %}
-                            {% endfor %}
-                        </ul>
-                    </li>
-                </ul>{% endfor %}
-        </div>
-
-    </div>
-</div>
-
-
-
-
-
+            </div>
 
 {% endblock %}
+{% block category %}
+            <div class="vertmenu col-sm-5 col-md-3 text-end">
+                {% for cat in category_list %}
+                    <ul>
+                        <li>
+                            <p>{{ cat }}</p>
+                            <input type="checkbox" class="subCat" id="{{ cat.id }}"/>
+                            <label class="chka" for="{{ cat.id }}"></label>
+                            <ul style="display:none">
+
+                                {% for article in cat.get_article %}
+                                    {% if article.status == 'pu' %}
+                                        <li>
+                                            <a href="{% url 'main:article_detail' slug=article.slug %}">{{ article }}</a>
+                                        </li>
+                                    {% endif %}
+                                {% endfor %}
+                            </ul>
+                        </li>
+                    </ul>{% endfor %}
+            </div>
+
+        </div>
+    </div>
+{% endblock %}
+
+
+
+
+
+
