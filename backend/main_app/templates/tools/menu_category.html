@@ -1,0 +1,32 @@
+{% load static %}
+{% load category_tags %}
+{% get_category as categories %}
+{% get_article as articles %}
+{% block css %}
+    <link rel="stylesheet" href="{% static 'css/article.css' %}">
+    <link rel="stylesheet" href="{% static 'css/category.css' %}">
+{% endblock %}
+<div class="vertmenu col-sm-3 col-md-3 text-end">
+    {% for category in categories %}
+        <ul>
+            <li>
+                <p>{{ category }}</p>
+                <input type="checkbox" class="subCat" id="{{ category.id }}"/>
+                <label class="chka" for="{{ category.id }}"></label>
+                <ul style="display:none">
+
+                    {% for article in articles %}
+                        {% if article.category_id == category.pk %}
+                            <li>
+                                <a href="{% url 'main:article_detail' slug=article.slug %}">{{ article }}</a>
+                            </li>
+                        {% endif %}
+                    {% endfor %}
+                </ul>
+            </li>
+        </ul>
+    {% endfor %}
+</div>
+
+
+

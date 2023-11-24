@@ -1,4 +1,4 @@
-{% extends 'main/articles/category.html' %}
+{% extends 'base.html' %}
 {% block description %}
     {{ object.preamble }}
 {% endblock description %}
@@ -8,19 +8,16 @@
 {% block title %}
     {{ object.title|default:"Статья" }}
 {% endblock title %}
-{% block article %}
-
+{% block content %}
 <div class=" row justify-content-center pt-3 ">
-
-    <div class="col-md-12 col-lg-8">
-        <div class="card shadow ">
+<div class="container-fluid">
+    <div class="row row-cols-md-2">
+        <div class="col-md-9 text-center card shadow">
             <div class="card-body text-bg-dark">
-                <div style="text-align: center;">
                     {% autoescape off %}
                         <h3 class="card-title ">{{ object.title }}</h3>
                         <h6 class="card-title ">{{ object.created }}</h6>
                         <h5 class="card-title ">{{ object.preamble }}</h5>
-                        </div>
                         <p class="card-text">
                             {{ object.body }}
                         </p>
@@ -40,7 +37,10 @@
                     <a href="{% url 'main:main_category' %}" class="btn btn-outline-primary pull-right">Назад</a>
                 </div>
             </div>
+
         </div>
+    {% include 'tools/menu_category.html' %}
     </div>
+</div>
 </div>
 {% endblock %}

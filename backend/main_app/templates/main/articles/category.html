@@ -1,17 +1,13 @@
 {% extends 'base.html' %}
 {% load static %}
 {% block css %}
-    <link rel="stylesheet" href="{% static 'css/carousel.css' %}">
     <link rel="stylesheet" href="{% static 'css/delimiter.css' %}">
-    <link rel="stylesheet" href="{% static 'css/article.css' %}">
-    <link rel="stylesheet" href="{% static 'css/category.css' %}">
     <link rel="stylesheet" href="{% static 'css/my.css' %}">
 
 {% endblock %}
 
 
-{% block article %}
-    {#    {% include 'tools/carousel.html' %}#}
+{% block content %}
     {% if perms.exp.add_news %}
 
         <div class="d-grid gap-2 col-6 mx-auto">
@@ -48,28 +44,8 @@
                 {% endfor %}
             </div>
 
-{% endblock %}
-{% block category %}
-            <div class="vertmenu col-sm-5 col-md-3 text-end">
-                {% for cat in category_list %}
-                    <ul>
-                        <li>
-                            <p>{{ cat }}</p>
-                            <input type="checkbox" class="subCat" id="{{ cat.id }}"/>
-                            <label class="chka" for="{{ cat.id }}"></label>
-                            <ul style="display:none">
 
-                                {% for article in cat.get_article %}
-                                    {% if article.status == 'pu' %}
-                                        <li>
-                                            <a href="{% url 'main:article_detail' slug=article.slug %}">{{ article }}</a>
-                                        </li>
-                                    {% endif %}
-                                {% endfor %}
-                            </ul>
-                        </li>
-                    </ul>{% endfor %}
-            </div>
+            {% include 'tools/menu_category.html' %}
 
         </div>
     </div>
