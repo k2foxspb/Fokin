@@ -17,15 +17,15 @@
     {% endif %}
     <div class="container-fluid">
         <div class="row row-cols-md-2">
-            <div class="col-md-9 text-center">
+            <div class="col-md-9 ">
                 {% for category in category_list %}
                     {% for article in category.get_article %}
                         {% if article.status == 'pu' %}
                             <div class="article ">
                                 {% autoescape off %}
-                                    <h3>{{ article.title }}</h3>
+                                    <h3 class="text-center">{{ article.title }}</h3>
                                     <h5 class="text-center">{{ article.preamble }}</h5>
-                                    <p class="text-justify">{{ article.body|truncatewords:20|linebreaks }}</p>
+                                    <p style="text-align: justify">{{ article.body|truncatewords:20|linebreaks }}</p>
                                     {% if article.updated != article.created %}
                                         <h6 class="del-update text-start">Обновлено {{ article.updated }}</h6>
                                     {% endif %}
