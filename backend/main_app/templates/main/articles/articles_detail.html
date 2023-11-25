@@ -9,10 +9,9 @@
     {{ object.title|default:"Статья" }}
 {% endblock title %}
 {% block content %}
-<div class=" row justify-content-center pt-3 ">
-<div class="container-fluid">
-    <div class="row row-cols-md-2">
-        <div class="col-md-9 text-center ">
+    <div class="container-fluid">
+        <div class="row row-cols-md-2">
+            <div class="col-md-9 text-center">
             <div class="article">
                     {% autoescape off %}
                         <h3 class="card-title ">{{ object.title }}</h3>
@@ -42,5 +41,5 @@
     {% include 'tools/menu_category.html' %}
     </div>
 </div>
-</div>
+
 {% endblock %}

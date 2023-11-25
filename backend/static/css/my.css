@@ -1,7 +1,7 @@
 .article {
     word-wrap: break-word;
     margin-bottom: 30px;
-    padding: 30px;
+    padding: 20px;
     border: 8px solid #950740;
     background-color: #000000;
 }
@@ -14,7 +14,7 @@
     font-size: 15px;
     font-weight: bold;
     color: #ffffff !important;
-    padding: 8px 25px;
+    padding: 8px 15px;
     border-radius: 5px;
     background: linear-gradient(to top, #000000, #950740);
 }
