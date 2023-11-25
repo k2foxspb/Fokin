@@ -2,8 +2,30 @@
     word-wrap: break-word;
     margin-bottom: 30px;
     padding: 30px;
+    border: 8px solid #950740;
+    background-color: #000000;
+}
 
+.background {
+    background-color: #1A1A1D;
+}
 
+.my-btn {
+    font-size: 15px;
+    font-weight: bold;
+    color: #ffffff !important;
+    padding: 8px 25px;
+    border-radius: 5px;
+    background: linear-gradient(to top, #000000, #950740);
+}
 
-    border: 3px solid black;
+.my-btn:hover {
+    color: #cccccc !important;
+    background: linear-gradient(to top, #950740, #000000);
+}
+.my-text {
+    color: #950740;
+}
+.my-text:hover {
+    color: #000000;
 }

@@ -9,13 +9,14 @@
     <link rel="shortcut icon" type="image/png" href="{% static 'img/logo/favicon.ico' %}"/>
     <link rel="stylesheet" href="{% static 'css/bootstrap.css' %}">
     <link rel="stylesheet" href="{% static 'css/delimiter.css' %}">
+    <link rel="stylesheet" href="{% static 'css/my.css' %}">
     <title>{% block title %}заметки программиста{% endblock %}</title>
     <meta name="description" content='{% block description %}{% endblock description %}'>
     <meta name="keywords"
           content='{% block keywords %}{% endblock keywords %}'/>
 
 </head>
-<body class="p-3 mb-2 bg-dark text-white">
+<body class="background text-white">
 {% include 'navbar.html' %}
 <div style="margin: 10px">
     <div class="container"
@@ -27,7 +28,7 @@
                  width: 300px;
                  border: 20px;
                  position: relative;">
-        <div style="position: absolute; bottom:0 ;right: 2.5vw; left: 2.5vw ">
+        <div style="position: absolute; bottom:0">
             {% include 'tools/delimiter.html' %}
         </div>
     </div>

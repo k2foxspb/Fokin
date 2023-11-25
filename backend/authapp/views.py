@@ -23,6 +23,7 @@ class ProfileEditView(UserPassesTestMixin, UpdateView):
     model = get_user_model()
     form_class = forms.CustomUserChangeForm
     template_name = "customuser_form.html"
+    success_url = reverse_lazy("main:main_category")
 
     def test_func(self):
         return True if self.request.user.pk == self.kwargs.get("pk") else False

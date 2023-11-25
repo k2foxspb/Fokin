@@ -27,7 +27,7 @@
 .subCat:checked + .chka:before {
     content: '+';
     font-size: 26px;
-    color: #1266B1;
+    color: rgb(149,7,64);
     font-weight: bold;
     font-family: Courier;
 }

@@ -34,13 +34,13 @@ class ArticleDetailView(DetailView):
 class ArticleUpdateView(PermissionRequiredMixin, UpdateView):
     model = models.Article
     fields = ('title', 'preamble', 'body', 'keyword', 'category', 'image')
-    success_url = reverse_lazy("main:main")
+    success_url = reverse_lazy("main:main_category")
     permission_required = ("main_app.change_article",)
     template_name = 'main/articles/articles_form.html'
 
 
 class ArticleDeleteView(PermissionRequiredMixin, DeleteView):
     model = models.Article
-    success_url = reverse_lazy("main:main")
+    success_url = reverse_lazy("main:main_category")
     permission_required = ("main_app.delete_article",)
     template_name = 'main/articles/articles_confirm_delete.html'

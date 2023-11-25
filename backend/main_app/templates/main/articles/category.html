@@ -11,7 +11,7 @@
     {% if perms.exp.add_news %}
 
         <div class="d-grid gap-2 col-6 mx-auto">
-            <a class="btn btn-dark" style="margin-bottom:20px" role="button"
+            <a class="btn my-btn" style="margin-bottom:20px" role="button"
                href="{% url 'main:article_create' %}">Добавить новость</a>
         </div>
     {% endif %}
@@ -31,7 +31,7 @@
                                     {% endif %}
                                     <h6 class="text-start">{{ article.created }}</h6>
                                     <div class="text-end">
-                                        <a class="btn btn-outline-primary text-end" role="button"
+                                        <a class="btn my-btn text-end" role="button"
                                            href="{% url 'main:article_detail' slug=article.slug %}">Подробнее</a>
                                     </div>
 
