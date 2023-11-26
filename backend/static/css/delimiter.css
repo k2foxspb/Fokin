@@ -55,25 +55,3 @@
         transform: translateX(85px);
     }
 }
-
-.dark-block {
-    background: #337AB7;
-    padding: 50px 0;
-    font-size: 26px;
-    font-family: 'Roboto', sans-serif;
-    text-align: center;
-    color: #000000;
-}
-
-.dark-bg {
-    background: #000000;
-}
-
-.light-block {
-    background: #FFF;
-    padding: 50px 0;
-    font-size: 26px;
-    font-family: 'Roboto', sans-serif;
-    text-align: center;
-    color: #337AB7;
-}

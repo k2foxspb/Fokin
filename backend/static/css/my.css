@@ -1,13 +1,27 @@
-.article {
+.articles {
     word-wrap: break-word;
     margin-bottom: 30px;
     padding: 20px;
-    border: 8px solid #950740;
-    background-color: #000000;
+    border: 8px solid #2f0016;
+    background-color: #444444;
+
+}
+
+.article {
+    word-wrap: break-word;
+    margin-bottom: 0;
+    padding: 10px;
+    border: 8px solid #2f0016;
+
+.my-title {
+    color: #e50606;
+}
+
+    background-color: #444444;
 }
 
 .background {
-    background-color: #070354;
+    background-color: #e1dddd;
 }
 
 .my-btn {
@@ -16,15 +30,16 @@
     color: #ffffff !important;
     padding: 8px 15px;
     border-radius: 5px;
-    background: linear-gradient(to top, #000000, #950740);
+    background: linear-gradient(to top, #000000, #2f0016);
 }
 
 .my-btn:hover {
     color: #cccccc !important;
-    background: linear-gradient(to top, #950740, #000000);
+    background: linear-gradient(to top, #2f0016, #000000);
 }
 .my-text {
-    color: #950740;
+    color: #2f0016;
+    font-weight:900;
 }
 .my-text:hover {
     color: #000000;

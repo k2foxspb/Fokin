@@ -21,10 +21,10 @@
                 {% for category in category_list %}
                     {% for article in category.get_article %}
                         {% if article.status == 'pu' %}
-                            <div class="article ">
+                            <div class="articles">
                                 {% autoescape off %}
-                                    <h3 class="text-center">{{ article.title }}</h3>
-                                    <h5 class="text-center">{{ article.preamble }}</h5>
+                                    <h3 class="text-center my-text">{{ article.title }}</h3>
+                                    <h5 class="text-center ">{{ article.preamble }}</h5>
                                     <p style="text-align: justify">{{ article.body|truncatewords:20|linebreaks }}</p>
                                     {% if article.updated != article.created %}
                                         <h6 class="del-update text-start">Обновлено {{ article.updated }}</h6>
