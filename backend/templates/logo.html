@@ -1,0 +1,15 @@
+{% load static %}
+
+{% block css %}
+    <link rel="stylesheet" href="{% static 'css/delimiter.css' %}">
+    <link rel="stylesheet" href="{% static 'css/general_page.css' %}">
+{% endblock %}
+<div class="gen-margin">
+    <div class="container gen-container"
+         style="background-image:
+                 url({% static 'img/logo/web.webp' %});">
+        <div class="gen-delimiter">
+            {% include 'tools/delimiter.html' %}
+        </div>
+    </div>
+</div>

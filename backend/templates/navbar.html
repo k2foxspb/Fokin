@@ -1,17 +1,24 @@
 {% load static %}
-<ul class="nav justify-content-end">
-  <li class="nav-item">
-    <a class="nav-link my-text" aria-current="page" href="{% url 'main:main_category' %}">Главная</a>
-  </li>
-{#  <li class="nav-item">#}
-{#    <a class="nav-link my-text" href="#">Ссылка</a>#}
-{#  </li>#}
-    {% if user.is_anonymous %}
-  <li class="nav-item">
-    <a class="nav-link my-text" href="{% url 'auth:login' %}">Вход</a>
-      {% else %}
-      <a class="nav-link my-text" href="{% url 'auth:profile_edit' pk=user.pk %}">Редактировать порофиль</a>
-      <a class="nav-link my-text" href="{% url 'auth:logout' %}">Выход</a>
-  </li>
-    {% endif %}
-</ul>
+
+<nav class="navbar navbar-expand-lg navbar-light bg-light">
+    <div class="container-fluid">
+        <a class="navbar-brand my-text" href="{% url 'main:main_category' %}">Fokin.fun</a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
+                aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav">
+                {% if user.is_anonymous %}
+                    <li class="nav-item">
+                        <a class="nav-link my-text" href="{% url 'auth:login' %}">Вход</a>
+                        {% else %}
+                        <a class="nav-link my-text" href="{% url 'auth:profile_edit' pk=user.pk %}">Редактировать
+                            порофиль</a>
+                        <a class="nav-link my-text" href="{% url 'auth:logout' %}">Выход</a>
+                    </li>
+                {% endif %}
+            </ul>
+        </div>
+    </div>
+</nav>

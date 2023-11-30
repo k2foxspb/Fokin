@@ -18,6 +18,11 @@ class CategoryListView(ListView):
     template_name = 'main/articles/category.html'
 
 
+class CategoryDetailView(DetailView):
+    model = models.Category
+    template_name = 'main/articles/category_detail.html'
+
+
 class ArticleCreateView(PermissionRequiredMixin, CreateView):
     model = models.Article
     fields = ('title', 'preamble', 'body', 'keyword', 'category', 'image')

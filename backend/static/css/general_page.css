@@ -1,0 +1,18 @@
+.gen-container {
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+    height: 300px;
+    width: 300px;
+    border: 20px;
+    position: relative;
+}
+
+.gen-margin {
+    margin: 10px
+}
+
+.gen-delimiter {
+    position: absolute;
+    bottom: 0
+}

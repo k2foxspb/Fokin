@@ -10,7 +10,7 @@
     {% for category in categories %}
         <ul>
             <li>
-                <p class="my-text">{{ category }}</p>
+                <a href="{% url 'main:category_detail' slug=category.slug %}" class="my-text">{{ category }}</a>
                 <input type="checkbox" class="subCat" id="{{ category.id }}"/>
                 <label class="chka" for="{{ category.id }}"></label>
                 <ul style="display:none">

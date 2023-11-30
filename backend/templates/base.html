@@ -8,31 +8,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="shortcut icon" type="image/png" href="{% static 'img/logo/favicon.ico' %}"/>
     <link rel="stylesheet" href="{% static 'css/bootstrap.css' %}">
-    <link rel="stylesheet" href="{% static 'css/delimiter.css' %}">
     <link rel="stylesheet" href="{% static 'css/my.css' %}">
     <title>{% block title %}заметки программиста{% endblock %}</title>
-    <meta name="description" content='{% block description %}{% endblock description %}'>
+    <meta name="description" content='{% block description %}{% endblock %}'>
     <meta name="keywords"
           content='{% block keywords %}{% endblock keywords %}'/>
-
 </head>
 <body class="background text-white">
 {% include 'navbar.html' %}
-<div style="margin: 10px">
-    <div class="container"
-         style="background-image:url({% static 'img/logo/web.webp' %});
-                 background-size: contain;
-                 background-repeat: no-repeat;
-                 background-position: center;
-                 height: 300px;
-                 width: 300px;
-                 border: 20px;
-                 position: relative;">
-        <div style="position: absolute; bottom:0">
-            {% include 'tools/delimiter.html' %}
-        </div>
-    </div>
-</div>
+{% include 'logo.html' %}
 {% block content %}{% endblock %}
 
 
