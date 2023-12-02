@@ -3,19 +3,21 @@
 
 }
 {% block content %}
-    <div class="container-md articles">
-
-        <h1 class="my-text ">{{ category.title }}</h1>
-        {% for article in category.get_article %}
-            <li class="my-text ">
-                <a style="font-size: 25px;
+    <div class="container-md">
+        <div class="articles">
+            <h1 class=" ">{{ category.title }}</h1>
+            {% for article in category.get_article %}
+                <li class=" ">
+                    <a style="font-size: 25px;
                     font-weight: normal;
-                    text-decoration: none;" class="my-text"
-                   href="{% url 'main:article_detail' slug=article.slug %}">{{ article }}</a>
-            </li>
-        {% endfor %}
-        <div class="text-end">
-            <a href="{% url 'main:main_category' %}" class="btn my-btn">Назад</a>
+                    text-decoration: none;
+                    color: #ef9c9c"
+                       href="{% url 'main:article_detail' slug=article.slug %}">{{ article }}</a>
+                </li>
+            {% endfor %}
+            <div class="text-end">
+                <a href="{% url 'main:main_category' %}" class="btn my-btn">Назад</a>
+            </div>
         </div>
     </div>
 {% endblock %}

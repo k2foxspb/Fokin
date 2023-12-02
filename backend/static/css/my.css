@@ -1,28 +1,16 @@
 .articles {
     word-wrap: break-word;
-    margin-bottom: 30px;
+
     padding: 20px;
-    border: 8px solid #2f0016;
-    background-color: #444444;
+    border: 3px solid #670000;
+    background-color: #000000;
+    opacity: .9;
+    margin: 10px;
 
 }
 
-.article {
-    word-wrap: break-word;
-    margin-bottom: 0;
-    padding: 10px;
 
 
-.my-title {
-    color: #e50606;
-}
-
-    background-color: #444444;
-}
-
-.background {
-    background-color: #e1dddd;
-}
 
 .my-btn {
     font-size: 15px;
@@ -30,17 +18,24 @@
     color: #ffffff !important;
     padding: 8px 15px;
     border-radius: 5px;
-    background: linear-gradient(to top, #000000, #2f0016);
+    background: linear-gradient(to top, #000000, #670000);
 }
 
 .my-btn:hover {
     color: #cccccc !important;
-    background: linear-gradient(to top, #2f0016, #000000);
+    background: linear-gradient(to top, #670000, #000000);
 }
+
 .my-text {
-    color: #2f0016;
-    font-weight:900;
-}
-.my-text:hover {
     color: #000000;
+    font-weight: 900;
+}
+
+
+.my-background {
+    background-size: cover;
+    background-repeat: no-repeat;
+    background-position: center;
+    position: relative;
+    background-attachment: fixed;
 }

@@ -15,15 +15,12 @@
     <meta name="keywords"
           content='{% block keywords %}{% endblock keywords %}'/>
 </head>
-<body class="background text-white">
+<body class="background text-white my-background" style="background-image: url({% static 'img/logo/background.jpg' %})">
 {% include 'yandex.html' %}
 {% include 'navbar.html' %}
-{% include 'logo.html' %}
+{#{% include 'logo.html' %}#}
 {% block content %}{% endblock %}
-
-
 <script src="{% static 'js/bootstrap.bundle.js' %}"></script>
 {% block js %} {% endblock %}
-
 </body>
 </html>

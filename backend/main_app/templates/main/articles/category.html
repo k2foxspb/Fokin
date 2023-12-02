@@ -3,20 +3,21 @@
 {% block content %}
     {% if perms.exp.add_news %}
 
-        <div class="d-grid gap-2 col-6 mx-auto">
-            <a class="btn my-btn" style="margin-bottom:20px" role="button"
-               href="{% url 'main:article_create' %}">Добавить новость</a>
-        </div>
+
     {% endif %}
-    <div class="container-fluid">
+    <div class="container-md">
         <div class="row row-cols-md-2">
             <div class="col-md-9 ">
+                <div class="d-grid gap-2 col-6 mx-auto">
+                    <a class="btn my-btn" role="button"
+                       href="{% url 'main:article_create' %}">Добавить новость</a>
+                </div>
                 {% for category in category_list %}
                     {% for article in category.get_article %}
                         {% if article.status == 'pu' %}
                             <div class="articles">
                                 {% autoescape off %}
-                                    <h3 class="text-center my-text">{{ article.title }}</h3>
+                                    <h3 class="text-center">{{ article.title }}</h3>
                                     <h5 class="text-center ">{{ article.preamble }}</h5>
                                     <p style="text-align: justify">{{ article.body|truncatewords:20|linebreaks }}</p>
                                     {% if article.updated != article.created %}
