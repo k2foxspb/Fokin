@@ -27,7 +27,7 @@
 .subCat:checked + .chka:before {
     content: '+';
     font-size: 46px;
-    color: #670000;
+    color: #ffffff;
     font-weight: bold;
     font-family: Courier;
 }
@@ -37,14 +37,14 @@
 }
 
 .vertmenu a {
-    color: #000000;
+    color: #fdfdfd;
     font-size: 20px;
     font-weight: bold;
     text-decoration: none;
 }
 
 .vertmenu ul li li a {
-    color: #000000;
+    color: #6b6767;
     font-size: 20px;
     font-weight: normal;
     text-decoration: none;
