@@ -3,17 +3,16 @@
 {% get_category as categories %}
 {% get_article as articles %}
 {% block css %}
-    <link rel="stylesheet" href="{% static 'css/article.css' %}">
     <link rel="stylesheet" href="{% static 'css/category.css' %}">
 {% endblock %}
-<div class="vertmenu col-sm-5 col-md-3 text-end">
+<div class="vertmenu col-sm-5 col-md-3 text-end ">
     {% for category in categories %}
         <ul>
             <li>
                 <a href="{% url 'main:category_detail' slug=category.slug %}" class="my-text">{{ category }}</a>
                 <input type="checkbox" class="subCat" id="{{ category.id }}"/>
                 <label class="chka" for="{{ category.id }}"></label>
-                <ul style="display:none">
+                <ul >
 
                     {% for article in articles %}
                         {% if article.category_id == category.pk %}
