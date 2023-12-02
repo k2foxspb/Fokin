@@ -1,17 +1,15 @@
 {% extends 'base.html' %}
 {% load static %}
 {% block content %}
-    {% if perms.exp.add_news %}
-
-
-    {% endif %}
     <div class="container-md">
         <div class="row row-cols-md-2">
             <div class="col-md-9 ">
-                <div class="d-grid gap-2 col-6 mx-auto">
-                    <a class="btn my-btn" role="button"
-                       href="{% url 'main:article_create' %}">Добавить новость</a>
-                </div>
+                {% if perms.exp.add_news %}
+                    <div class="d-grid gap-2 col-6 mx-auto">
+                        <a class="btn my-btn" role="button"
+                           href="{% url 'main:article_create' %}">Добавить новость</a>
+                    </div>
+                {% endif %}
                 {% for category in category_list %}
                     {% for article in category.get_article %}
                         {% if article.status == 'pu' %}
