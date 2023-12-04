@@ -6,7 +6,6 @@
     {% block css %}{% endblock %}
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="yandex-verification" content="eede2ff05edcd7e8" />
     <link rel="shortcut icon" type="image/png" href="{% static 'img/logo/favicon.ico' %}"/>
     <link rel="stylesheet" href="{% static 'css/bootstrap.css' %}">
     <link rel="stylesheet" href="{% static 'css/my.css' %}">
@@ -15,9 +14,15 @@
     <meta name="keywords"
           content='{% block keywords %}{% endblock keywords %}'/>
 </head>
-<body class="background text-white my-background" style="background-image: url({% static 'img/logo/background.png' %})">
+
+<body class="background text-white my-background"
+      style="
+              background-image: url({% static 'img/logo/background.png' %});
+              background-color: black;">
 {% include 'yandex.html' %}
-{% include 'navbar.html' %}
+{% block navbar %}
+    {% include 'navbar.html' %}
+{% endblock %}
 {#{% include 'logo.html' %}#}
 {% block content %}{% endblock %}
 <script src="{% static 'js/bootstrap.bundle.js' %}"></script>

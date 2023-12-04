@@ -27,7 +27,7 @@
 .my-text {
 
     font-weight: 900;
-    text-shadow: 1px 1px 2px #670000, 0 0 1em #670000, 0 0 0.2em #670000;
+    color: #c0919d;
 }
 
 
@@ -40,12 +40,12 @@
 }
 
 .my-hov:hover {
-    color: #670000;
+    color: #ffffff;
 }
 
 .my-hov {
     font-size: 25px;
     font-weight: normal;
     text-decoration: none;
-    color: #efecec
+    color: #c0919d
 }
