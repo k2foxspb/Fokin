@@ -54,3 +54,9 @@
     text-decoration: none;
     color: #c0919d
 }
+.logo {
+    border-radius: 30px;
+    border: 5px solid #670000;
+    width: 150px
+
+}
