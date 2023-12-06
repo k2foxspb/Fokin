@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load static %}
 {% block navbar %}{% endblock %}
 
 {% block content %}
@@ -8,10 +9,14 @@
            height: 100vh;
             align-items: center;">
         <h1>
-            Заметки программиста<br>
+            <a href="{% url 'main:main_category' %}">
+                <img style="width: 150px" src="{% static 'img/logo/logo.png' %}" alt="logo">
+            </a>
+            <br>
+            Заметки программиста<br><br>
 
-                <a class="btn my-btn text-center" role="button"
-                   href="{% url 'main:main_category' %}">Поехали!</a>
+            <a class="btn my-btn text-center" role="button"
+               href="{% url 'main:main_category' %}">Поехали!</a>
         </h1>
 
     </div>

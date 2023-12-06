@@ -9,10 +9,10 @@
     {{ object.title|default:"Статья" }}
 {% endblock title %}
 {% block content %}
-    <div class="container-md">
+    <div class="container-fluid">
         <div class="row row-cols-md-2">
             <div class="col-md-9 text-center ">
-            <div class="articles">
+            <div class="articles-detail">
                     {% autoescape off %}
                         <h6 class="card-footer text-end">{{ object.created }}</h6>
                         <h1 class="card-title ">{{ object.title }}</h1>
