@@ -56,7 +56,11 @@
 }
 .logo {
     border-radius: 30px;
-    border: 5px solid #670000;
+    border: 3px solid #670000;
     width: 150px
 
+}
+.logo-1 {
+    border-radius: 5px;
+    border: 1px solid #670000;
 }
