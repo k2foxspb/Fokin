@@ -18,9 +18,169 @@
                         <h1 class="card-title ">{{ object.title }}</h1>
 
                         <h5 class="card-title ">{{ object.preamble }}</h5>
+                        {% if object.body %}
                         <p class="card-text " style="text-align: justify">
                             {{ object.body }}
                         </p>
+                        {% endif %}
+                        {% if object.code %}
+                            <p>
+                                {{ object.code }}
+                            </p>
+                        {% endif %}
+                        {% if object.image %}
+                            <img class="img-fluid my-img" src="{{ object.image.url }}" alt="">
+                        {% endif %}
+
+
+                        {% if object.body1 %}
+                        <p class="card-text " style="text-align: justify">
+                            {{ object.body1 }}
+                        </p>
+                        {% endif %}
+                        {% if object.code1 %}
+                            <p>
+                                {{ object.code1 }}
+                            </p>
+                        {% endif %}
+                        {% if object.image1 %}
+                            <img class="img-fluid my-img" src="{{ object.image1.url }}" alt="">
+                        {% endif %}
+
+
+                        {% if object.body2 %}
+                        <p class="card-text " style="text-align: justify">
+                            {{ object.body2 }}
+                        </p>
+                        {% endif %}
+                        {% if object.code2 %}
+                            <p>
+                                {{ object.code2 }}
+                            </p>
+                        {% endif %}
+                        {% if object.image2 %}
+                            <img class="img-fluid my-img" src="{{ object.image2.url }}" alt="">
+                        {% endif %}
+
+                        {% if object.body3 %}
+                        <p class="card-text " style="text-align: justify">
+                            {{ object.body3 }}
+                        </p>
+                        {% endif %}
+                        {% if object.code3 %}
+                            <p>
+                                {{ object.code3 }}
+                            </p>
+                        {% endif %}
+                        {% if object.image3 %}
+                            <img class="img-fluid my-img" src="{{ object.image3.url }}" alt="">
+                        {% endif %}
+
+                        {% if object.body4 %}
+                        <p class="card-text " style="text-align: justify">
+                            {{ object.body }}
+                        </p>
+                        {% endif %}
+                        {% if object.code4 %}
+                            <p>
+                                {{ object.code4 }}
+                            </p>
+                        {% endif %}
+                        {% if object.image4 %}
+                            <img class="img-fluid my-img" src="{{ object.image4.url }}" alt="">
+                        {% endif %}
+
+                        {% if object.body5 %}
+                        <p class="card-text " style="text-align: justify">
+                            {{ object.body5 }}
+                        </p>
+                        {% endif %}
+                        {% if object.code5 %}
+                            <p>
+                                {{ object.code5 }}
+                            </p>
+                        {% endif %}
+                        {% if object.image5 %}
+                            <img class="img-fluid my-img" src="{{ object.image5.url }}" alt="">
+                        {% endif %}
+
+                        {% if object.body6 %}
+                        <p class="card-text " style="text-align: justify">
+                            {{ object.body6 }}
+                        </p>
+                        {% endif %}
+                        {% if object.code6 %}
+                            <p>
+                                {{ object.code6 }}
+                            </p>
+                        {% endif %}
+                        {% if object.image6 %}
+                            <img class="img-fluid my-img" src="{{ object.image6.url }}" alt="">
+                        {% endif %}
+
+                        {% if object.body7 %}
+                        <p class="card-text " style="text-align: justify">
+                            {{ object.body7 }}
+                        </p>
+                        {% endif %}
+                        {% if object.code7 %}
+                            <p>
+                                {{ object.code7 }}
+                            </p>
+                        {% endif %}
+                        {% if object.image7 %}
+                            <img class="img-fluid my-img" src="{{ object.image7.url }}" alt="">
+                        {% endif %}
+
+                        {% if object.body8 %}
+                        <p class="card-text " style="text-align: justify">
+                            {{ object.body8 }}
+                        </p>
+                        {% endif %}
+                        {% if object.code8 %}
+                            <p>
+                                {{ object.code8 }}
+                            </p>
+                        {% endif %}
+                        {% if object.image8 %}
+                            <img class="img-fluid my-img" src="{{ object.image8.url }}" alt="">
+                        {% endif %}
+
+                        {% if object.body9 %}
+                        <p class="card-text " style="text-align: justify">
+                            {{ object.body9 }}
+                        </p>
+                        {% endif %}
+                        {% if object.code9 %}
+                            <p>
+                                {{ object.code9 }}
+                            </p>
+                        {% endif %}
+                        {% if object.image9 %}
+                            <img class="img-fluid my-img" src="{{ object.image9.url }}" alt="">
+                        {% endif %}
+
+                        {% if object.body10 %}
+                        <p class="card-text " style="text-align: justify">
+                            {{ object.body10 }}
+                        </p>
+                        {% endif %}
+                        {% if object.code10 %}
+                            <p>
+                                {{ object.code10 }}
+                            </p>
+                        {% endif %}
+                        {% if object.image10 %}
+                            <img class="img-fluid my-img" src="{{ object.image10.url }}" alt="">
+                        {% endif %}
+
+
+
+
+
+
+
+
                     {% endautoescape %}
                 <div class="text-end">
                 {% if perms.exp.change_news %}
