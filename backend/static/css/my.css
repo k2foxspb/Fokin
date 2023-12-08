@@ -32,7 +32,7 @@
 .my-text {
 
     font-weight: 900;
-    color: #c0919d;
+    color: #670000;
 }
 
 
@@ -52,7 +52,7 @@
     font-size: 25px;
     font-weight: normal;
     text-decoration: none;
-    color: #c0919d
+    color: #670000;
 }
 .logo {
     border-radius: 30px;
@@ -63,4 +63,21 @@
 .logo-1 {
     border-radius: 5px;
     border: 1px solid #670000;
+}
+
+.code-tool {
+    color: #1b73e3;
+
+    padding: 20px;
+
+}
+
+.my-navbar {
+    color: #670000;
+    font-weight: 800;
+}
+
+.my-navbar:hover {
+    color: #ffffff;
+    font-weight: 900;
 }
