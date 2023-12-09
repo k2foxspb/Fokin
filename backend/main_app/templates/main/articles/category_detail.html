@@ -1,17 +1,19 @@
 {% extends 'base.html' %}
+{% load category_tags %}
 
-
-}
 {% block content %}
+    {% get_article_for_menu as articles %}
     <div class="container-md">
         <div class="articles">
             <h1 class="text-center">{{ category.title }}</h1>
-            {% for article in category.get_article %}
+            {% for article in articles %}
+                {% if article in category.get_article %}
                 <li class="my-hov">
                     <a class="my-hov"
                        href="{% url 'main:article_detail' slug=article.slug %}">{{ article }}
                     </a>
                 </li>
+                {% endif %}
             {% endfor %}
             <div class="text-end">
                 <a href="{% url 'main:main_category' %}" class="btn my-btn">Назад</a>
