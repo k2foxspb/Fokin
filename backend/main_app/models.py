@@ -101,7 +101,7 @@ class Article(models.Model):
     class Meta:
         verbose_name = "Статья"
         verbose_name_plural = "Статьи"
-        ordering = ("-created",)
+        ordering = ("-updated",)
 
 
 class Category(models.Model):

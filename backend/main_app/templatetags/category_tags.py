@@ -12,3 +12,8 @@ def get_category():
 @register.simple_tag()
 def get_article():
     return Article.objects.filter(status='pu')
+
+
+@register.simple_tag()
+def get_article_for_menu():
+    return Article.objects.filter(status='pu').order_by('created')

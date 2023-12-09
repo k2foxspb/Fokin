@@ -1,7 +1,7 @@
 {% load static %}
 {% load category_tags %}
 {% get_category as categories %}
-{% get_article as articles %}
+{% get_article_for_menu as articles %}
 {% block css %}
     <link rel="stylesheet" href="{% static 'css/category.css' %}">
 {% endblock %}
