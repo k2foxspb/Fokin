@@ -45,7 +45,9 @@ class Article(models.Model):
     code7 = models.CharField(max_length=1024, blank=True, null=True, verbose_name="код")
     code8 = models.CharField(max_length=1024, blank=True, null=True, verbose_name="код")
     code9 = models.CharField(max_length=1024, blank=True, null=True, verbose_name="код")
-    code10 = models.CharField(max_length=1024, blank=True, null=True, verbose_name="код")
+    code10 = models.CharField(
+        max_length=1024, blank=True, null=True, verbose_name="код"
+    )
     image = models.ImageField(max_length=1024, upload_to=news_image_path, blank=True)
     image1 = models.ImageField(max_length=1024, upload_to=news_image_path, blank=True)
     image2 = models.ImageField(max_length=1024, upload_to=news_image_path, blank=True)
@@ -58,12 +60,12 @@ class Article(models.Model):
     image9 = models.ImageField(max_length=1024, upload_to=news_image_path, blank=True)
     image10 = models.ImageField(max_length=1024, upload_to=news_image_path, blank=True)
 
-
     created = models.DateTimeField(
         auto_now_add=True, verbose_name="Создано", editable=False
     )
     updated = models.DateTimeField(
-        auto_now=True, verbose_name="Отредактировано", editable=False
+        auto_now=True,
+        verbose_name="Отредактировано",
     )
     slug = models.CharField(
         verbose_name="URL-адрес",
