@@ -1,5 +1,4 @@
-{% load static %}
-{% load category_tags %}
+{% load static category_tags %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -23,7 +22,6 @@
 {% block navbar %}
     {% include 'navbar.html' %}
 {% endblock %}
-{#{% include 'logo.html' %}#}
 {% block content %}{% endblock %}
 <script src="{% static 'js/bootstrap.bundle.js' %}"></script>
 {% block js %} {% endblock %}
