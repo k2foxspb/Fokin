@@ -1,6 +1,9 @@
 from pathlib import Path
 from time import time
 
+from ckeditor_uploader.fields import RichTextUploadingField
+
+from ckeditor_uploader.widgets import CKEditorUploadingWidget
 from django.db import models
 from django.urls import reverse
 
@@ -19,47 +22,13 @@ STATUS_CHOICES = [("del", "Delete"), ("pu", "Published"), ("wi", "Withdrawn")]
 
 
 class Article(models.Model):
+    widget = CKEditorUploadingWidget()
     title = models.CharField(max_length=256, unique=True, verbose_name="Заголовок")
     preamble = models.CharField(max_length=1024, verbose_name="Преамбула")
     category = models.ForeignKey(
         "Category", on_delete=models.CASCADE, verbose_name="Категория", default=None
     )
-    body = models.TextField(blank=True, null=True, verbose_name="Текст")
-    body1 = models.TextField(blank=True, null=True, verbose_name="Текст")
-    body2 = models.TextField(blank=True, null=True, verbose_name="Текст")
-    body3 = models.TextField(blank=True, null=True, verbose_name="Текст")
-    body4 = models.TextField(blank=True, null=True, verbose_name="Текст")
-    body5 = models.TextField(blank=True, null=True, verbose_name="Текст")
-    body6 = models.TextField(blank=True, null=True, verbose_name="Текст")
-    body7 = models.TextField(blank=True, null=True, verbose_name="Текст")
-    body8 = models.TextField(blank=True, null=True, verbose_name="Текст")
-    body9 = models.TextField(blank=True, null=True, verbose_name="Текст")
-    body10 = models.TextField(blank=True, null=True, verbose_name="Текст")
-    code = models.CharField(max_length=1024, blank=True, null=True, verbose_name="код")
-    code1 = models.CharField(max_length=1024, blank=True, null=True, verbose_name="код")
-    code2 = models.CharField(max_length=1024, blank=True, null=True, verbose_name="код")
-    code3 = models.CharField(max_length=1024, blank=True, null=True, verbose_name="код")
-    code4 = models.CharField(max_length=1024, blank=True, null=True, verbose_name="код")
-    code5 = models.CharField(max_length=1024, blank=True, null=True, verbose_name="код")
-    code6 = models.CharField(max_length=1024, blank=True, null=True, verbose_name="код")
-    code7 = models.CharField(max_length=1024, blank=True, null=True, verbose_name="код")
-    code8 = models.CharField(max_length=1024, blank=True, null=True, verbose_name="код")
-    code9 = models.CharField(max_length=1024, blank=True, null=True, verbose_name="код")
-    code10 = models.CharField(
-        max_length=1024, blank=True, null=True, verbose_name="код"
-    )
-    image = models.ImageField(max_length=1024, upload_to=news_image_path, blank=True)
-    image1 = models.ImageField(max_length=1024, upload_to=news_image_path, blank=True)
-    image2 = models.ImageField(max_length=1024, upload_to=news_image_path, blank=True)
-    image3 = models.ImageField(max_length=1024, upload_to=news_image_path, blank=True)
-    image4 = models.ImageField(max_length=1024, upload_to=news_image_path, blank=True)
-    image5 = models.ImageField(max_length=1024, upload_to=news_image_path, blank=True)
-    image6 = models.ImageField(max_length=1024, upload_to=news_image_path, blank=True)
-    image7 = models.ImageField(max_length=1024, upload_to=news_image_path, blank=True)
-    image8 = models.ImageField(max_length=1024, upload_to=news_image_path, blank=True)
-    image9 = models.ImageField(max_length=1024, upload_to=news_image_path, blank=True)
-    image10 = models.ImageField(max_length=1024, upload_to=news_image_path, blank=True)
-
+    content = RichTextUploadingField(blank=True)
     created = models.DateTimeField(
         auto_now_add=True, verbose_name="Создано", editable=False
     )
@@ -134,4 +103,3 @@ class Category(models.Model):
     class Meta:
         verbose_name = "Категория"
         verbose_name_plural = "Категории"
-
