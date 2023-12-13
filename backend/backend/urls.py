@@ -22,6 +22,7 @@ from django.conf.urls.static import static
 from backend import settings
 
 urlpatterns = [
+    path('ckeditor/', include('ckeditor_uploader.urls')),
     path('admin/', admin.site.urls),
     path('', include('main_app.urls', namespace='main')),
     path('authentication/', include('authapp.urls', namespace='auth')),
