@@ -1,7 +1,12 @@
 {% extends 'base.html' %}
 {% load static %}
 {% block navbar %}{% endblock %}
-
+{% block body %}
+    class="text-white my-background"
+    style="
+    background-image: url({% static 'img/logo/background.webp' %});
+    background-color: black;"
+{% endblock %}
 {% block content %}
     <div class="text-center"
          style="justify-content: center;

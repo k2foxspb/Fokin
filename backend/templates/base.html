@@ -14,10 +14,9 @@
           content='{% block keywords %}{% endblock keywords %}'/>
 </head>
 
-<body class="background text-white my-background"
-      style="
-              background-image: url({% static 'img/logo/background.webp' %});
-              background-color: black;">
+<body {% block body %}
+    class=" text-white " style="background-color: #000000" 
+{% endblock %}>
 {% include 'yandex.html' %}
 {% block navbar %}
     {% include 'navbar.html' %}
