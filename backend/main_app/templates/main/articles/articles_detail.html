@@ -15,9 +15,9 @@
                 <div class="articles-detail">
                     {% autoescape off %}
                         <h6 class="card-footer text-end">{{ object.created }}</h6>
-                        <h1 class="card-title ">{{ object.title }}</h1>
+                        <h1 class="card-title text-center">{{ object.title }}</h1>
 
-                        <h5 class="card-title ">{{ object.preamble }}</h5>
+                        <h5 class="card-title text-center">{{ object.preamble }}</h5>
                         {% if object.content %}
                             <p>
                                 {{ object.content }}
