@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     "authapp",
     "ckeditor",
     "ckeditor_uploader",
+    "news.apps.NewsConfig"
 ]
 
 MIDDLEWARE = [

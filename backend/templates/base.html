@@ -14,9 +14,11 @@
           content='{% block keywords %}{% endblock keywords %}'/>
 </head>
 
-<body {% block body %}
-    class=" text-white " style="background-color: #000000" 
-{% endblock %}>
+<body
+        {% block body %}
+            class=" text-white " style="background-color: #000000"
+        {% endblock %}>
+
 {% include 'yandex.html' %}
 {% block navbar %}
     {% include 'navbar.html' %}
