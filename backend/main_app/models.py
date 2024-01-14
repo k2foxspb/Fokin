@@ -10,12 +10,12 @@ from django.urls import reverse
 from main_app.services.utils import unique_slugify
 
 
-def news_image_path(instance, filename):
-    # file will be uploaded to
-    #   MEDIA_ROOT / user_<username> / avatars / <filename>
-    num = int(time() * 1000)
-    suf = Path(filename).suffix
-    return f"news_{instance.title}/image/pic_{num}{suf}"
+# def news_image_path(instance, filename):
+#     # file will be uploaded to
+#     #   MEDIA_ROOT / user_<username> / avatars / <filename>
+#     num = int(time() * 1000)
+#     suf = Path(filename).suffix
+#     return f"news_{instance.title}/image/pic_{num}{suf}"
 
 
 STATUS_CHOICES = [("del", "Delete"), ("pu", "Published"), ("wi", "Withdrawn")]
@@ -87,7 +87,7 @@ class Category(models.Model):
         return self.article_set.all()
 
     def get_absolute_url(self):
-        return reverse("", kwargs={"slug": self.slug})
+        return reverse("main:main_category", kwargs={"slug": self.slug})
 
     def save(self, *args, **kwargs):
         """
