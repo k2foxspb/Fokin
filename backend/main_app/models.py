@@ -41,7 +41,6 @@ class Article(models.Model):
         max_length=255,
         blank=True,
         unique=True,
-        editable=False,
     )
 
     keyword = models.CharField(

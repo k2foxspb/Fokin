@@ -1,5 +1,7 @@
 {% extends 'base.html' %}
 {% load category_tags %}
+{% block title %}{{ category.title }}{% endblock %}
+{% block description %}{{ category.title }}{% endblock %}
 
 {% block content %}
     {% get_article_for_menu as articles %}
