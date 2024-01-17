@@ -1,23 +1,30 @@
 {% load static %}
 
-<nav class="navbar navbar-expand-sm  " >
+<nav class="navbar navbar-expand-sm  ">
     <div class="container-lg">
-        <a class="navbar-brand" href="{% url 'main:main_category' %}"><img class="logo-1" style="width: 50px" src="{% static 'img/logo/logo.webp' %}" alt="logo"></a>
+        <a class="navbar-brand" href="{% url 'main:main_category' %}"><img class="logo-1" style="width: 50px"
+                                                                           src="{% static 'img/logo/logo.webp' %}"
+                                                                           alt="logo"></a>
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
                 aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
             <span class="navbar-toggler-icon"></span>
         </button>
         <div class="collapse navbar-collapse" id="navbarNav">
             <ul class="navbar-nav">
+                <li class="
+">
+                    <a class="nav-link my-navbar" href="{% url 'main:about' %}">Контакты</a>
+                </li>
                 {% if user.is_anonymous %}
                     <li class="nav-item">
                         <a class=" my-navbar" href="{% url 'auth:login' %}">Вход</a>
                         {% else %}
-                        <a class="nav-link my-navbar" href="{% url 'auth:profile_edit' pk=user.pk %}">Редактировать
-                            порофиль</a>
+                        <a class="nav-link my-navbar"
+                           href="{% url 'auth:profile_edit' pk=user.pk %}">{{ user.username }}</a>
                         <a class="nav-link my-navbar" href="{% url 'auth:logout' %}">Выход</a>
                     </li>
                 {% endif %}
+
             </ul>
         </div>
     </div>

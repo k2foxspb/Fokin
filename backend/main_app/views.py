@@ -25,6 +25,10 @@ class Main(TemplateView):
     template_name = "main/main.html"
 
 
+class About_me(TemplateView):
+    template_name = "about_me/about_me.html"
+
+
 class CategoryListView(ListView):
     model = models.Category
     template_name = "main/articles/category.html"
