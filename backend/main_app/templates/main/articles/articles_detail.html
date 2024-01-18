@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load static %}
 {% block description %}
     {{ object.preamble }}
 {% endblock description %}
@@ -14,14 +15,14 @@
             <div class="col-md-9  ">
                 <div itemscope itemtype="https://schema.org/Article" class="articles-detail">
                     {% autoescape off %}
-                        <h6 class="card-footer text-end">{{ object.created }}</h6>
+                        <h6 class="card-footer text-end" itemprop="datePublished">{{ object.created }}</h6>
                         <h1 class="card-title text-center" itemprop="headline name">{{ object.title }}</h1>
 
                         <h5 class="card-title text-center" itemprop="description">{{ object.preamble }}</h5>
                         {% if object.content %}
-                            <p itemprop="articleBody">
-                                {{ object.content }}
-                            </p>
+
+                                <div itemprop="articleBody">{{ object.content }}</div>
+
                         {% endif %}
                     {% endautoescape %}
                     <div class="text-end">
@@ -41,8 +42,18 @@
                 </div>
 
             </div>
+
             {% include 'tools/menu_category.html' %}
         </div>
+    </div>
+    <div itemprop="publisher" itemscope itemtype="https://schema.org/Organization">
+        <div itemprop="logo" itemscope itemtype="https://schema.org/ImageObject">
+            <img itemprop="url image" src="{% static 'img/logo' %}" alt="logo" title="logo"
+                 style="display:none;"/>
+        </div>
+        <meta itemprop="name" content="https://fokin.fun/">
+        <meta itemprop="telephone" content="">
+        <meta itemprop="address" content="Россия">
     </div>
 
 {% endblock %}
