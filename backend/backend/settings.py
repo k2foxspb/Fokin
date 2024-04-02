@@ -44,7 +44,7 @@ INSTALLED_APPS = [
     "authapp.apps.AuthappConfig",
     "ckeditor",
     "ckeditor_uploader",
-    'csvapp'
+
 ]
 
 MIDDLEWARE = [
