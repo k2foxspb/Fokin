@@ -15,7 +15,6 @@ import environ
 
 env = environ.Env(DEBUG=(bool, False))
 
-
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 environ.Env.read_env(os.path.join(BASE_DIR, ".env"))
@@ -42,9 +41,10 @@ INSTALLED_APPS = [
     "main_app.apps.MainAppConfig",
     "crispy_forms",
     "crispy_bootstrap5",
-    "authapp",
+    "authapp.apps.AuthappConfig",
     "ckeditor",
     "ckeditor_uploader",
+    'csvapp'
 ]
 
 MIDDLEWARE = [
@@ -153,7 +153,6 @@ EMAIL_HOST_PASSWORD = "DeY3r48aSNGXsFH4Auiq"
 EMAIL_PORT = 465
 EMAIL_USE_TLS = True
 EMAIL_USE_SSL = False
-
 
 CKEDITOR_UPLOAD_PATH = "uploads/"
 
@@ -270,13 +269,13 @@ CKEDITOR_CONFIGS = {
             },
         ],
         "toolbar": "YourCustomToolbarConfig",  # put selected toolbar config here
-        # 'toolbarGroups': [{ 'name': 'document', 'groups': [ 'mode', 'document', 'doctools' ] }],
-        # 'height': 291,
-        # 'width': '100%',
-        # 'filebrowserWindowHeight': 725,
-        # 'filebrowserWindowWidth': 940,
-        # 'toolbarCanCollapse': True,
-        # 'mathJaxLib': '//cdn.mathjax.org/mathjax/2.2-latest/MathJax.js?config=TeX-AMS_HTML',
+        'toolbarGroups': [{ 'name': 'document', 'groups': [ 'mode', 'document', 'doctools' ] }],
+        'height': 291,
+        'width': '100%',
+        'filebrowserWindowHeight': 725,
+        'filebrowserWindowWidth': 940,
+        'toolbarCanCollapse': True,
+        'mathJaxLib': '//cdn.mathjax.org/mathjax/2.2-latest/MathJax.js?config=TeX-AMS_HTML',
         "tabSpaces": 4,
         "extraPlugins": ",".join(
             [
