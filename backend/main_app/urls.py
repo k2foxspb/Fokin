@@ -15,7 +15,7 @@ app_name = MainAppConfig.name
 
 urlpatterns = [
     path('', Main.as_view(), name='main'),
-    # path('about/', About_me.as_view(), name='about'),
+    path('about/', About_me.as_view(), name='about'),
     # path('category/<slug:slug>/', CategoryDetailView.as_view(), name='category_detail'),
     # path('home/', CategoryListView.as_view(), name='main_category'),
     # path("article/create/", ArticleCreateView.as_view(), name="article_create"),
