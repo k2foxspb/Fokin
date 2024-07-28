@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     "authapp.apps.AuthappConfig",
     "ckeditor",
     "ckeditor_uploader",
+    "django.contrib.sites",  # проверка пароля
 
 ]
 
@@ -300,3 +301,5 @@ CKEDITOR_CONFIGS = {
     }
 }
 CKEDITOR_IMAGE_BACKEND = 'pillow'
+
+SITE_ID = 1
