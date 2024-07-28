@@ -151,6 +151,7 @@ class ResetPasswordView(SuccessMessageMixin, PasswordResetView):
 
 
 class ResetPasswordConfirmView(SuccessMessageMixin, PasswordResetConfirmView):
+
     success_url = reverse_lazy('authapp:password_reset_complete')
 
 
