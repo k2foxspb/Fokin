@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     "crispy_bootstrap5",
     "authapp.apps.AuthappConfig",
     'django_ckeditor_5',
+    "django.contrib.sites",  # проверка пароля
 
 ]
 
