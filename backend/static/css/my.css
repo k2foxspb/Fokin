@@ -92,7 +92,6 @@
 
 .my-prgm {
     justify-content: center;
-    display: flex;
-    
+    display: flex;   
     align-items: center;
 }
