@@ -16,7 +16,7 @@ def users_avatars_path(instance, filename):
     return f"user_{instance.username}/avatars/pic_{num}{suf}"
 
 
-class CustomUser(PermissionsMixin, AbstractBaseUser):
+class CustomUser(AbstractBaseUser, PermissionsMixin):
     username_validator = ASCIIUsernameValidator()
 
     username = models.CharField(
@@ -25,7 +25,7 @@ class CustomUser(PermissionsMixin, AbstractBaseUser):
         unique=True,
         help_text="не более 35 символов. Только буквы, цифры и @/./+/-/_.",
         validators=[username_validator],
-        error_messages={"Пользователь с таким именем уже существует"},
+        error_messages={KeyError: "Пользователь с таким именем уже существует"},
     )
     first_name = models.CharField("Имя", max_length=150, blank=True)
     last_name = models.CharField("Фамилия", max_length=150, blank=True)
@@ -38,7 +38,7 @@ class CustomUser(PermissionsMixin, AbstractBaseUser):
         max_length=256,
         unique=True,
         error_messages={
-            "Пользователь с таким адресом электронной почты уже существует.",
+            KeyError: "Пользователь с таким адресом электронной почты уже существует.",
         },
     )
     is_staff = models.BooleanField(
