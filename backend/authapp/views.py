@@ -138,10 +138,10 @@ class ProfileEditView(UserPassesTestMixin, UpdateView):
 
 
 class ResetPasswordView(SuccessMessageMixin, PasswordResetView):
-    template_name = 'registration/Password_reset.html'
+    template_name = 'registration/password_res.html'
     
-    email_template_name = 'registration/Password_reset_mail.html'
-    subject_template_name = 'registration/Password_reset_subject.txt'
+    email_template_name = 'registration/password_reset_mail.html'
+    subject_template_name = 'registration/password_reset_subject.txt'
     success_message = "Мы отправили вам по электронной почте инструкции по установке пароля," \
                       "если существует учетная запись с указанным вами адресом электронной почты." \
                       "Вы должны получить их в ближайшее время." \
