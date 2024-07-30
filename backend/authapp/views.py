@@ -153,7 +153,7 @@ class ResetPasswordView(SuccessMessageMixin, PasswordResetView):
 
 class ResetPasswordConfirmView(SuccessMessageMixin, PasswordResetConfirmView):
     template_name = 'registration/password_reset_conf.html'
-    success_url = reverse_lazy('authapp:Password_reset_comp')
+    success_url = reverse_lazy('authapp:password_reset_comp')
 
 
 class PrivacyPolicyView(TemplateView):
