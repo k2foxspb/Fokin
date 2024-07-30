@@ -26,7 +26,7 @@ urlpatterns = [
          name='password_reset_confirm'),
     path('password-reset-complete/',
          PasswordResetCompleteView.as_view(),
-         name='password_reset_complete'),
+         name='password_reset_comp'),
     path('email-confirmation-sent/', EmailConfirmationSendView.as_view(), name="email_confirmation_sent"),
     path('confirm-email/<str:uidb64>/<str:token>/', ConfirmEmailView.as_view(), name='conf_email'),
     path('confirm-email-failed/', EmailConfirmationFailedView.as_view(), name='fail_email'),
