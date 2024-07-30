@@ -22,7 +22,7 @@ urlpatterns = [
     
     path('password-reset/', ResetPasswordView.as_view(), name='password_reset'),
     path('password-reset-confirm/<uidb64>/<token>/',
-         ResetPasswordConfirmView.as_view(template_name='registration/password_reset_confirm.html'),
+         ResetPasswordConfirmView.as_view(),
          name='password_reset_confirm'),
     path('password-reset-complete/',
          PasswordResetCompleteView.as_view(),

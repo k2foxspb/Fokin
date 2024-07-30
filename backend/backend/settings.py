@@ -248,3 +248,5 @@ CKEDITOR_5_CONFIGS = {
     }
 }
 CKEDITOR_IMAGE_BACKEND = 'pillow'
+
+SITE_ID = 1
