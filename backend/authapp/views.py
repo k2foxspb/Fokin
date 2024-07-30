@@ -42,7 +42,7 @@ class RegisterView(CreateView):
         send_mail(
             'Подтвердите свой электронный адрес',
             f'Пожалуйста перейдите по ссылке https://{current_site}{activation_url}',
-            'sudexpert2023@mail.ru',
+            'k2foxspb@mail.ru',
             [user.email],
             fail_silently=False,
 
@@ -71,7 +71,7 @@ class ProfileEditView(UserPassesTestMixin, UpdateView):
         send_mail(
             'Подтвердите свой электронный адрес',
             f'Пожалуйста перейдите по ссылке https://{current_site}{activation_url}',
-            'sudexpert2023@mail.ru',
+            'k2foxspb@mail.ru',
             [user.email],
             fail_silently=False,
 
@@ -138,9 +138,10 @@ class ProfileEditView(UserPassesTestMixin, UpdateView):
 
 
 class ResetPasswordView(SuccessMessageMixin, PasswordResetView):
-    template_name = 'registration/password_reset.html'
-    email_template_name = 'registration/password_reset_email.html'
-    subject_template_name = 'registration/password_reset_subject.txt'
+    template_name = 'registration/Password_reset.html'
+    
+    email_template_name = 'registration/Password_reset_mail.html'
+    subject_template_name = 'registration/Password_reset_subject.txt'
     success_message = "Мы отправили вам по электронной почте инструкции по установке пароля," \
                       "если существует учетная запись с указанным вами адресом электронной почты." \
                       "Вы должны получить их в ближайшее время." \
@@ -151,8 +152,8 @@ class ResetPasswordView(SuccessMessageMixin, PasswordResetView):
 
 
 class ResetPasswordConfirmView(SuccessMessageMixin, PasswordResetConfirmView):
-
-    success_url = reverse_lazy('authapp:password_reset_complete')
+    template_name = 'registration/password_reset_conf.html'
+    success_url = reverse_lazy('authapp:Password_reset_comp')
 
 
 class PrivacyPolicyView(TemplateView):

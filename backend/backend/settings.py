@@ -152,10 +152,11 @@ AUTHENTICATION_BACKENDS = ["authapp.backend.UserModelBackend"]
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 EMAIL_HOST = "smtp.mail.ru"
 EMAIL_HOST_USER = "k2foxspb@mail.ru"
-EMAIL_HOST_PASSWORD = "DeY3r48aSNGXsFH4Auiq"
+EMAIL_HOST_PASSWORD = "z2jZcMNeQ0Ww15xMcQsw"
 EMAIL_PORT = 465
-EMAIL_USE_TLS = True
-EMAIL_USE_SSL = False
+EMAIL_USE_TLS = False
+EMAIL_USE_SSL = True
+DEFAULT_FROM_EMAIL = 'k2foxspb@mail.ru'
 
 CKEDITOR_UPLOAD_PATH = "uploads/"
 
@@ -303,3 +304,6 @@ CKEDITOR_CONFIGS = {
 CKEDITOR_IMAGE_BACKEND = 'pillow'
 
 SITE_ID = 1
+
+
+
