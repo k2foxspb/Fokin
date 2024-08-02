@@ -32,4 +32,6 @@ urlpatterns = [
     path('confirm-email-failed/', EmailConfirmationFailedView.as_view(), name='fail_email'),
     path('privacy-policy', PrivacyPolicyView.as_view(), name="privacy_policy"),
     path('email-confirmed', EmailConfirmedView.as_view(), name="email_confirmed"),
-]
+    path('privacy-policy', PrivacyPolicyView.as_view(), name="privacy_policy"),
+
+]       
