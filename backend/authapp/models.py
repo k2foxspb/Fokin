@@ -26,7 +26,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         unique=True,
         help_text="не более 35 символов. Только буквы, цифры и @/./+/-/_.",
         validators=[username_validator],
-        error_messages={KeyError: "Пользователь с таким именем уже существует"},
+        error_messages={'error': "Пользователь с таким именем уже существует"},
     )
     first_name = models.CharField("Имя", max_length=150, blank=True)
     last_name = models.CharField("Фамилия", max_length=150, blank=True)
@@ -39,7 +39,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         max_length=256,
         unique=True,
         error_messages={
-            KeyError: "Пользователь с таким адресом электронной почты уже существует.",
+            'error': "Пользователь с таким адресом электронной почты уже существует.",
         },
     )
     is_staff = models.BooleanField(
@@ -58,7 +58,6 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     objects = UserManager()
     USERNAME_FIELD = "email"
     EMAIL_FIELD = "email"
-    REQUIRED_FIELDS = ["username"]
 
     class Meta:
         verbose_name = "Пользователь"
