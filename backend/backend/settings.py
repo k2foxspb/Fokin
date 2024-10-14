@@ -302,4 +302,4 @@ CKEDITOR_IMAGE_BACKEND = 'pillow'
 
 SITE_ID = 1
 
-MESSAGE_STORAGE = "django.contrib.messages.storage.cookie.CookieStorage"
+MESSAGE_STORAGE = "django.contrib.messages.storage.session.SessionStorage"
