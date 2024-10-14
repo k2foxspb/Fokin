@@ -19,12 +19,39 @@
             class=" text-white " style="background-color: #000000"
         {% endblock %}>
 
-{% include 'yandex.html' %}
-{% block navbar %}
-    {% include 'navbar.html' %}
-{% endblock %}
-{% block content %}{% endblock %}
-<script src="{% static 'js/bootstrap.bundle.js' %}"></script>
-{% block js %} {% endblock %}
+<div class="centered" style="text-align: center">
+    {% if messages %}
+        {% for message in messages %}
+            <div class="toast-container bottom-0 end-0 container-sm">
+            <div class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+                <div class="toast-body">
+                    See? Just like this.
+                </div>
+            </div>
+            </div>
+
+        {% endfor %}
+    {% endif %}
+    </div>
+
+    {% include 'yandex.html' %}
+    {% block navbar %}
+        {% include 'navbar.html' %}
+    {% endblock %}
+    {% block content %}{% endblock %}
+    <script src="{% static 'js/bootstrap.bundle.js' %}"></script>
+    <script src="{% static 'js/jquery-3.6.0.min.js' %}"></script>
+    <script>
+        $(document).ready(function () {
+
+            {% if messages %}
+                // Toasts
+                $(".toast").toast({delay: 10000});
+                $(".toast").toast("show");
+            {% endif %}
+
+        });
+    </script>
+    {% block js %} {% endblock %}
 </body>
 </html>
