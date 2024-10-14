@@ -3,40 +3,43 @@
 {% block title %}авторизоваться{% endblock %}
 {% block description %}авторизоваться{% endblock %}
 {% block content %}
+    <div class="row justify-content-around align-items-center " style="height: 100vh; margin: 0px">
+        <div class="text-center" style="max-width: 500px">
+            <p>
+                <a href="{% url 'main:main_category' %}"><img src="{% static "img/logo/logo_white_text.png" %}"
+                                                              style="width: 300px" alt=""></a>
+            </p>
+            <h2>Вход пользователя</h2>
+            <form method="POST">
 
-<div class="row justify-content-around align-items-center " style="height: 100vh; margin: 0px">
-    <div class="text-center" style="max-width: 500px">
-        <p>
-            <a href="{% url 'main:main_category' %}"><img src="{% static "img/logo/logo_white_text.png"%}" style="width: 300px" alt=""></a>
-       </p>
-        <h2>Вход пользователя</h2>
-        <form method="POST">
+                {% csrf_token %}
+                <p>
+                    <label for="id_username"></label><input type="text" name="username" autofocus=""
+                                                            autocapitalize="none"
+                                                            autocomplete="username"
+                                                            maxlength="150" class="form-control"
+                                                            required="" id="id_username"
+                                                            placeholder="логин или email" style="text-align: center">
+                </p>
+                <p>
+                    <label for="id_password"></label><input type="password" name="password"
+                                                            autocomplete="current-password"
+                                                            class="form-control" required=""
+                                                            id="id_password" placeholder="Пароль"
+                                                            style="text-align: center">
+                </p>
+                <p>
+                    <button type="submit" class="btn my-btn">Войти</button>
+                </p>
+            </form>
+            <p>
+            <div class="row justify-content-between">
+                <div class="col">
+                    <a href="{% url 'auth:register' %}"><small>Регистрация</small></a><br>
+                    {#                <a href="#"><small>Восстановление пароля</small></a>#}
+                </div>
 
-            {% csrf_token %}
-            <p>
-                <label for="id_username" ></label><input  type="text" name="username" autofocus="" autocapitalize="none"
-                                                        autocomplete="username"
-                                                        maxlength="150" class="form-control"
-                                                        required="" id="id_username"
-                                                        placeholder="логин или email" style="text-align: center">
-            </p>
-            <p>
-                <label for="id_password"></label><input type="password" name="password" autocomplete="current-password"
-                                                        class="form-control" required=""
-                                                        id="id_password" placeholder="Пароль" style="text-align: center">
-            </p>
-            <p>
-                <button type="submit" class="btn my-btn">Войти</button>
-            </p>
-        </form>
-        <p>
-        <div class="row justify-content-between">
-            <div class="col">
-                <a href="{% url 'auth:register' %}"><small>Регистрация</small></a><br>
-{#                <a href="#"><small>Восстановление пароля</small></a>#}
             </div>
-
         </div>
     </div>
-</div>
 {% endblock content %}
