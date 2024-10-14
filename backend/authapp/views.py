@@ -1,7 +1,6 @@
 from django.contrib.auth import get_user_model, login
 from django.contrib.auth.mixins import UserPassesTestMixin
 from django.contrib.auth.views import LoginView, PasswordResetView, PasswordResetConfirmView
-from django.shortcuts import render
 from django.urls import reverse_lazy
 from django.views.generic import CreateView, UpdateView, View, TemplateView
 
@@ -15,15 +14,16 @@ from django.contrib.sites.models import Site
 from django.contrib.messages.views import SuccessMessageMixin
 
 
-class CustomLoginView(LoginView):
+class CustomLoginView(SuccessMessageMixin, LoginView):
     template_name = "login.html"
+    success_message = 'хуй'
 
-
-class RegisterView(CreateView):
+class RegisterView(CreateView, ):
     model = get_user_model()
     form_class = forms.CustomUserCreationForm
     success_url = reverse_lazy("main:main_category")
     template_name = "customuser_form.html"
+
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
