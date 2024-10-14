@@ -80,19 +80,16 @@ WSGI_APPLICATION = "backend.wsgi.application"
 
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
-
+# if DEBUG:
+#     DATABASES = {
+#         "default": env.db_url(
+#             "SQLITE_URL",
+#             default="sqlite:////tmp/my-local-sqlite.db"),
+#     }
+# else:
 DATABASES = {
-    # read os.environ['DATABASE_URL'] and raises
-    # ImproperlyConfigured exception if not found
-    #
-    # The db() method is an alias for db_url().
     "default": env.db(),
-    # read os.environ['SQLITE_URL']
-    "extra": env.db_url(
-        "SQLITE_URL",
-        default="sqlite:////tmp/db.sqlite3"),
 }
-
 # Password validation
 # https://docs.djangoproject.com/en/4.2/ref/settings/#auth-password-validators
 
@@ -273,7 +270,7 @@ CKEDITOR_CONFIGS = {
             },
         ],
         "toolbar": "YourCustomToolbarConfig",  # put selected toolbar config here
-        'toolbarGroups': [{ 'name': 'document', 'groups': [ 'mode', 'document', 'doctools' ] }],
+        'toolbarGroups': [{'name': 'document', 'groups': ['mode', 'document', 'doctools']}],
         'height': 291,
         'width': '100%',
         'filebrowserWindowHeight': 725,
@@ -305,5 +302,4 @@ CKEDITOR_IMAGE_BACKEND = 'pillow'
 
 SITE_ID = 1
 
-
-
+MESSAGE_STORAGE = "django.contrib.messages.storage.cookie.CookieStorage"
