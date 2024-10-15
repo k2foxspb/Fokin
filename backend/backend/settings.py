@@ -78,15 +78,6 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "backend.wsgi.application"
 
-# Database
-# https://docs.djangoproject.com/en/4.2/ref/settings/#databases
-# if DEBUG:
-#     DATABASES = {
-#         "default": env.db_url(
-#             "SQLITE_URL",
-#             default="sqlite:////tmp/my-local-sqlite.db"),
-#     }
-# else:
 DATABASES = {
     "default": env.db(),
 }
