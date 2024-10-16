@@ -45,6 +45,8 @@ INSTALLED_APPS = [
     "ckeditor",
     "ckeditor_uploader",
     "django.contrib.sites",  # проверка пароля
+    'easy_thumbnails',
+    'filer',
 
 ]
 
@@ -294,3 +296,14 @@ CKEDITOR_IMAGE_BACKEND = 'pillow'
 SITE_ID = 1
 
 MESSAGE_STORAGE = "django.contrib.messages.storage.session.SessionStorage"
+
+
+THUMBNAIL_PROCESSORS = (
+    'easy_thumbnails.processors.colorspace',
+    'easy_thumbnails.processors.autocrop',
+    #'easy_thumbnails.processors.scale_and_crop',
+    'filer.thumbnail_processors.scale_and_crop_with_subject_location',
+    'easy_thumbnails.processors.filters',
+)
+
+FILER_CANONICAL_URL = 'file/'
