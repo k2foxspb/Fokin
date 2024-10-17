@@ -21,9 +21,6 @@ from main_app import models
 #         return super().get_queryset().filter(status='pu')
 
 
-class Main(TemplateView):
-    template_name = "main/main.html"
-
 
 class About_me(TemplateView):
     template_name = "about_me/about_me.html"
