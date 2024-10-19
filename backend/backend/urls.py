@@ -21,6 +21,7 @@ from backend import settings
 from django.conf.urls.static import static
 
 urlpatterns = [
+    path('ckeditor5/', include('django_ckeditor_5.urls')),
     path('filer/', include('filer.urls')),
     path('ckeditor/', include('ckeditor_uploader.urls')),
     path('admin/', admin.site.urls),
