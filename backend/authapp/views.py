@@ -144,3 +144,66 @@ class ResetPasswordConfirmView(SuccessMessageMixin, PasswordResetConfirmView):
 
 class PrivacyPolicyView(TemplateView):
     template_name = 'registration/Privacy_Policy.html'
+
+User = get_user_model()
+
+class ConfirmEmailView(View):
+    def get(self, request, uidb64, token, *args, **kwargs):
+        try:
+            uid = urlsafe_base64_decode(uidb64)
+            user = User.objects.get(pk=uid)
+        except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+            user = None
+        if user is not None and default_token_generator.check_token(user, token):
+            user.is_active = True
+            user.save()
+            login(request, user)
+            return redirect('authapp:email_confirmed')
+        else:
+            return redirect('authapp:fail_email')
+
+class EmailConfirmationSendView(TemplateView):
+    template_name = 'registration/email_confirmation_sent.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['title'] = 'Письмо отправлено'
+        return context
+
+
+class EmailConfirmedView(TemplateView):
+    template_name = 'registration/email_confirmed.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['title'] = 'Ваш электронный адрес активирован'
+        return context
+
+
+class EmailConfirmationFailedView(TemplateView):
+    template_name = 'registration/email_confirmation_failed.html'
+
+
+
+
+class ResetPasswordView(SuccessMessageMixin, PasswordResetView):
+    template_name = 'registration/password_res.html'
+
+    email_template_name = 'registration/passwd_reset_mail.html'
+    subject_template_name = 'registration/password_reset_subj.txt'
+    success_message = "Мы отправили вам по электронной почте инструкции по установке пароля," \
+                      "если существует учетная запись с указанным вами адресом электронной почты." \
+                      "Вы должны получить их в ближайшее время." \
+                      " Если вы не получили электронное письмо," \
+                      "Пожалуйста, убедитесь, что вы ввели адрес, под которым зарегистрировались," \
+                      "и проверьте папку со спамом"
+    success_url = reverse_lazy('authapp:login')
+
+
+class ResetPasswordConfirmView(SuccessMessageMixin, PasswordResetConfirmView):
+    template_name = 'registration/password_reset_conf.html'
+    success_url = reverse_lazy('authapp:password_reset_comp')
+
+
+class PrivacyPolicyView(TemplateView):
+    template_name = 'registration/Privacy_Policy.html'
