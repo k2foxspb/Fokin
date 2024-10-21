@@ -1,11 +1,12 @@
 from pathlib import Path
 from time import time
 
-from ckeditor_uploader.fields import RichTextUploadingField
 
-from ckeditor_uploader.widgets import CKEditorUploadingWidget
+
+
 from django.db import models
 from django.urls import reverse
+from django_ckeditor_5.fields import CKEditor5Field
 
 from main_app.services.utils import unique_slugify
 
@@ -22,13 +23,13 @@ STATUS_CHOICES = [("del", "Delete"), ("pu", "Published"), ("wi", "Withdrawn")]
 
 
 class Article(models.Model):
-    widget = CKEditorUploadingWidget()
+
     title = models.CharField(max_length=256, unique=True, verbose_name="Заголовок")
-    preamble = models.CharField(max_length=1024, verbose_name="Преамбула")
+    preamble = CKEditor5Field(max_length=1024, config_name='list', verbose_name="Преамбула")
     category = models.ForeignKey(
         "Category", on_delete=models.CASCADE, verbose_name="Категория", default=None
     )
-    content = RichTextUploadingField(blank=True)
+    content = CKEditor5Field(blank=True, config_name='extends')
     created = models.DateTimeField(
         auto_now_add=True, verbose_name="Создано", editable=False
     )

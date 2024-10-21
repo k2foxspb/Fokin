@@ -15,7 +15,7 @@ def make_published(modeladmin, request, queryset):
 @admin.register(models.Article)
 class ArticleAdmin(admin.ModelAdmin):
     list_display = ['title', 'created', 'status']
-    search_fields = ['body']
+    search_fields = ['title']
     actions = [make_published, make_deleted]
 
 
