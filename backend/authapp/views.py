@@ -1,7 +1,9 @@
+from django.contrib import messages
 from django.contrib.auth import get_user_model, login
 from django.contrib.auth.mixins import UserPassesTestMixin
-from django.contrib.auth.views import LoginView, PasswordResetView, PasswordResetConfirmView
+from django.contrib.auth.views import LoginView, PasswordResetView, PasswordResetConfirmView, LogoutView
 from django.urls import reverse_lazy
+from django.utils.safestring import mark_safe
 from django.views.generic import CreateView, UpdateView, View, TemplateView
 
 from django.contrib.auth.tokens import default_token_generator
@@ -16,20 +18,45 @@ from django.contrib.messages.views import SuccessMessageMixin
 
 class CustomLoginView(SuccessMessageMixin, LoginView):
     template_name = "login.html"
-    success_message = 'хуй'
 
-class RegisterView(CreateView, ):
+    def form_valid(self, form):
+        ret = super().form_valid(form)
+        message = "Успешный вход!<br>Привет, %(username)s" % {
+            "username": self.request.user.get_full_name()
+            if self.request.user.get_full_name()
+            else self.request.user.get_username()
+        }
+        messages.add_message(self.request, messages.INFO, mark_safe(f'{message}'))
+        return ret
+
+    def form_invalid(self, form):
+        for _unused, msg in form.error_messages.items():
+            messages.add_message(
+                self.request,
+                messages.WARNING,
+                mark_safe(f"{msg}"),
+            )
+        return self.render_to_response(self.get_context_data(form=form))
+
+
+class CustomLogoutView(LogoutView):
+
+    def dispatch(self, request, *args, **kwargs):
+        messages.add_message(self.request, messages.INFO, "ещё увидимся!)")
+        return super().dispatch(request, *args)
+
+
+class RegisterView(CreateView):
     model = get_user_model()
     form_class = forms.CustomUserCreationForm
     success_url = reverse_lazy("main:main_category")
     template_name = "customuser_form.html"
 
-    
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['title'] = 'Регистрация на сайте'
         return context
-    
+
     def form_valid(self, form):
         # form.send_email()
         user = form.save(commit=False)
@@ -58,7 +85,7 @@ class ProfileEditView(UserPassesTestMixin, UpdateView):
 
     def test_func(self):
         return True if self.request.user.pk == self.kwargs.get("pk") else False
-    
+
     def form_valid(self, form):
         # form.send_email()
         user = form.save(commit=False)
@@ -84,6 +111,7 @@ class ProfileEditView(UserPassesTestMixin, UpdateView):
 
 User = get_user_model()
 
+
 class ConfirmEmailView(View):
     def get(self, request, uidb64, token, *args, **kwargs):
         try:
@@ -98,7 +126,8 @@ class ConfirmEmailView(View):
             return redirect('authapp:email_confirmed')
         else:
             return redirect('authapp:fail_email')
-        
+
+
 class EmailConfirmationSendView(TemplateView):
     template_name = 'registration/email_confirmation_sent.html'
 
@@ -121,11 +150,9 @@ class EmailConfirmationFailedView(TemplateView):
     template_name = 'registration/email_confirmation_failed.html'
 
 
-
-
 class ResetPasswordView(SuccessMessageMixin, PasswordResetView):
     template_name = 'registration/password_res.html'
-    
+
     email_template_name = 'registration/passwd_reset_mail.html'
     subject_template_name = 'registration/password_reset_subj.txt'
     success_message = "Мы отправили вам по электронной почте инструкции по установке пароля," \
