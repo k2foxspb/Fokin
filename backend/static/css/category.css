@@ -1,0 +1,89 @@
+
+
+.vertmenu ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.vertmenu ul li {
+    position: relative;
+    margin: 0;
+    line-height: 30px;
+    text-transform: uppercase;
+}
+
+
+.vertmenu .subCat, .chka {
+    top: 0;
+    left: 0;
+    position: absolute;
+    cursor: pointer;
+}
+
+.vertmenu .subCat.plus,
+.chka:before,
+.vertmenu .subCat.minus,
+.subCat:checked + .chka:before {
+    content: '+';
+    font-size: 36px;
+    color: #ffffff;
+    font-weight: bold;
+    font-family: Courier;
+}
+
+.vertmenu .subCat.minus, .subCat:checked + .chka:before {
+    content: '-';
+    color: #ffffff;
+}
+
+.vertmenu a {
+    color: #fdfdfd;
+    font-size: 20px;
+    font-weight: bold;
+    text-decoration: none;
+}
+
+.vertmenu ul li li a {
+    color: #ffffff;
+    font-size: 20px;
+    font-weight: normal;
+    text-decoration: none;
+}
+
+.vertmenu a.active {
+    color: #011526;
+}
+
+.vertmenu a:hover {
+    text-decoration: none;
+    color: #bf1111 !important;
+}
+
+.vertmenu > ul > li ul {
+    display: none;
+}
+
+.vertmenu > ul > li a.active + span + ul {
+    display: block !important;
+}
+
+.vertmenu > ul > li .subCat:checked ~ ul {
+    display: block !important;
+}
+
+.vertmenu input[type=checkbox].subCat {
+    display: none;
+}
+
+.vertmenu ul li li a:before {
+    content: '\203A';
+    font-size: 0px;
+    padding-right: 6px;
+    color: #e30606;
+    font-weight: bold;
+}
+
+.vertmenu > ul li li a:hover:before {
+    color: #1266B1;
+}
