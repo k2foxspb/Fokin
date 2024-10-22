@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     "django.contrib.sites",  # проверка пароля
     'easy_thumbnails',
     'filer',
+    'chatapp.apps.ChatappConfig',
 
 ]
 
