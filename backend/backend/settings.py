@@ -150,10 +150,7 @@ DEFAULT_FROM_EMAIL = 'k2foxspb@mail.ru'
 
 CKEDITOR_UPLOAD_PATH = "uploads/"
 
-CSTATIC_URL = '/static/'
-MEDIA_URL = '/media/'
-MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
-
+STATIC_URL = '/static/'
 customColorPalette = [
     {
         'color': 'hsl(4, 90%, 58%)',
