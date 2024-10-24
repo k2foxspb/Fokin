@@ -26,17 +26,6 @@
                         {% endif %}
                     {% endautoescape %}
                     <div class="text-end">
-                        {% if perms.exp.change_news %}
-                            <a class="btn my-btn" href="{% url 'main:article_update'  slug=object.slug %}">
-                                редактировать
-                            </a>
-                        {% endif %}
-                        {% if perms.exp.delete_news %}
-                            <a class="btn my-btn" href="{% url 'main:article_delete'  slug=object.slug %}">
-                                удалить
-                            </a>
-                        {% endif %}
-
                         <a href="{% url 'main:main_category' %}" class="btn my-btn">Назад</a>
                         <div itemprop="publisher" itemscope itemtype="https://schema.org/Organization">
                             <div itemprop="logo" itemscope itemtype="https://schema.org/ImageObject">
