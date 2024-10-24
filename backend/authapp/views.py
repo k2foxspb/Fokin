@@ -84,12 +84,12 @@ class ProfileEditView(UserPassesTestMixin, UpdateView):
     success_url = reverse_lazy("main:main_category")
 
     def test_func(self):
+        # Функция защиты личных данных
         return True if self.request.user.pk == self.kwargs.get("pk") else False
 
     def form_valid(self, form):
-        # form.send_email()
         user = form.save(commit=False)
-        user.is_active = False
+        user.is_active = True
         user.save()
         token = default_token_generator.make_token(user)
         uid = urlsafe_base64_encode(force_bytes(user.pk))
@@ -104,9 +104,6 @@ class ProfileEditView(UserPassesTestMixin, UpdateView):
 
         )
         return redirect('authapp:email_confirmation_sent')
-
-    # def get_success_url(self):
-    #     return reverse_lazy("authapp:profile_edit", args=[self.request.user.pk])
 
 
 User = get_user_model()
