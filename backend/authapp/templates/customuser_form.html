@@ -4,7 +4,7 @@
 {% load static %}
 
 
-{% thumbnail obj.img 200x300 crop upscale subject_location=obj.img.subject_location %}
+
 {% block title %}Форма{% endblock %}
 {% block description %}Форма CRUD{% endblock %}
 {% block content %}
@@ -20,7 +20,8 @@
                         {% if user.avatar %}
                             <img class="img-thumbnail img-fluid " src="{{ user.avatar.url }}" alt="">
                         {% else %}
-                            <img class="img-thumbnail img-fluid" src="#" alt="" style="width: 200px; height: 200px; border-radius:100px">
+                            <img class="img-thumbnail img-fluid" src="#" alt=""
+                                 style="width: 200px; height: 200px; border-radius:100px">
                         {% endif %}
                     </div>
                 </div>
@@ -29,7 +30,8 @@
             <form method="post" class="mt-2 cole" enctype="multipart/form-data">
                 {% csrf_token %}
                 {{ form|crispy }}
-                <a href="{% url "authapp:privacy_policy" %}">Нажимая кнопку "Зарегистрироваться" я подтвержаю, что ознакомился с политикой конфиденциальности</a><br>
+                <a href="{% url "authapp:privacy_policy" %}">Нажимая кнопку "Зарегистрироваться" я подтвержаю, что
+                    ознакомился с политикой конфиденциальности</a><br>
                 <button type="submit" class="btn btn-primary btn-block">
                     {% if user.is_anonymous %}
                         Зарегистрироваться

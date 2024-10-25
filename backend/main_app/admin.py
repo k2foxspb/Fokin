@@ -17,6 +17,7 @@ class ArticleAdmin(admin.ModelAdmin):
     list_display = ['title', 'created', 'status']
     search_fields = ['title']
     actions = [make_published, make_deleted]
+    fields = ['title', 'preamble', 'category', 'content']
 
 
 @admin.register(models.Category)
