@@ -32,6 +32,7 @@ ALLOWED_HOSTS = env.list("ALLOWED_HOSTS")
 # Application definition
 
 INSTALLED_APPS = [
+    "daphne",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -47,7 +48,7 @@ INSTALLED_APPS = [
     "django.contrib.sites",  # проверка пароля
     'easy_thumbnails',
     'filer',
-    'chatapp.apps.ChatappConfig',
+    'chatapp',
 
 ]
 
@@ -80,9 +81,31 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "backend.wsgi.application"
+ASGI_APPLICATION = 'backend.asgi.application'
 
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            "hosts": [('127.0.0.1', 6379)],
+        },
+    },
+}
+
+# DATABASES = {
+#     "default": env.db(),
+#     'TEST': {
+#         'NAME': os.path.join(BASE_DIR, 'db_test.sqlite3')
+#     }
+# }
 DATABASES = {
-    "default": env.db(),
+    'default': {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': os.path.join(BASE_DIR, 'db.sqlite3'),
+        'TEST': {
+            'NAME': os.path.join(BASE_DIR, 'db_test.sqlite3')
+        }
+    }
 }
 # Password validation
 # https://docs.djangoproject.com/en/4.2/ref/settings/#auth-password-validators
@@ -260,3 +283,4 @@ THUMBNAIL_PROCESSORS = (
 )
 
 FILER_CANONICAL_URL = 'file/'
+ASGI_APPLICATION = 'backend.asgi.application'
