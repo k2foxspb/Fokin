@@ -1,27 +1,27 @@
-<!-- chat/templates/chat/index.html -->
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8"/>
-    <title>Chat Rooms</title>
-</head>
-<body>
-    What chat room would you like to enter?<br>
-    <input id="room-name-input" type="text" size="100"><br>
-    <input id="room-name-submit" type="button" value="Enter">
+{% extends 'base.html' %}
+{% load static %}
 
-    <script>
-        document.querySelector('#room-name-input').focus();
-        document.querySelector('#room-name-input').onkeyup = function(e) {
-            if (e.keyCode === 13) {  // enter, return
-                document.querySelector('#room-name-submit').click();
-            }
-        };
-
-        document.querySelector('#room-name-submit').onclick = function(e) {
-            var roomName = document.querySelector('#room-name-input').value;
-            window.location.pathname = '/chat/' + roomName + '/';
-        };
-    </script>
-</body>
-</html>
+{% block content %}
+        <div class="container mt-3 p-5">
+            <h2>Комнаты чатов</h2>
+            <div class="row">
+                <div class="col-12 col-md-6">
+                    <div class="mb-2">
+                        <label for="roomInput">Enter a room name to connect to it:</label>
+                        <input type="text" class="form-control" id="roomInput" placeholder="Room name">
+                        <small id="roomInputHelp" class="form-text text-muted">If the room doesn't exist yet, it will be created for you.</small>
+                    </div>
+                    <button type="button" id="roomConnect" class="btn btn-success">Connect</button>
+                </div>
+                <div class="col-12 col-md-6">
+                    <label for="roomSelect">Active rooms</label>
+                    <select multiple class="form-control" id="roomSelect">
+                        {% for room in rooms %}
+                            <option>{{ room }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+        </div>
+        <script src="{% static 'js/channels-messages/index.js' %}"></script>
+{% endblock %}

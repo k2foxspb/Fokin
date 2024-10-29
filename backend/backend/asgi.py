@@ -17,12 +17,10 @@ import chatapp.routing
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'backend.settings')
 
 application = ProtocolTypeRouter({
-    "http": get_asgi_application(),
-    "websocket":  AllowedHostsOriginValidator(
-        AuthMiddlewareStack(
+  'http': get_asgi_application(),
+  'websocket': AuthMiddlewareStack(
         URLRouter(
             chatapp.routing.websocket_urlpatterns
         )
-    ))
-    # Just HTTP for now. (We can add other protocols later.)
+    ),
 })
