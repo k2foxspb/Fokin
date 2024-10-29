@@ -1,18 +1,20 @@
+from django.contrib.auth.models import Permission
 from django.shortcuts import render
-
-# Create your views here.
-from django.shortcuts import render
-
-from django.shortcuts import render
+from django.views.generic import ListView, DetailView
 
 from chatapp.models import Room
 
 
-def index_view(request):
-    return render(request, 'index.html', {
-        'rooms': Room.objects.all(),
-    })
 
+class IndexView(ListView, Permission):
+    model = Room
+    template_name = 'index.html'
+
+# class RoomDetailView(DetailView):
+#     def get_context_data(self, **kwargs):
+#         context = super().get_context_data(**kwargs)
+#         chat_room, created = Room.objects.get_or_create(name=kwargs.room_name)
+#         context['chat_room'] = chat_room
 
 def room_view(request, room_name):
     chat_room, created = Room.objects.get_or_create(name=room_name)

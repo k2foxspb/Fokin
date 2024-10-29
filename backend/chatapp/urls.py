@@ -1,10 +1,10 @@
 from django.urls import path
 
-from . import views
 from .apps import ChatappConfig
+from .views import IndexView, room_view
 
 app_name = ChatappConfig.name
 urlpatterns = [
-    path('', views.index_view, name='chat-index'),
-    path('<str:room_name>/', views.room_view, name='chat-room'),
+    path('', IndexView.as_view(), name='chat-index'),
+    path('<slug:room_name>/', room_view, name='chat-room'),
 ]
