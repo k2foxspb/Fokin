@@ -1,0 +1,37 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+        <div class="container mt-3 p-5">
+            <h2>Комната: {{ room.name }}</h2>
+
+            <h6>!!! Чтобы отправить личное сообщение, нажмите на имя человека</h6>
+
+            <div class="row">
+                <div class="col-12 col-md-8">
+                    <div class="mb-2">
+
+                        <label for="chatLog"></label><textarea style="height: 500px" class="form-control " id="chatLog" readonly>{% for content in room.get_message %}{{ content.user.username }} {{ content.timestamp|date:'H:i' }}:&#10 &nbsp &nbsp &nbsp &nbsp &nbsp{{ content.content }}&#10{% endfor %}</textarea>
+
+                    </div>
+                    {% if user.is_authenticated %}
+                    <div class="input-group">
+                        <label for="chatMessageInput"></label><input type="text" class="form-control" id="chatMessageInput" placeholder="Enter your chat message">
+                        <div class="input-group-append">
+                            <button class="my-btn" id="chatMessageSend" type="button">Send</button>
+                        </div>
+                    </div>
+                    {% else %}
+                        <h6>Войдите в аккаунт, что бы написать сообщение</h6>
+                    {% endif %}
+                </div>
+                <div class="col-12 col-md-4">
+                    <label for="onlineUsers">Online users</label>
+                    <label for="onlineUsersSelector"></label><select style="height: 500px;" multiple class="form-control" id="onlineUsersSelector">
+                    </select>
+                </div>
+            </div>
+            {{ room.name|json_script:"roomName" }}
+        </div>
+        <script src="{% static 'js/channels-messages/room.js' %}"></script>
+{% endblock %}

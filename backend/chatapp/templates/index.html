@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+    <div class="container-md">
+        <h2 style="text-align: center">Комнаты чатов</h2>
+
+
+        <div class="articles">
+            {% for room in room_list %}
+                <p>
+                <a class="my-hov" href="{% url 'chat:chat-room' room_name=room.slug %}">{{ room }}</a>
+                </p>
+            {% endfor %}
+        </div>
+    </div>
+{% endblock %}
