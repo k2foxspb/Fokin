@@ -26,7 +26,8 @@ class Room(models.Model):
         return self.message_set.filter(timestamp__month__gt=2).all()
 
     def __str__(self):
-        return f'{self.name} ({self.get_online_count()})'
+
+        return f'{self.name} ({self.get_online_count()} online)'
 
     def save(self, *args, **kwargs):
         """

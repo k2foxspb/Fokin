@@ -24,9 +24,6 @@
                     <li class="nav-item dropdown">
                         <a class="nav-link my-navbar"
                            href="{% url 'auth:profile_edit' pk=user.pk %}">{{ user.username }}</a>
-                        <ul class="dropdown-menu">
-                    <li><a class="nav-link my-navbar" href="{% url 'auth:logout' %}">Выход</a></li>
-                        </ul>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link my-navbar" href="{% url 'auth:logout' %}">Выход</a>
@@ -34,6 +31,9 @@
                 {% endif %}
                 <li class="nav-item">
                     <a class="nav-link my-navbar" href="{% url 'main:about' %}">Контакты</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link my-navbar" href="{% url 'chat:chat-index' %}">Комнаты чатов</a>
                 </li>
 
 

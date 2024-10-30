@@ -64,7 +64,8 @@ function connect() {
 
         switch (data.type) {
             case "chat_message":
-                chatLog.value += data.user + ": " + data.message + "\n";
+                let now = new Date();
+                chatLog.value += data.user + ' ' + now.getHours() + ':' + now.getMinutes() + ": " + '\n' + '          '  + data.message + "\n";
                 break;
             case "user_list":
                 for (let i = 0; i < data.users.length; i++) {

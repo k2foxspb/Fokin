@@ -2,26 +2,16 @@
 {% load static %}
 
 {% block content %}
-        <div class="container mt-3 p-5">
-            <h2>Комнаты чатов</h2>
-            <div class="row">
-                <div class="col-12 col-md-6">
-                    <div class="mb-2">
-                        <label for="roomInput">Enter a room name to connect to it:</label>
-                        <input type="text" class="form-control" id="roomInput" placeholder="Room name">
-                        <small id="roomInputHelp" class="form-text text-muted">If the room doesn't exist yet, it will be created for you.</small>
-                    </div>
-                    <button type="button" id="roomConnect" class="btn btn-success">Connect</button>
-                </div>
-                <div class="col-12 col-md-6">
-                    <label for="roomSelect">Active rooms</label>
-                    <select multiple class="form-control" id="roomSelect">
-                        {% for room in rooms %}
-                            <option>{{ room }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-            </div>
+    <div class="container-md">
+        <h2 style="text-align: center">Комнаты чатов</h2>
+
+
+        <div class="articles">
+            {% for room in room_list %}
+                <p>
+                <a class="my-hov" href="{% url 'chat:chat-room' room_name=room.slug %}">{{ room }}</a>
+                </p>
+            {% endfor %}
         </div>
-        <script src="{% static 'js/channels-messages/index.js' %}"></script>
+    </div>
 {% endblock %}
