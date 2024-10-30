@@ -49,8 +49,7 @@ INSTALLED_APPS = [
     'easy_thumbnails',
     'filer',
     'chatapp',
-    'asgi_redis',
-    'asgiref.'
+
 
 ]
 
