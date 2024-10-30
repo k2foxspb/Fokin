@@ -88,3 +88,6 @@
 .my-text {
     color: #ffffff;
 }
+.ck.ck-editor {
+    color: black !important;
+}
