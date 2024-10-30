@@ -87,8 +87,8 @@ CHANNEL_LAYERS = {
     'default': {
         'BACKEND': 'channels_redis.core.RedisChannelLayer',
         'CONFIG': {
-            "hosts": [('127.0.0.1', 6379)],
-        },
+            "hosts": [("redis-channel-1", 6379), ("redis-channel-2", 6379)],
+        },"ROUTING": "backend.routing.channel_routing",
     },
 }
 
