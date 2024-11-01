@@ -5,11 +5,21 @@ from pytils.translit import slugify
 from authapp.models import CustomUser
 from django.db import models
 
+def unique_slugify(instance, slug):
+    """
+    Генератор уникальных SLUG для моделей, в случае существования такого SLUG.
+    """
+    model = instance.__class__
+    unique_slug = slugify(slug)
+    while model.objects.filter(slug=unique_slug).exists():
+        unique_slug = f'{unique_slug}-{uuid4().hex[:8]}'
+    return unique_slug
+
 
 class Room(models.Model):
-    name = models.CharField(max_length=128)
-    online = models.ManyToManyField(to=CustomUser, blank=True)
-    slug = models.SlugField(max_length=128, unique=True, blank=True)
+    name = models.CharField(max_length=128, verbose_name='Название комнаты')
+    online = models.ManyToManyField(to=CustomUser, blank=True, null=True)
+    slug = models.CharField(verbose_name="URL-адрес", max_length=128)
 
     def get_online_count(self):
         return self.online.count()
@@ -45,12 +55,4 @@ class Message(models.Model):
     def __str__(self):
         return f'{self.user.username}: {self.content} [{self.timestamp.time()}]'
 
-def unique_slugify(instance, slug):
-    """
-    Генератор уникальных SLUG для моделей, в случае существования такого SLUG.
-    """
-    model = instance.__class__
-    unique_slug = slugify(slug)
-    while model.objects.filter(slug=unique_slug).exists():
-        unique_slug = f'{unique_slug}-{uuid4().hex[:8]}'
-    return unique_slug
+

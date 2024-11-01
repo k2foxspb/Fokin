@@ -17,7 +17,8 @@ class IndexView(ListView, Permission):
 #         context['chat_room'] = chat_room
 
 def room_view(request, room_name):
-    chat_room, created = Room.objects.get_or_create(name=room_name)
+    chat_room = Room.objects.get(name=room_name)
+    print(type(room_name))
     return render(request, 'room.html', {
         'room': chat_room,
     })
