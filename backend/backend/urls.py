@@ -23,7 +23,7 @@ from django.conf.urls.static import static
 urlpatterns = [
     path('filer/', include('filer.urls')),
     path("ckeditor5/", include('django_ckeditor_5.urls')),
-
+    path('comments/', include('django_comments.urls')),
     path('admin/', admin.site.urls),
     path('', include('main_app.urls', namespace='main')),
     path('authentication/', include('authapp.urls', namespace='auth')),

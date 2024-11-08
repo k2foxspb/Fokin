@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 {% load static %}
+{% load comments %}
 {% block description %}
     {{ object.preamble }}
 {% endblock description %}
@@ -38,8 +39,41 @@
                         </div>
                     </div>
                 </div>
+                {% get_comment_count for article as comment_count %}
+                <p>количество комментариев: {{ comment_count }} </p>
+
+                <div>
+
+                    {% get_comment_list for article as comment_list %}
+                    {% for comment in comment_list %}
+                        <div class=" card shadow comments">
+                            <p class="margin-left">{{ comment.user_name }} </p>
+                            <p class="margin-left">{{ comment.comment }}</p>
+                            <p class="del-update margin-left">{{ comment.submit_date }}</p>
+                        </div>
+                    {% endfor %}
+
+                </div>
+
+                {% if user.is_authenticated %}
+                    {% get_comment_form for article as form %}
+                    <form action="{% comment_form_target %}" method="POST">
+                        {% csrf_token %}
+                        {{ form.comment }}
+                        {{ form.honeypot }}
+                        {{ form.content_type }}
+                        {{ form.object_pk }}
+                        {{ form.timestamp }}
+                        {{ form.security_hash }}
+                        <input type="hidden" name="next" value="{% url 'main:article_detail' article.slug %}"/>
+                        <input type="submit" value="Add comment" id="id_submit"/>
+                    </form>
+                {% else %}
+                    <p>Please <a href="{% url 'auth_login' %}">log in</a> to leave a comment.</p>
+                {% endif %}
 
             </div>
+
 
             {% include 'tools/menu_category.html' %}
         </div>
