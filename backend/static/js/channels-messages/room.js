@@ -1,24 +1,29 @@
-console.log("Sanity check from room.js.");
+// console.log("Sanity check from room.js.");
 
 const roomName = JSON.parse(document.getElementById('roomName').textContent);
 
-let chatLog = document.querySelector("#chatLog");
 let chatMessageInput = document.querySelector("#chatMessageInput");
 let chatMessageSend = document.querySelector("#chatMessageSend");
 let onlineUsersSelector = document.querySelector("#onlineUsersSelector");
+let myDiv = document.querySelector('#mydiv')
+let myDivMess;
+let myName;
+let myMessage;
+let myDate
 
 // adds a new option to 'onlineUsersSelector'
 function onlineUsersSelectorAdd(value) {
-    if (document.querySelector("option[value='" + value + "']")) return;
-    let newOption = document.createElement("option");
-    newOption.value = value;
+
+    let newOption = document.createElement("div");
+    newOption.textContent = value;
+    newOption.id = 'user_id_' + value
     newOption.innerHTML = value;
     onlineUsersSelector.appendChild(newOption);
 }
 
 // removes an option from 'onlineUsersSelector'
 function onlineUsersSelectorRemove(value) {
-    let oldOption = document.querySelector("option[value='" + value + "']");
+    let oldOption = document.querySelector("#user_id_"+ value);
     if (oldOption !== null) oldOption.remove();
 }
 
@@ -65,26 +70,43 @@ function connect() {
         switch (data.type) {
             case "chat_message":
                 let now = new Date();
-                chatLog.value += data.user + ' ' + now.getHours() + ':' + now.getMinutes() + ": " + '\n' + '          '  + data.message + "\n";
+                myDiv.appendChild( myDivMess = document.createElement('div'))
+                myDivMess.className += 'message'
+                myDivMess.appendChild( myName = document.createElement('div'))
+                myName.textContent +=  data.user + '\n';
+                myDivMess.appendChild( myMessage = document.createElement('div'))
+                myMessage.textContent += data.message
+                myDivMess.appendChild( myDate = document.createElement('div'))
+                myDate.className += 'date'
+                myDate.textContent += data.time
+
+                myDiv.scrollTop = myDiv.scrollHeight
+                chatMessageInput.focus();
                 break;
+
             case "user_list":
                 for (let i = 0; i < data.users.length; i++) {
-                    onlineUsersSelectorAdd(data.users[i]);
+                    onlineUsersSelectorAdd(data.user[i]);
                 }
                 break;
             case "user_join":
-                chatLog.value += data.user + " joined the room.\n";
+                myDiv.appendChild( myDivMess = document.createElement('div'))
+                myDivMess.className = 'joinedTheRoom'
+                myDivMess.textContent += data.user + " joined the room.\n";
+                myDiv.scrollTop = myDiv.scrollHeight
                 onlineUsersSelectorAdd(data.user);
                 break;
             case "user_leave":
-                chatLog.value += data.user + " left the room.\n";
+                myDiv.appendChild(myDivMess = document.createElement('div'))
+                myDivMess.className = 'joinedTheRoom'
+                myDivMess.textContent += data.user + " left the room.\n";
                 onlineUsersSelectorRemove(data.user);
                 break;
             case "private_message":
-                chatLog.value += "private_message from " + data.user + ": " + data.message + "\n";
+                chatLog.textContent += "private_message from " + data.user + ": " + data.message + "\n";
                 break;
             case "private_message_delivered":
-                chatLog.value += "private_message to " + data.target + ": " + data.message + "\n";
+                chatLog.textContent += "private_message to " + data.target + ": " + data.message + "\n";
                 break;
             default:
                 console.error("Unknown message type!");
@@ -92,7 +114,7 @@ function connect() {
         }
 
         // scroll 'chatLog' to the bottom
-        chatLog.scrollTop = chatLog.scrollHeight;
+        myDiv.scrollTop = myDiv.scrollHeight
     };
 
     chatSocket.onerror = function(err) {

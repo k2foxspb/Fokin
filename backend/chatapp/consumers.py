@@ -1,4 +1,5 @@
 import json
+from datetime import  datetime
 
 from asgiref.sync import async_to_sync
 from channels.generic.websocket import WebsocketConsumer
@@ -81,6 +82,7 @@ class ChatConsumer(WebsocketConsumer):
     def receive(self, text_data=None, bytes_data=None):
         text_data_json = json.loads(text_data)
         message = text_data_json['message']
+        print(text_data_json)
 
         if not self.user.is_authenticated:
             return
@@ -113,6 +115,7 @@ class ChatConsumer(WebsocketConsumer):
                 'type': 'chat_message',
                 'user': self.user.username,
                 'message': message,
+                'time': datetime.astimezone(datetime.now()).strftime('%d.%m.%Y, %H:%M:%S'),
             }
         )
         Message.objects.create(user=self.user, room=self.room, content=message)

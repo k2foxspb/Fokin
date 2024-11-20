@@ -91,3 +91,23 @@
 .ck.ck-editor {
     color: black !important;
 }
+
+.date {
+    text-align: right;
+    color: #abb1bf;
+}
+
+.mydiv {
+    height: 500px;
+    overflow-y: scroll;
+}
+.message {
+    border: 1px solid #670000;
+    border-radius: 10px;
+    padding: 7px;
+    margin: 5px;
+    background-color: rgb(81, 80, 80);
+}
+.joinedTheRoom {
+    text-align: center;
+}

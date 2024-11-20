@@ -1,3 +1,4 @@
+from datetime import datetime
 from uuid import uuid4
 
 from pytils.translit import slugify
@@ -18,7 +19,7 @@ def unique_slugify(instance, slug):
 
 class Room(models.Model):
     name = models.CharField(max_length=128, verbose_name='Название комнаты')
-    online = models.ManyToManyField(to=CustomUser, blank=True, null=True)
+    online = models.ManyToManyField(to=CustomUser)
     slug = models.CharField(verbose_name="URL-адрес", max_length=128)
 
     def get_online_count(self):
@@ -33,7 +34,7 @@ class Room(models.Model):
         self.save()
 
     def get_message(self):
-        return self.message_set.filter(timestamp__month__gt=2).all()
+        return self.message_set.filter(timestamp__month__gt=1).all()
 
     def __str__(self):
 
@@ -52,7 +53,15 @@ class Message(models.Model):
     content = models.CharField(max_length=512)
     timestamp = models.DateTimeField(auto_now_add=True)
 
+
+    def get_time_msg(self):
+        return self.timestamp.astimezone().strftime('%d.%m.%Y, %H:%M:%S')
+
+
     def __str__(self):
-        return f'{self.user.username}: {self.content} [{self.timestamp.time()}]'
+        return (f'{self.user.username}:'
+                f' {self.content}'
+                f' {self.get_time_msg()}')
+
 
 
