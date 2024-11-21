@@ -22,13 +22,13 @@
                     {% endfor %}
                 </div>
                 {% if user.is_authenticated %}
-                    <div class="input-group">
-                        <label for="chatMessageInput"></label><input type="text" class="form-control"
+                    <div style=" margin:10px 5px; text-align: center">
+                        <label for="chatMessageInput"></label><input type="text"
                                                                      id="chatMessageInput"
                                                                      placeholder="Enter your chat message">
-                        <div class="input-group-append">
+
                             <button class="my-btn" id="chatMessageSend" type="button">Send</button>
-                        </div>
+
                     </div>
                 {% else %}
                     <h6>Войдите в аккаунт, что бы написать сообщение</h6>

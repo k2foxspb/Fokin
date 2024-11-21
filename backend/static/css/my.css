@@ -70,7 +70,7 @@
     font-weight: 800;
 }
 
-.my-navbar:hover { 
+.my-navbar:hover {
     color: #670000;
     font-weight: 900;
 }
@@ -81,7 +81,7 @@
 
 .my-prgm {
     justify-content: center;
-    display: flex;   
+    display: flex;
     align-items: center;
 }
 
@@ -95,19 +95,35 @@
 .date {
     text-align: right;
     color: #abb1bf;
+    font-size: x-small;
 }
 
 .mydiv {
     height: 500px;
-    overflow-y: scroll;
+    overflow-y: auto;
+    scrollbar-color: #670000 #504d4d;
+    scrollbar-width: none;
 }
 .message {
     border: 1px solid #670000;
-    border-radius: 10px;
-    padding: 7px;
+    border-radius: 20px;
+    padding: 10px;
     margin: 5px;
     background-color: rgb(81, 80, 80);
+    font-size: small;
+
 }
 .joinedTheRoom {
     text-align: center;
+}
+input[type="text"] {
+    padding: 10px;
+    border-radius:10px;
+    border: 0 solid #880000;
+    margin:0 5px;
+    width:65%;
+
+}
+input[type="text"]:focus {
+  box-shadow:0 0 10px 5px rgb(136, 0, 0);
 }
