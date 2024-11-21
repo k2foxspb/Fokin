@@ -1,5 +1,6 @@
 import json
 from datetime import  datetime
+from pprint import pprint
 
 from asgiref.sync import async_to_sync
 from channels.generic.websocket import WebsocketConsumer
@@ -36,10 +37,10 @@ class ChatConsumer(WebsocketConsumer):
         # send the user list to the newly joined user
         self.send(json.dumps({
             'type': 'user_list',
-            'users': [user.username for user in self.room.online.all()],
+            'users': [user.username for user in self.room.online.all()]
         }))
 
-        if self.user.is_authenticated:
+        if self.user.is_authenticated and self.user not in self.room.online.all():
             # create a user inbox for private messages
             async_to_sync(self.channel_layer.group_add)(
                 self.user_inbox,
@@ -54,7 +55,7 @@ class ChatConsumer(WebsocketConsumer):
                     'user': self.user.username,
                 }
             )
-            self.room.online.add(self.user)
+            self.room.join(self.user)
 
     def disconnect(self, close_code):
         async_to_sync(self.channel_layer.group_discard)(
@@ -77,7 +78,7 @@ class ChatConsumer(WebsocketConsumer):
                     'user': self.user.username,
                 }
             )
-            self.room.online.remove(self.user)
+            self.room.leave(self.user)
 
     def receive(self, text_data=None, bytes_data=None):
         text_data_json = json.loads(text_data)

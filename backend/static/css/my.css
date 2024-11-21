@@ -122,8 +122,37 @@ input[type="text"] {
     border: 0 solid #880000;
     margin:0 5px;
     width:65%;
-
 }
 input[type="text"]:focus {
+  box-shadow:0 0 10px 5px rgb(136, 0, 0);
+}
+input[type="password"] {
+    padding: 10px;
+    border-radius:10px;
+    border: 0 solid #880000;
+    margin:0 5px;
+    width:65%;
+}
+input[type="password"]:focus {
+  box-shadow:0 0 10px 5px rgb(136, 0, 0);
+}
+input[type="number"] {
+    padding: 10px;
+    border-radius:10px;
+    border: 0 solid #880000;
+    margin:0 5px;
+    width:25%;
+}
+input[type="number"]:focus {
+  box-shadow:0 0 10px 5px rgb(136, 0, 0);
+}
+input[type="file"] {
+    padding: 10px;
+    border-radius:10px;
+    border: 0 solid #880000;
+    margin:0 5px;
+    width:65%;
+}
+input[type="file"]:focus {
   box-shadow:0 0 10px 5px rgb(136, 0, 0);
 }
