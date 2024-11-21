@@ -86,7 +86,7 @@ function connect() {
 
             case "user_list":
                 for (let i = 0; i < data.users.length; i++) {
-                    onlineUsersSelectorAdd(data.user[i]);
+                    onlineUsersSelectorAdd(data.users[i]);
                 }
                 break;
             case "user_join":
