@@ -3,13 +3,13 @@ from django.shortcuts import render
 from django.views.generic import ListView, DetailView
 
 from chatapp.models import Room
-from chatapp.telegram import send_message
+
 
 
 class IndexView(ListView, Permission):
     model = Room
     template_name = 'index.html'
-    send_message('ss')
+
 
 # class RoomDetailView(DetailView):
 #     def get_context_data(self, **kwargs):
