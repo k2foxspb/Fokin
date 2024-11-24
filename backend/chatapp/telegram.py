@@ -1,12 +1,25 @@
 import telebot
+from telebot import types
 
 token = '7013936598:AAG9HKVZoltQnDfoz0UAUJoziWOrgm-FhA0'
 
 bot = telebot.TeleBot('7013936598:AAG9HKVZoltQnDfoz0UAUJoziWOrgm-FhA0')
+
 # from telebot import types
-chat_id = 939130884
-send= 'help'
-bot.send_message(chat_id, send)
+def send_message(message):
+    chat_id = 939130884
+    bot.send_message(chat_id, message)
+
+
+# @bot.message_handler(commands=['start'])
+# def start_message(message):
+#     user_id = message.from_user.id
+#     markup = types.InlineKeyboardMarkup()
+#     button_yes = types.InlineKeyboardButton(text='Да', callback_data='yes')
+#     markup.add(button_yes)
+#     message = f'привет {message.from_user.first_name} '
+#     bot.send_message(user_id, message, reply_markup=markup)
+# bot.infinity_polling()
 # @botTimeWeb.message_handler(commands=['start'])
 # def startBot(message):
 #   first_mess = f"<b>{message.from_user.first_name} {message.from_user.last_name}</b>, привет!\nХочешь расскажу немного о нашей компании?"
