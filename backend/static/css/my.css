@@ -99,7 +99,7 @@
 }
 
 .mydiv {
-    height: 400px;
+    height: 70%;
     overflow-y: auto;
     scrollbar-color: #670000 #504d4d;
     scrollbar-width: none;
