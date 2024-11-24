@@ -121,11 +121,11 @@ class ChatConsumer(WebsocketConsumer):
             }
         )
         Message.objects.create(user=self.user, room=self.room, content=message)
-        # send_message(
-        #     f'name: {self.user}\n'
-        #     f'room: {self.room}\n'
-        #     f'msg: {message}'
-        # )
+        send_message(
+            f'name: {self.user}\n'
+            f'room: {self.room}\n'
+            f'msg: {message}'
+        )
 
     def chat_message(self, event):
         self.send(text_data=json.dumps(event))
