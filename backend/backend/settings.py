@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     'easy_thumbnails',
     'filer',
     'chatapp',
+    'callbackapp'
 
 
 ]

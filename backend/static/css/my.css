@@ -99,7 +99,7 @@
 }
 
 .mydiv {
-    height: 70%;
+    height: 300px;
     overflow-y: auto;
     scrollbar-color: #670000 #504d4d;
     scrollbar-width: none;
@@ -169,7 +169,7 @@ input[type="file"]:focus {
 .email-bt {
     background: #610505;
     border-radius: 50%;
-    box-shadow: 0 8px 10px rgba(249, 92, 24, 0.3);
+    box-shadow: 0 5px 1px rgb(120, 5, 5);
     cursor: pointer;
     border: 2px solid transparent;
     display: block;
@@ -182,7 +182,7 @@ input[type="file"]:focus {
     z-index: 999;
     transition: .3s ease-in-out;
     -webkit-animation: email-an linear 1s infinite;
-    animation: email-an linear 1s infinite;
+    animation: email-an linear 2s infinite;
 }
 
 .email-bt:hover {
@@ -200,7 +200,7 @@ input[type="file"]:focus {
 .email-bt .text-call:after {
     content: "\f1d8";
     display: block;
-    font-family: FontAwesome;
+    font-family: FontAwesome, serif;
 
     color: #fff;
     font-size: 34px;
@@ -277,3 +277,10 @@ input[type="file"]:focus {
 }
 
 /* конец кнопки звязи */
+
+.hiddenmsg {
+    display: none;
+}
+.hiddenmsg1 {
+    display: block
+}

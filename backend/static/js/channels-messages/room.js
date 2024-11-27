@@ -12,20 +12,8 @@ let myMessage;
 let myDate
 
 // adds a new option to 'onlineUsersSelector'
-function onlineUsersSelectorAdd(value) {
-
-    let newOption = document.createElement("div");
-    newOption.textContent = value;
-    newOption.id = 'user_id_' + value
-    newOption.innerHTML = value;
-    onlineUsersSelector.appendChild(newOption);
-}
 
 // removes an option from 'onlineUsersSelector'
-function onlineUsersSelectorRemove(value) {
-    let oldOption = document.querySelector("#user_id_"+ value);
-    if (oldOption !== null) oldOption.remove();
-}
 
 // focus 'chatMessageInput' when user opens the page
 chatMessageInput.focus();
@@ -49,7 +37,7 @@ chatMessageSend.onclick = function() {
 let chatSocket = null;
 
 function connect() {
-    chatSocket = new WebSocket("wss://" + window.location.host + "/wss/chat/" + roomName + "/");
+    chatSocket = new WebSocket("ws://" + window.location.host + "/ws/chat/" + roomName + "/");
     console.log(chatSocket)
     chatSocket.onopen = function(e) {
         console.log("Successfully connected to the WebSocket.");
