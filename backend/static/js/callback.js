@@ -1,18 +1,18 @@
 let callBack = document.querySelector('#callback')
 let callMsg = document.querySelector('#mess')
-let inputMsg = document.querySelector('#inputMsg')
 let myDiv = document.querySelector('#mydiv2')
 let chatMessageSend = document.querySelector("#chatMessageSenddd");
 let chatMessageInput = document.querySelector("#inputMsg");
 
 chatMessageSend.onclick = function () {
-        if (chatMessageInput.value.length === 0) return;
-        console.log('ушло')
-        chatSocket.send(JSON.stringify({
-            "message": chatMessageInput.value,
-        }));
-        chatMessageInput.value = "";
-    };
+    if (chatMessageInput.value.length === 0) return;
+    console.log('ушло')
+    chatSocket.send(JSON.stringify({
+        "message": chatMessageInput.value,
+    }));
+    chatMessageInput.value = "";
+};
+
 function connect() {
     chatSocket = new WebSocket('ws://' + window.location.host + '/ws');
     chatSocket.onopen = function (e) {
@@ -28,32 +28,28 @@ function connect() {
     };
 
     chatSocket.onmessage = function (event) {
-        let data = JSON.parse(event)
+        let date = JSON.parse(event.data)
         try {
-            console.log(event.data);
+            console.log(date);
         } catch (e) {
             console.log('Error:', e.message)
         }
     }
-    chatSocket.onerror = function(err) {
+    chatSocket.onerror = function (err) {
         console.log("WebSocket encountered an error: " + err.message);
         console.log("Closing the socket.");
         chatSocket.close();
     }
+
 }
 
 connect()
 
 
-
-
-
-
-
 callBack.onclick = function () {
     callBack.style.display = 'none';
     callMsg.style.display = 'block';
-    inputMsg.focus()
+    chatMessageInput.focus()
     myDiv.scrollTop = myDiv.scrollHeight
 }
 // клик не по элементу
