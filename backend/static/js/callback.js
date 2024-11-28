@@ -12,6 +12,13 @@ chatMessageSend.onclick = function () {
     chatMessageInput.value = "";
 };
 
+// submit if the user presses the enter key
+chatMessageInput.onkeyup = function(e) {
+    if (e.keyCode === 13) {  // enter key
+        chatMessageSend.click();
+    }
+};
+
 function connect() {
     chatSocket = new WebSocket('ws://' + window.location.host + '/ws');
     chatSocket.onopen = function (e) {
@@ -21,8 +28,7 @@ function connect() {
     chatSocket.onclose = function (e) {
         console.log("WebSocket connection closed unexpectedly. Trying to reconnect in 2s...");
         setTimeout(function () {
-            console.log("Reconnecting...");
-            connect();
+            alert('связь прервана')
         }, 2000);
     };
 

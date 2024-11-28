@@ -35,12 +35,6 @@ class MSGConsumer(WebsocketConsumer):
             self.channel_name,
         )
 
-        # send the user list to the newly joined user
-        self.send(json.dumps({
-            'type': 'user_list',
-            'users': 'sds'
-        }))
-
         if self.user.is_authenticated:
             # create a user inbox for private messages
             async_to_sync(self.channel_layer.group_add)(
@@ -83,23 +77,6 @@ class MSGConsumer(WebsocketConsumer):
             'target': 'f',
             'message': target_msg,
         }))
-
-        # send chat message event to the room
-        # async_to_sync(self.channel_layer.group_send)(
-        #     self.room_group_name,
-        #     {
-        #         'type': 'chat_message',
-        #         'user': self.user.username,
-        #         'message': message,
-        #         'time': datetime.astimezone(datetime.now()).strftime('%d.%m.%Y, %H:%M:%S'),
-        #     }
-        # )
-        # Message.objects.create(user=self.user, room=self.room, content=message)
-        # send_message(
-        #     f'name: {self.user}\n'
-        #     f'room: {self.room}\n'
-        #     f'msg: {message}'
-        # )
 
     def websocket_disconnect(self, event):
         print('disconnect')
