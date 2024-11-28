@@ -12,7 +12,20 @@ let myMessage;
 let myDate
 
 // adds a new option to 'onlineUsersSelector'
+function onlineUsersSelectorAdd(value) {
 
+    let newOption = document.createElement("div");
+    newOption.textContent = value;
+    newOption.id = 'user_id_' + value
+    newOption.innerHTML = value;
+    onlineUsersSelector.appendChild(newOption);
+}
+
+// removes an option from 'onlineUsersSelector'
+function onlineUsersSelectorRemove(value) {
+    let oldOption = document.querySelector("#user_id_"+ value);
+    if (oldOption !== null) oldOption.remove();
+}
 // removes an option from 'onlineUsersSelector'
 
 // focus 'chatMessageInput' when user opens the page
@@ -91,10 +104,27 @@ function connect() {
                 onlineUsersSelectorRemove(data.user);
                 break;
             case "private_message":
-                chatLog.textContent += "private_message from " + data.user + ": " + data.message + "\n";
+                myDiv.appendChild(myDivMess = document.createElement('div'))
+                myDivMess.className += 'message'
+                myDivMess.appendChild( myName = document.createElement('div'))
+                myName.textContent +=  data.user + '\n';
+                myDivMess.appendChild( myMessage = document.createElement('div'))
+                myMessage.textContent += "private_message from" + '   ' +data.user + '   ' + data.message
+                myDivMess.appendChild( myDate = document.createElement('div'))
+                myDate.className += 'date'
+                myDate.textContent += data.time
                 break;
             case "private_message_delivered":
-                chatLog.textContent += "private_message to " + data.target + ": " + data.message + "\n";
+                myDiv.appendChild(myDivMess = document.createElement('div'))
+                myDivMess.className += 'message'
+                myDivMess.appendChild( myName = document.createElement('div'))
+                myName.textContent +=  data.user + '\n';
+                myDivMess.appendChild( myMessage = document.createElement('div'))
+                myMessage.textContent += "private_message to" + data.target + data.message
+                myDivMess.appendChild( myDate = document.createElement('div'))
+                myDate.className += 'date'
+                myDate.textContent += data.time
+                myDiv.appendChild(myDivMess = document.createElement('div'))
                 break;
             default:
                 console.error("Unknown message type!");
