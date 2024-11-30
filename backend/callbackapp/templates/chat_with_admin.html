@@ -1,0 +1,61 @@
+{% load static message_tags %}
+{% get_msg as msg %}
+{% block css %}
+    <link rel="stylesheet" href="{% static 'css/chat_with_admin.css' %}">
+    <link rel="stylesheet" href="//maxcdn.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css">
+{% endblock %}
+
+{% if user.authenticated %}
+    <div id="callback" class="email-bt">
+        <div class="text-call">
+            <span>Обратная<br>связь</span>
+        </div>
+    </div>
+{% else %}
+    <div id="callback" class="email-bt">
+        <div class="text-call">
+            <span>Войдите в<br>акаунт</span>
+        </div>
+    </div>
+{% endif %}
+<div id="mess" style="right: 8%;
+    bottom: 18%;
+    z-index: 1;
+    position: fixed;" class=" hiddenmsg col-12 col-md-8">
+    <div id ='mydiv2' class="mydiv articles-detail">
+
+        {% for message in msg %}
+                <div class="message">
+                    {{ message.user.username }}<br>
+                    {{ message.content }} <br>
+                    <div class="date">
+                        {{ message.get_time_msg }}
+                    </div>
+                </div>
+
+        {% endfor %}
+
+    </div>
+    {% if user.is_authenticated %}
+        <div style=" margin:10px 5px; text-align: center">
+            <label for="chatMessageInputtt"></label>
+            <label for="inputMsg"></label>
+            <input type="text" id="inputMsg" placeholder="Enter your chat message">
+            <button class="my-btn" id="chatMessageSenddd" type="button">
+                Send
+            </button>
+        </div>
+    {% else %}
+        <h6>
+            <a href="{% url 'auth:login' %} " style="color: #670000">Войдите в аккаунт</a>, что бы написать сообщение
+        </h6>
+        <div style=" margin:10px 5px; text-align: center">
+            <label for="chatMessageInput"></label><input type="text"
+                                                         id="chatMessageInput"
+                                                         placeholder="Enter your chat message">
+
+            <button class="my-btn" id="chatMessageSend" type="button">Send</button>
+        </div>
+    {% endif %}
+</div>
+<script src="{% static 'js/callback.js' %}"></script>

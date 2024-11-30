@@ -3,102 +3,27 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    {% block css %}{% endblock %}
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="shortcut icon" type="image/x-icon" href="{% static 'img/logo/favicon.ico' %}"/>
-    <link rel="stylesheet" href="{% static 'css/bootstrap.css' %}">
-    <link rel="stylesheet" href="{% static 'css/my.css' %}">
-    <link rel="stylesheet" href="//maxcdn.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css">
+    {% include 'css_js.html' %}
+    {% block css %}{% endblock %}
     <title>{% block title %}заметки программиста{% endblock %}</title>
     <meta name="description" content='{% block description %}{% endblock %}'>
     <meta name="keywords"
           content='{% block keywords %}{% endblock keywords %}'/>
 </head>
 
-<body
-    {% block body %}
-        class=" text-white " style="background-repeat: no-repeat; background-size: cover; background-attachment: fixed; background-color: #000000; background-image: url({% static 'img/logo/bacground-darken.jpg' %})"
-    {% endblock %}>
+<body class="mybackground text-white"
+      style="background-image:
+              url({% static 'img/logo/bacground-darken.jpg' %})">
 
-<div class="toast-container bottom-0 end-0">
-    {% if messages %}
-        {% for message in messages %}
-            <div class="toast align-items-center" style="background: #670000" role="alert" aria-live="assertive" aria-atomic="true">
-                <div class="d-flex">
-                    <div class="toast-body" style="color: #f4f4f4">
-                        {{ message }}
-                    </div>
-                    <button type="button" class="btn-close me-2 m-auto" data-bs-dismiss="toast"
-                            aria-label="Close"></button>
-                </div>
-            </div>
-
-        {% endfor %}
-    {% endif %}
-</div>
-<div id="callback" class="email-bt">
-    <div class="text-call">
-        <span>Обратная<br>связь</span>
-    </div>
-</div>
-<div id="mess" style="right: 8%;
-    bottom: 18%;
-    z-index: 1;
-    position: fixed;" class=" hiddenmsg col-12 col-md-8">
-    <div id ='mydiv2' class="mydiv articles-detail">
-
-        {% for message in roomss %}
-                <div class="message">
-                    {{ message.user.username }}<br>
-                    {{ message.content }} <br>
-{#                    <div class="date">#}
-{#                        {{ message.get_time_msg }}#}
-{#                    </div>#}
-                </div>
-
-        {% endfor %}
-
-    </div>
-    {% if user.is_authenticated %}
-        <div style=" margin:10px 5px; text-align: center">
-            <label for="chatMessageInputtt"></label><label for="inputMsg"></label><input type="text"
-                                                                                         id="inputMsg"
-                                                                                         placeholder="Enter your chat message">
-
-            <button class="my-btn" id="chatMessageSenddd" type="button">Send</button>
-        </div>
-    {% else %}
-        <h6><a href="{% url 'auth:login' %} " style="color: #670000">Войдите в аккаунт</a>, что бы написать сообщение
-        </h6>
-        <div style=" margin:10px 5px; text-align: center">
-            <label for="chatMessageInput"></label><input type="text"
-                                                         id="chatMessageInput"
-                                                         placeholder="Enter your chat message">
-
-            <button class="my-btn" id="chatMessageSend" type="button">Send</button>
-        </div>
-    {% endif %}
-</div>
+{% include 'toast.html' %}
+{% include 'chat_with_admin.html' %}
 {% include 'yandex.html' %}
 {% block navbar %}
     {% include 'navbar.html' %}
 {% endblock %}
 {% block content %}{% endblock %}
-<script src="{% static 'js/bootstrap.bundle.js' %}"></script>
-<script src="{% static 'js/jquery-3.6.0.min.js' %}"></script>
-<script src="{% static 'js/callback.js' %}"></script>
-<script>
-    $(document).ready(function () {
-
-        {% if messages %}
-            // Toasts
-            $(".toast").toast({delay: 10000});
-            $(".toast").toast("show");
-        {% endif %}
-
-    });
-</script>
 {% block js %} {% endblock %}
 </body>
 </html>

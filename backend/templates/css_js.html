@@ -1,0 +1,15 @@
+{% load static %}
+
+
+{% block css %}
+    <link rel="shortcut icon" type="image/x-icon" href="{% static 'img/logo/favicon.ico' %}"/>
+    <link rel="stylesheet" href="{% static 'css/bootstrap.css' %}">
+    <link rel="stylesheet" href="{% static 'css/my.css' %}">
+    <link rel="stylesheet" href="{% static 'css/inputs.css' %}">
+{% endblock %}
+
+
+{% block js %}
+    <script src="{% static 'js/bootstrap.bundle.js' %}"></script>
+    <script src="{% static 'js/jquery-3.6.0.min.js' %}"></script>
+{% endblock %}

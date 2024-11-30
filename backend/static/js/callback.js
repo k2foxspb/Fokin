@@ -55,7 +55,7 @@ function connect() {
             case "user_join":
                 myDiv.appendChild(myDivMess = document.createElement('div'))
                 myDivMess.className = 'joinedTheRoom'
-                myDivMess.textContent += data.user + " joined the room.\n";
+                myDivMess.textContent += data.user + " joined the chat.\n";
                 myDiv.scrollTop = myDiv.scrollHeight
                 break;
             case "user_leave":

@@ -7,7 +7,7 @@ from authapp.models import CustomUser
 from asgiref.sync import async_to_sync
 from channels.generic.websocket import WebsocketConsumer
 
-from callbackapp.models import Message
+from callbackapp.models import Messages
 from chatapp.telegram import send_message
 
 
@@ -77,6 +77,7 @@ class MSGConsumer(WebsocketConsumer):
             'target': 'f',
             'message': target_msg,
         }))
+        Messages.objects.create(user=self.user, content=target_msg)
 
     def websocket_disconnect(self, event):
         print('disconnect')
