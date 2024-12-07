@@ -18,7 +18,9 @@
               url({% static 'img/logo/bacground-darken.jpg' %})">
 
 {% include 'toast.html' %}
+{% block chat_with_admin %}
 {% include 'chat_with_admin.html' %}
+{% endblock %}
 {% include 'yandex.html' %}
 {% block navbar %}
     {% include 'navbar.html' %}

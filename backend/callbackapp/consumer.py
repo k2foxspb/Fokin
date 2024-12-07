@@ -2,12 +2,11 @@ import json
 from datetime import datetime
 from pprint import pprint
 
-
 from authapp.models import CustomUser
 from asgiref.sync import async_to_sync
 from channels.generic.websocket import WebsocketConsumer
 
-from callbackapp.models import Messages
+from callbackapp.models import Messages, RoomAdmin
 from chatapp.telegram import send_message
 
 
@@ -21,12 +20,15 @@ class MSGConsumer(WebsocketConsumer):
         self.user = None
 
     def websocket_connect(self, event):
+        print(event)
         self.user = self.scope['user']
-        self.room = f'{self.user}_store'
-        self.room_group_name = 'chat'
-        self.user = self.scope['user']
-        self.user_inbox = f'inbox_{self.user.username}'
-        self.staff_user = CustomUser.objects.filter(is_staff='True')
+        self.staff_user = CustomUser.objects.filter(is_staff=True)
+        p, created = RoomAdmin.objects.get_or_create(name=f'chat_with_{self.user.username}')
+        if created is False:
+            self.room = RoomAdmin.objects.get(name=f'chat_with_{self.user.username}')
+        else:
+            self.room = RoomAdmin.objects.create(name=f'chat_with_{self.user.username}')
+        self.room_group_name = self.room.name
         self.accept()
 
         # join the room group
@@ -34,22 +36,15 @@ class MSGConsumer(WebsocketConsumer):
             self.room_group_name,
             self.channel_name,
         )
-
-        if self.user.is_authenticated:
-            # create a user inbox for private messages
-            async_to_sync(self.channel_layer.group_add)(
-                self.user_inbox,
-                self.channel_name,
-            )
-
-            # send the join event to the room
-            async_to_sync(self.channel_layer.group_send)(
-                self.room_group_name,
-                {
-                    'type': 'user_join',
-                    'user': self.user.username,
-                }
-            )
+        # send the join event to the room
+        async_to_sync(self.channel_layer.group_send)(
+            self.room_group_name,
+            {
+                'type': 'user_join',
+                'user': self.user.username,
+                'staff': self.user.is_staff,
+            }
+        )
 
     def receive(self, text_data=None, bytes_data=None):
         text_data_json = json.loads(text_data)
@@ -77,7 +72,8 @@ class MSGConsumer(WebsocketConsumer):
             'target': 'f',
             'message': target_msg,
         }))
-        Messages.objects.create(user=self.user, content=target_msg)
+
+        Messages.objects.create(user=self.user, room=self.room, content=target_msg)
 
     def websocket_disconnect(self, event):
         print('disconnect')

@@ -3,7 +3,9 @@ let callMsg = document.querySelector('#mess')
 let myDiv = document.querySelector('#mydiv2')
 let chatMessageSend = document.querySelector("#chatMessageSenddd");
 let chatMessageInput = document.querySelector("#inputMsg");
+let roomClient = document.querySelector('#roomClient')
 
+console.log(roomClient.value)
 chatMessageSend.onclick = function () {
     if (chatMessageInput.value.length === 0) return;
     chatSocket.send(JSON.stringify({
@@ -11,6 +13,7 @@ chatMessageSend.onclick = function () {
     }));
     chatMessageInput.value = "";
 };
+
 
 // submit if the user presses the enter key
 chatMessageInput.onkeyup = function(e) {
