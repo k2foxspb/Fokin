@@ -6,7 +6,7 @@ from django.urls import reverse
 
 from users.forms import UserLoginForm, CustomerRegistrationForm, RestaurantAdminRegistrationForm,CourierRegistrationForm
 
-from users.models import CustomUser
+from users.models import CustomUserr
 
 from carts.models import Cart
 

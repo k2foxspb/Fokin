@@ -1,7 +1,7 @@
 from django import forms
 from django.contrib.auth.forms import AuthenticationForm, UserCreationForm
 
-from users.models import CustomUser
+from users.models import CustomUserr
 
 
 class UserLoginForm(AuthenticationForm):
@@ -9,7 +9,7 @@ class UserLoginForm(AuthenticationForm):
     password = forms.CharField()
 
     class Meta:
-        model = CustomUser
+        model = CustomUserr
         fields = ['username', 'password']
 
 class CustomerRegistrationForm(UserCreationForm):
@@ -22,7 +22,7 @@ class CustomerRegistrationForm(UserCreationForm):
     password2 = forms.CharField()
 
     class Meta:
-        model = CustomUser
+        model = CustomUserr
         fields = ['first_name',
                   'last_name',
                   'username',
@@ -40,7 +40,7 @@ class CustomerRegistrationForm(UserCreationForm):
 
 class RestaurantAdminRegistrationForm(UserCreationForm):
     class Meta:
-        model = CustomUser
+        model = CustomUserr
         fields = ['username', 'password1', 'password2']
 
     def save(self, commit=True):
@@ -53,7 +53,7 @@ class RestaurantAdminRegistrationForm(UserCreationForm):
 
 class CourierRegistrationForm(UserCreationForm):
     class Meta:
-        model = CustomUser
+        model = CustomUserr
         fields = ['first_name',
                   'last_name',
                   'username',

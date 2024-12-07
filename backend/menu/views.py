@@ -1,6 +1,5 @@
 from django.shortcuts import render, get_object_or_404
 
-from restaurans.models import Restaurans
 from menu.models import Dish
 
 from menu.models import Categories
@@ -8,8 +7,7 @@ from menu.models import Categories
 
 # Create your views here.
 def menu(request, restaurant_slug):
-    restaurant = get_object_or_404(Restaurans, slug=restaurant_slug)
-    dishes = Dish.objects.filter(restaurant=restaurant)
+    dishes = Dish.objects.all()
     categories = Categories.objects.filter(dish__in=dishes).distinct()
     dishes_by_category = {}
 
@@ -18,8 +16,7 @@ def menu(request, restaurant_slug):
         dishes_by_category[category] = dishes_in_category
 
     context = {
-        "title": restaurant.name,
-        'restaurant' : restaurant,
+        "dishes": dishes,
         'categories': categories,
         'dishes_by_category': dishes_by_category,
 

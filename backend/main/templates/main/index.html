@@ -176,86 +176,86 @@
     </div>
 </section>
 -->
-<section class="collections-sect">
+{#<section class="collections-sect">#}
 
-    <h2>Подборки</h2>
-    <div class="promotions">
-        <div class="card">
-            <div class="card-overlay"></div>
-            <img src="{% static 'images/dish2.jpg' %}" alt="Завтрак" class="card-img">
-            <div class="card-content">
-                <h4>Завтраки</h4>
-            </div>
-        </div>
-        <div class="card">
-            <div class="card-overlay"></div>
-            <img src="{% static 'images/dish3.jpg' %}" alt="Завтрак" class="card-img">
-            <div class="card-content">
-                <h4>Завтраки</h4>
-            </div>
-        </div>
-
-        <div class="card">
-            <div class="card-overlay"></div>
-            <img src="{% static 'images/dish4.jpg' %}" alt="Завтрак" class="card-img">
-            <div class="card-content">
-                <h4>Завтраки</h4>
-            </div>
-        </div>
-
-        <div class="card">
-            <div class="card-overlay"></div>
-            <img src="{% static 'images/dish5.jpg' %}" alt="Завтрак" class="card-img">
-            <div class="card-content">
-                <h4>Завтраки</h4>
-            </div>
-        </div>
-
-        <div class="card">
-            <div class="card-overlay"></div>
-            <img src="{% static 'images/dish5.jpg' %}" alt="Завтрак" class="card-img">
-            <div class="card-content">
-                <h4>Завтраки</h4>
-            </div>
-        </div>
-
-        <div class="card">
-            <div class="card-overlay"></div>
-            <img src="{% static 'images/dish2.jpg' %}" alt="Завтрак" class="card-img">
-            <div class="card-content">
-                <h4>Завтраки</h4>
-            </div>
-        </div>
-
-        <div class="card">
-            <div class="card-overlay"></div>
-            <img src="{% static 'images/dish1.jpg' %}" alt="Завтрак" class="card-img">
-            <div class="card-content">
-                <h4>Завтраки</h4>
-            </div>
-        </div>
-
-        <div class="card">
-            <div class="card-overlay"></div>
-            <img src="{% static 'images/dish4.jpg' %}" alt="Завтрак" class="card-img">
-            <div class="card-content">
-                <h4>Завтраки</h4>
-            </div>
-        </div>
-
-    </div>
-</section>
-
-</div>
-
-</div>
+{#    <h2>Подборки</h2>#}
+{#    <div class="promotions">#}
+{#        <div class="card">#}
+{#            <div class="card-overlay"></div>#}
+{#            <img src="{% static 'images/dish2.jpg' %}" alt="Завтрак" class="card-img">#}
+{#            <div class="card-content">#}
+{#                <h4>Завтраки</h4>#}
+{#            </div>#}
+{#        </div>#}
+{#        <div class="card">#}
+{#            <div class="card-overlay"></div>#}
+{#            <img src="{% static 'images/dish3.jpg' %}" alt="Завтрак" class="card-img">#}
+{#            <div class="card-content">#}
+{#                <h4>Завтраки</h4>#}
+{#            </div>#}
+{#        </div>#}
+{##}
+{#        <div class="card">#}
+{#            <div class="card-overlay"></div>#}
+{#            <img src="{% static 'images/dish4.jpg' %}" alt="Завтрак" class="card-img">#}
+{#            <div class="card-content">#}
+{#                <h4>Завтраки</h4>#}
+{#            </div>#}
+{#        </div>#}
+{##}
+{#        <div class="card">#}
+{#            <div class="card-overlay"></div>#}
+{#            <img src="{% static 'images/dish5.jpg' %}" alt="Завтрак" class="card-img">#}
+{#            <div class="card-content">#}
+{#                <h4>Завтраки</h4>#}
+{#            </div>#}
+{#        </div>#}
+{##}
+{#        <div class="card">#}
+{#            <div class="card-overlay"></div>#}
+{#            <img src="{% static 'images/dish5.jpg' %}" alt="Завтрак" class="card-img">#}
+{#            <div class="card-content">#}
+{#                <h4>Завтраки</h4>#}
+{#            </div>#}
+{#        </div>#}
+{##}
+{#        <div class="card">#}
+{#            <div class="card-overlay"></div>#}
+{#            <img src="{% static 'images/dish2.jpg' %}" alt="Завтрак" class="card-img">#}
+{#            <div class="card-content">#}
+{#                <h4>Завтраки</h4>#}
+{#            </div>#}
+{#        </div>#}
+{##}
+{#        <div class="card">#}
+{#            <div class="card-overlay"></div>#}
+{#            <img src="{% static 'images/dish1.jpg' %}" alt="Завтрак" class="card-img">#}
+{#            <div class="card-content">#}
+{#                <h4>Завтраки</h4>#}
+{#            </div>#}
+{#        </div>#}
+{##}
+{#        <div class="card">#}
+{#            <div class="card-overlay"></div>#}
+{#            <img src="{% static 'images/dish4.jpg' %}" alt="Завтрак" class="card-img">#}
+{#            <div class="card-content">#}
+{#                <h4>Завтраки</h4>#}
+{#            </div>#}
+{#        </div>#}
+{##}
+{#    </div>#}
+{#</section>#}
+{##}
+{#</div>#}
+{##}
+{#</div>#}
 
 <section class="restaurans">
 
     <div class="rest-sect-title">
         <h2>Рестораны</h2>
         <div class="filters">
-            <a class="active" href="{% url 'main:filter_restaurants' 'all' %}">Все</a>
+            <a class="active" href="#">Все</a>
             {% for category in sliced_categories %}
             <a href="{% url 'main:filter_restaurants' category.slug %}">{{ category.name }}</a>
             {% endfor %}

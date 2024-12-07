@@ -3,7 +3,7 @@ from django.db import models
 # Create your models here.
 from menu.models import Dish
 
-from users.models import CustomUser
+from users.models import CustomUserr
 
 
 class OrderitemQueryset(models.QuerySet):
@@ -18,9 +18,9 @@ class OrderitemQueryset(models.QuerySet):
 
 # Create your models here.
 class Order(models.Model):
-    customer = models.ForeignKey(to=CustomUser, on_delete=models.SET_DEFAULT, blank=True, null=True,
+    customer = models.ForeignKey(to=CustomUserr, on_delete=models.SET_DEFAULT, blank=True, null=True,
                              verbose_name="Покупатель", default=None, related_name = "customer")
-    courier = models.ForeignKey(to=CustomUser, on_delete=models.SET_DEFAULT, blank=True, null=True,
+    courier = models.ForeignKey(to=CustomUserr, on_delete=models.SET_DEFAULT, blank=True, null=True,
                                 verbose_name="Курьер", default=None, related_name = "courier")
     created_timestamp = models.DateTimeField(auto_now_add=True, verbose_name="Дата заказа")
     phone_number = models.CharField(max_length=20, verbose_name="Номер телефона")

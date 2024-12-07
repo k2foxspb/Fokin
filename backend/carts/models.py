@@ -2,7 +2,7 @@ from django.db import models
 from decimal import Decimal, ROUND_HALF_UP
 
 from menu.models import Dish
-from users.models import CustomUser
+from users.models import CustomUserr
 
 
 # Create your models here.
@@ -27,7 +27,7 @@ class CartQueryset(models.QuerySet):
         return sum(cart.dish_price() for cart in self) + self.courier_price()
 
 class Cart(models.Model):
-    user = models.ForeignKey(to=CustomUser, on_delete=models.CASCADE, blank=True, null=True, verbose_name='User')
+    user = models.ForeignKey(to=CustomUserr, on_delete=models.CASCADE, blank=True, null=True, verbose_name='User')
     dish = models.ForeignKey(to=Dish, on_delete=models.CASCADE, verbose_name='Product')
     quantity = models.PositiveSmallIntegerField(default=0, verbose_name='Quantity')
     session_key = models.CharField(max_length=32, blank=True, null=True)

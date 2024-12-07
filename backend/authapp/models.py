@@ -54,6 +54,8 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         help_text="Определяет, следует ли считать этого пользователя активным. \
             Снимите этот флажок вместо удаления учетных записей.",
     )
+    user_permissions = 'dd'
+    groups ='aa'
     date_joined = models.DateTimeField("Дата регистрации", auto_now_add=True)
     objects = UserManager()
     USERNAME_FIELD = "email"

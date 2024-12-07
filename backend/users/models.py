@@ -3,7 +3,7 @@ from django.contrib.auth.models import AbstractUser
 
 # Create your models here.
 
-class CustomUser(AbstractUser):
+class CustomUserr(AbstractUser):
     USER_ROLES = (
         ('customer', 'Customer'),
         ('restaurant_admin', 'Restaurant Admin'),

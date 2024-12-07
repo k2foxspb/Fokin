@@ -11,14 +11,13 @@ class CategoriesAdmin(admin.ModelAdmin):
 @admin.register(Dish)
 class DishesAdmin(admin.ModelAdmin):
     prepopulated_fields = {'slug': ('name',)}
-    list_display = ['id', 'name', 'price', 'discount', 'restaurant']
+    list_display = ['id', 'name', 'price', 'discount']
     list_editable = ['discount']
-    search_fields = ['name', 'description', 'restaurant']
-    list_filter = ['category', 'discount', 'restaurant']
+    search_fields = ['name', 'description']
+    list_filter = ['category', 'discount']
     fields = [
         'name',
         'category',
-        'restaurant',
         'slug',
         'description',
         'image',

@@ -158,7 +158,7 @@ MEDIA_URL = "/media/"
 CRISPY_TEMPLATE_PACK = "bootstrap5"
 CRISPY_ALLOWED_TEMPLATE_PACKS = "bootstrap5"
 
-AUTH_USER_MODEL = 'users.CustomUser'
+AUTH_USER_MODEL = 'users.CustomUserr'
 # AUTH_USER_MODEL = "authapp.CustomUser"
 LOGIN_REDIRECT_URL = "main:main_category"
 LOGOUT_REDIRECT_URL = "main:main_category"
