@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ title }}</title>
+</head>
+<body>
+<h1>О нас</h1>
+
+<a href="{% url 'main:about' %}">О нас</a>
+<a href="{% url 'users:login' %}">Войти</a>
+<!--<a href="{% url 'users:login' %}">Войти как админ ресторана</a>-->
+<!--<a href="{% url 'users:login' %}">Войти как курьер</a>-->
+<a href="{% url 'users:register_customer' %}">Зарегестрироваться</a>
+<a href="{% url 'users:register_courier' %}">Зарегестровать курьера</a>
+<a href="{% url 'users:register_restaurant_admin' %}">Зарегестровать админа ресторана</a>
+
+</body>
+</html>

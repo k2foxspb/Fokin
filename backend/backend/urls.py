@@ -21,13 +21,19 @@ from backend import settings
 from django.conf.urls.static import static
 
 urlpatterns = [
-    path('filer/', include('filer.urls')),
-    path("ckeditor5/", include('django_ckeditor_5.urls')),
+    #path('filer/', include('filer.urls')),
+    #path("ckeditor5/", include('django_ckeditor_5.urls')),
 
     path('admin/', admin.site.urls),
-    path('', include('main_app.urls', namespace='main')),
-    path('authentication/', include('authapp.urls', namespace='auth')),
+    # path('', include('main_app.urls', namespace='main')),
+    #path('authentication/', include('authapp.urls', namespace='auth')),
     path('chat/', include('chatapp.urls', namespace='chat')),
+
+    path('', include('main.urls', namespace='main')),
+    path('user/', include('users.urls', namespace='users')),
+    path('cart/', include('carts.urls', namespace='cart')),
+    path('menu/', include('menu.urls', namespace='menu')),
+    path('orders/', include('orders.urls', namespace='orders')),
 ]
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

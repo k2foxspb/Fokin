@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block static_css %}
+<link rel="stylesheet" href="{% static 'css/login.css' %}"/>
+{% endblock %}
+
+{% block content %}
+
+<div class="registration">
+
+
+    <div class="registration-container">
+        <h2>Вход в аккаунт</h2>
+        <form action="{% url 'users:login' %}" method="post" class="registration-form">
+            {% csrf_token %}
+            {% if request.GET.next %}
+            <input type="hidden" name="next" value="{{request.GET.next}}">
+            {% endif %}
+            <div class="form-group">
+                <label for="username">Имя пользователя</label>
+                <input type="text" id="username"
+                       value="{% if form.username.value %}{{ form.username.value }}{% endif %}" name="username"
+                       placeholder="Enter user name" required>
+            </div>
+            <div class="form-group">
+                <label for="password">Пароль</label>
+                <input type="password" id="password" name="password" placeholder="Enter password" required>
+            </div>
+            <div class="register-links">
+                <a href="{% url 'users:register_customer' %}">Создать аккаунт</a>
+            </div>
+
+            <button type="submit" class="register-btn">Войти</button>
+
+        </form>
+    </div>
+
+
+</div>
+{% endblock %}

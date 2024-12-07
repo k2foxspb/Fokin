@@ -1,0 +1,64 @@
+{% load static %}
+
+
+<div id="universalModal" class="modal">
+    <div class="modal-content">
+        <span class="close-btn">&times;</span>
+        <div id="modalContent">
+            {% if content_type == "dish" %}
+                {% include 'includes/modal_dish.html' %}
+            {% elif content_type == "promotion" %}
+                {% include 'includes/modal_promotion.html' %}
+            {% elif content_type == "cart" %}
+                {% include 'includes/included_cart.html' %}
+            {% else %}
+                <p>Контент не найден.</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<style>
+    /* Стили модального окна */
+    .modal {
+    display: none; /* Модальное окно скрыто по умолчанию */
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.6);
+}
+
+
+    .modal-content {
+        width: 500px;
+        height: auto;
+        min-height: 500px;
+        background: rgba(255, 255, 255, 0.6);
+        backdrop-filter: blur(10px);
+        border-radius: 10px;
+        padding: 20px;
+        position: relative;
+        color: black;
+    }
+
+
+    .close-btn {
+        position: absolute;
+        top: 10px;
+        right: 15px;
+        font-size: 24px;
+        cursor: pointer;
+    }
+
+    a {
+        color: black;
+    }
+
+</style>
+
+

@@ -1,0 +1,164 @@
+{% load static %}
+{% load carts_tags %}
+
+{% user_carts request as carts %}
+
+<div id="cart-items-container">
+<h3>Корзина</h3>
+<div class="cart-items">
+
+    {% for cart in carts %}
+    <div class="cart-item">
+        <div class="image-container">
+            {% if cart.dish.image %}
+            <img src="{{ cart.dish.image.url }}" alt="{{ cart.dish.name }}">
+            {% else %}
+            <img src="{% static 'images/no-photo.jpg' %}" alt="Not found image">
+            {% endif %}
+        </div>
+        <div class="cart-item-info">
+            <p class="truncate">{{ cart.dish.name }}</p>
+            <span>{{ cart.dish.price }} р.</span>
+
+            <div class="quantity input-group">
+                <span>
+                <button class="decrement" type="button" data-cart-id="{{ cart.id }}"
+                        data-cart-change-url="{% url 'cart:cart_change' %}">
+                    {% csrf_token %}
+                    -</button>
+                </span>
+                <input class="number" type="text" value="{{ cart.quantity }}" readonly>
+                <span>
+                <button class="increment" type="button" data-cart-id="{{ cart.id }}"
+                        data-cart-change-url="{% url 'cart:cart_change' %}">
+                    {% csrf_token %}
+                    +</button>
+                </span>
+            </div>
+        </div>
+
+        <a href="{% url 'cart:cart_remove' %}" class='remove-from-cart'
+            data-cart-id="{{ cart.id }}">×</a>
+    </div>
+    {% endfor %}
+
+    <div class="cart-summary">
+
+        {% if carts %}
+
+            <p>Работа сервиса: {{ carts.courier_price }} р.</p>
+            {% if not order %}
+                {% if user.is_authenticated %}
+                <a href="{% url 'orders:create_order' %}">
+                    <button>Верно, к оплате: {{ carts.total_price }} р.</button>
+                </a>
+                {% else %}
+                <a href="{% url 'users:login' %}">
+                    <button>Верно, к оплате: {{ carts.total_price }} р.</button>
+                </a>
+                {% endif %}
+            {% else %}
+            <p><strong>Итого: {{ carts.total_price }} р.</strong></p>
+            {% endif %}
+        {% else %}
+            <p>Пока что тут ничего нет &#128577</p>
+        {% endif %}
+    </div>
+</div>
+
+
+</div>
+
+<style>
+    .cart {
+    top: 20px;
+    height: max-content;
+    padding: 20px;
+}
+
+.cart-item {
+    display: flex;
+    margin-top: 20px;
+    font-size: 14px;
+}
+
+.image-container {
+    width: 100px;
+    height: 80px;
+    position: relative;
+    margin-right: 10px;
+    overflow: hidden;
+}
+
+.cart-item img {
+    position: absolute; /* Абсолютное позиционирование */
+    top: 0;
+    left: 0;
+    width: 100%; /* Растягиваем по ширине контейнера */
+    height: 100%;
+    object-fit: cover;
+    border-radius: 10px;
+    margin-right: 10px;
+}
+
+.cart-item-info {
+    width: 150px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.cart-item-info button {
+    height: 25px;
+    width: 25px;
+    border-radius: 5px;
+    border: none;
+
+}
+
+.cart-item input {
+    width: 25px;
+    height: 25px;
+    border-radius: 5px;
+    border: none;
+}
+
+.quantity {
+    display: flex;
+    align-items: center;
+}
+
+.quantity button, .quantity input {
+    padding: 5px;
+    margin-right: 10px;
+}
+
+.cart-summary {
+    margin-top: 20px;
+    font-size: 1.2rem;
+    display: flex;
+    flex-direction: column;
+    gap:20px;
+}
+
+.cart-summary button {
+    height: 40px;
+    border: none;
+    width: 100%;
+    border-radius: 8px;
+
+    background-color: #D9D9D9;
+    font-size: 16px;
+    font-weight: bolder;
+
+}
+
+.remove-from-cart {
+    margin-left: auto;
+    padding-left: 10px;
+    color: white;
+
+}
+
+
+</style>

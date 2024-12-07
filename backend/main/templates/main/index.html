@@ -1,0 +1,274 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block static_css %}
+<link rel="stylesheet" href="{% static 'css/style.css' %}"/>
+{% endblock %}
+
+{% block content %}
+
+<section class="promotions-sect">
+    <h2>Акции</h2>
+    <div class="promotions">
+<!--        <div class="arrow a-left">-->
+<!--            <p> ← </p>-->
+<!--        </div>-->
+
+        {% for promotion in promotions %}
+        <div class="card promotion-card" style="cursor: pointer;" data-promo-id='{{ promotion.id }}'>
+            <div class="card-overlay"></div>
+            <img src="{{ promotion.image.url }}" alt="Завтрак" class="card-img">
+            <div class="card-content">
+                <h3>{{ promotion.name }}</h3>
+            </div>
+        </div>
+
+        {% endfor %}
+<!--        <div class="arrow a-right">-->
+<!--            <p> → </p>-->
+<!--        </div>-->
+    </div>
+</section>
+
+
+{% include 'includes/modal_base.html' %}
+
+<!--<section class="rating-sect">
+    <h2>Высокий рестинг</h2>
+    <div class="promotions">
+        <div class="arrow a-left">
+            <p> ← </p>
+        </div>
+
+        <div class="card">
+            <div class="card-overlay"></div>
+            <img src="{% static 'images/dish4.jpg' %}" alt="Завтрак" class="card-img">
+            <div class="card-content">
+                <h3>Васильки</h3>
+                <div class="rating">
+                    <h3>4.9</h3>
+                    <svg width="25" height="24" viewBox="0 0 25 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M6.71989 21.5021L8.35095 14.6577L2.88062 10.0542L10.1075 9.44524L12.9179 2.99057L15.7284 9.44524L22.9552 10.0542L17.4849 14.6577L19.116 21.5021L12.9179 17.8729L6.71989 21.5021Z"
+                              fill="#FFE976"/>
+                    </svg>
+                </div>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-overlay"></div>
+            <img src="{% static 'images/dish5.jpg' %}" alt="Завтрак" class="card-img">
+            <div class="card-content">
+                <h3>Усадьба</h3>
+                <div class="rating">
+                    <h3>4.9</h3>
+                    <svg width="25" height="24" viewBox="0 0 25 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M6.71989 21.5021L8.35095 14.6577L2.88062 10.0542L10.1075 9.44524L12.9179 2.99057L15.7284 9.44524L22.9552 10.0542L17.4849 14.6577L19.116 21.5021L12.9179 17.8729L6.71989 21.5021Z"
+                              fill="#FFE976"/>
+                    </svg>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-overlay"></div>
+            <img src="{% static 'images/dish3.jpg' %}" alt="Завтрак" class="card-img">
+            <div class="card-content">
+                <h3>Невинный бар</h3>
+                <div class="rating">
+                    <h3>4.9</h3>
+                    <svg width="25" height="24" viewBox="0 0 25 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M6.71989 21.5021L8.35095 14.6577L2.88062 10.0542L10.1075 9.44524L12.9179 2.99057L15.7284 9.44524L22.9552 10.0542L17.4849 14.6577L19.116 21.5021L12.9179 17.8729L6.71989 21.5021Z"
+                              fill="#FFE976"/>
+                    </svg>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-overlay"></div>
+            <img src="{% static 'images/dish5.jpg' %}" alt="Завтрак" class="card-img">
+            <div class="card-content">
+                <h3>Тьерри</h3>
+                <div class="rating">
+                    <h3>4.9</h3>
+                    <svg width="25" height="24" viewBox="0 0 25 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M6.71989 21.5021L8.35095 14.6577L2.88062 10.0542L10.1075 9.44524L12.9179 2.99057L15.7284 9.44524L22.9552 10.0542L17.4849 14.6577L19.116 21.5021L12.9179 17.8729L6.71989 21.5021Z"
+                              fill="#FFE976"/>
+                    </svg>
+                </div>
+            </div>
+        </div>
+
+        <div class="arrow a-right">
+            <p> → </p>
+        </div>
+
+
+    </div>
+</section>
+
+<section class="for-you-sect">
+
+    <h2>Специально для вас</h2>
+    <div class="promotions">
+        <div class="arrow a-left">
+            <p> ← </p>
+        </div>
+
+        <div class="rest-card">
+            <img src="{% static 'images/dish5.jpg' %}" alt="Завтрак" class="card-img">
+            <div class="card-content">
+                <h3>Невинный бар</h3>
+                <div class="rating">
+                    <h3>4.9</h3>
+                    <svg width="25" height="24" viewBox="0 0 25 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M6.71989 21.5021L8.35095 14.6577L2.88062 10.0542L10.1075 9.44524L12.9179 2.99057L15.7284 9.44524L22.9552 10.0542L17.4849 14.6577L19.116 21.5021L12.9179 17.8729L6.71989 21.5021Z"
+                              fill="#FFE976"/>
+                    </svg>
+                </div>
+            </div>
+        </div>
+        <div class="rest-card">
+            <img src="{% static 'images/dish1.jpg' %}" alt="Завтрак" class="card-img">
+            <div class="card-content">
+                <h3>Pad Tai</h3>
+                <div class="rating">
+                    <h3>4.9</h3>
+                    <svg width="25" height="24" viewBox="0 0 25 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M6.71989 21.5021L8.35095 14.6577L2.88062 10.0542L10.1075 9.44524L12.9179 2.99057L15.7284 9.44524L22.9552 10.0542L17.4849 14.6577L19.116 21.5021L12.9179 17.8729L6.71989 21.5021Z"
+                              fill="#FFE976"/>
+                    </svg>
+                </div>
+            </div>
+        </div>
+
+        <div class="rest-card">
+            <img src="{% static 'images/dish5.jpg' %}" alt="Завтрак" class="card-img">
+            <div class="card-content">
+                <h3>Gan bei</h3>
+                <div class="rating">
+                    <h3>4.9</h3>
+                    <svg width="25" height="24" viewBox="0 0 25 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M6.71989 21.5021L8.35095 14.6577L2.88062 10.0542L10.1075 9.44524L12.9179 2.99057L15.7284 9.44524L22.9552 10.0542L17.4849 14.6577L19.116 21.5021L12.9179 17.8729L6.71989 21.5021Z"
+                              fill="#FFE976"/>
+                    </svg>
+                </div>
+            </div>
+        </div>
+
+        <div class="rest-card">
+            <img src="{% static 'images/dish2.jpg' %}" alt="Завтрак" class="card-img">
+            <div class="card-content">
+                <h3>Васильки</h3>
+                <div class="rating">
+                    <h3>4.9</h3>
+                    <svg width="25" height="24" viewBox="0 0 25 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M6.71989 21.5021L8.35095 14.6577L2.88062 10.0542L10.1075 9.44524L12.9179 2.99057L15.7284 9.44524L22.9552 10.0542L17.4849 14.6577L19.116 21.5021L12.9179 17.8729L6.71989 21.5021Z"
+                              fill="#FFE976"/>
+                    </svg>
+                </div>
+            </div>
+        </div>
+
+        <div class="arrow a-right">
+            <p> → </p>
+        </div>
+    </div>
+</section>
+-->
+<section class="collections-sect">
+
+    <h2>Подборки</h2>
+    <div class="promotions">
+        <div class="card">
+            <div class="card-overlay"></div>
+            <img src="{% static 'images/dish2.jpg' %}" alt="Завтрак" class="card-img">
+            <div class="card-content">
+                <h4>Завтраки</h4>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-overlay"></div>
+            <img src="{% static 'images/dish3.jpg' %}" alt="Завтрак" class="card-img">
+            <div class="card-content">
+                <h4>Завтраки</h4>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-overlay"></div>
+            <img src="{% static 'images/dish4.jpg' %}" alt="Завтрак" class="card-img">
+            <div class="card-content">
+                <h4>Завтраки</h4>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-overlay"></div>
+            <img src="{% static 'images/dish5.jpg' %}" alt="Завтрак" class="card-img">
+            <div class="card-content">
+                <h4>Завтраки</h4>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-overlay"></div>
+            <img src="{% static 'images/dish5.jpg' %}" alt="Завтрак" class="card-img">
+            <div class="card-content">
+                <h4>Завтраки</h4>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-overlay"></div>
+            <img src="{% static 'images/dish2.jpg' %}" alt="Завтрак" class="card-img">
+            <div class="card-content">
+                <h4>Завтраки</h4>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-overlay"></div>
+            <img src="{% static 'images/dish1.jpg' %}" alt="Завтрак" class="card-img">
+            <div class="card-content">
+                <h4>Завтраки</h4>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-overlay"></div>
+            <img src="{% static 'images/dish4.jpg' %}" alt="Завтрак" class="card-img">
+            <div class="card-content">
+                <h4>Завтраки</h4>
+            </div>
+        </div>
+
+    </div>
+</section>
+
+</div>
+
+</div>
+
+<section class="restaurans">
+
+    <div class="rest-sect-title">
+        <h2>Рестораны</h2>
+        <div class="filters">
+            <a class="active" href="{% url 'main:filter_restaurants' 'all' %}">Все</a>
+            {% for category in sliced_categories %}
+            <a href="{% url 'main:filter_restaurants' category.slug %}">{{ category.name }}</a>
+            {% endfor %}
+
+            <a>Сортировать </a>
+            <a>Еще ↓</a>
+            <a>Кухня ↓</a>
+        </div>
+    </div>
+
+    <div class="restaurans-cards" id="restaurants-list">
+        {% include 'includes/restaurants_list.html' with restaurants=restaurants %}
+    </div>
+</section>
+
+{% endblock %}

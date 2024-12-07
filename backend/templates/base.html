@@ -1,64 +1,150 @@
-{% load static category_tags %}
+{#{% load static category_tags %}#}
+{#<!DOCTYPE html>#}
+{#<html lang="en">#}
+{#<head>#}
+{#    {% block css %}{% endblock %}#}
+{#    <meta charset="UTF-8">#}
+{#    <meta name="viewport" content="width=device-width, initial-scale=1">#}
+{#    <link rel="shortcut icon" type="image/x-icon" href="{% static 'img/logo/favicon.ico' %}"/>#}
+{#    <link rel="stylesheet" href="{% static 'css/bootstrap.css' %}">#}
+{#    <link rel="stylesheet" href="{% static 'css/my.css' %}">#}
+{#    <link rel="stylesheet" href="//maxcdn.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css">#}
+{#    <title>{% block title %}заметки программиста{% endblock %}</title>#}
+{#    <meta name="description" content='{% block description %}{% endblock %}'>#}
+{#    <meta name="keywords"#}
+{#          content='{% block keywords %}{% endblock keywords %}'/>#}
+{#</head>#}
+{##}
+{#<body#}
+{#    {% block body %}#}
+{#        class=" text-white " style="background-repeat: no-repeat; background-size: cover; background-attachment: fixed; background-color: #000000; background-image: url({% static 'img/logo/bacground-darken.jpg' %})"#}
+{#    {% endblock %}>#}
+{##}
+{#<div class="toast-container bottom-0 end-0">#}
+{#    {% if messages %}#}
+{#        {% for message in messages %}#}
+{#            <div class="toast align-items-center" style="background: #670000" role="alert" aria-live="assertive" aria-atomic="true">#}
+{#                <div class="d-flex">#}
+{#                    <div class="toast-body" style="color: #f4f4f4">#}
+{#                        {{ message }}#}
+{#                    </div>#}
+{#                    <button type="button" class="btn-close me-2 m-auto" data-bs-dismiss="toast"#}
+{#                            aria-label="Close"></button>#}
+{#                </div>#}
+{#            </div>#}
+{##}
+{#        {% endfor %}#}
+{#    {% endif %}#}
+{#</div>#}
+{#<div class="email-bt">#}
+{#    <div class="text-call">#}
+{#        <span>Обратная<br>связь</span>#}
+{#    </div>#}
+{#</div>#}
+{#{% include 'yandex.html' %}#}
+{#{% block navbar %}#}
+{#    {% include 'navbar.html' %}#}
+{#{% endblock %}#}
+{#{% block content %}{% endblock %}#}
+{#<script src="{% static 'js/bootstrap.bundle.js' %}"></script>#}
+{#<script src="{% static 'js/jquery-3.6.0.min.js' %}"></script>#}
+{#<script>#}
+{#    $(document).ready(function () {#}
+{##}
+{#        {% if messages %}#}
+{#            // Toasts#}
+{#            $(".toast").toast({delay: 10000});#}
+{#            $(".toast").toast("show");#}
+{#        {% endif %}#}
+{##}
+{#    });#}
+{#</script>#}
+{#{% block js %} {% endblock %}#}
+{#</body>#}
+{#</html>#}
+
+
+{% load static %}
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    {% block css %}{% endblock %}
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="shortcut icon" type="image/x-icon" href="{% static 'img/logo/favicon.ico' %}"/>
-    <link rel="stylesheet" href="{% static 'css/bootstrap.css' %}">
-    <link rel="stylesheet" href="{% static 'css/my.css' %}">
-    <link rel="stylesheet" href="//maxcdn.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css">
-    <title>{% block title %}заметки программиста{% endblock %}</title>
-    <meta name="description" content='{% block description %}{% endblock %}'>
-    <meta name="keywords"
-          content='{% block keywords %}{% endblock keywords %}'/>
+    {% block static_css %}
+    {% endblock %}
+    <link rel="stylesheet" href="{% static 'css/main-styles.css' %}">
+    <title>{{ title }}</title>
 </head>
+<body>
 
-<body
-    {% block body %}
-        class=" text-white " style="background-repeat: no-repeat; background-size: cover; background-attachment: fixed; background-color: #000000; background-image: url({% static 'img/logo/bacground-darken.jpg' %})"
-    {% endblock %}>
+<div class="background">
 
-<div class="toast-container bottom-0 end-0">
-    {% if messages %}
-        {% for message in messages %}
-            <div class="toast align-items-center" style="background: #670000" role="alert" aria-live="assertive" aria-atomic="true">
-                <div class="d-flex">
-                    <div class="toast-body" style="color: #f4f4f4">
-                        {{ message }}
-                    </div>
-                    <button type="button" class="btn-close me-2 m-auto" data-bs-dismiss="toast"
-                            aria-label="Close"></button>
+    <div class="overlay"></div>
+
+    <div class="content">
+        <header>
+            <nav>
+                <div class="nav-left">
+                    <a href="{% url 'main:index' %}"><h1>YUM</h1></a>
+
+                    <form role="search" action="{% url 'main:search' %}" method='get'>
+                        <input type="text" placeholder="Найти рестораны, блюдо" name="q">
+                    </form>
+
+
+                    <input type="text" placeholder="Укажите адрес доставки">
                 </div>
-            </div>
+                <div class="nav-right">
+                    {% if user.is_authenticated %}
+                        {% if user.is_superuser %}
+                            <a href="{% url 'admin:index' %}">
+                                <button>Админ панель</button>
+                            </a>
+                            <div class="dropdown">
+                                <button class="dropbtn">Зарегестрировать</button>
+                                <ul class="dropdown-content">
+                                    <li><a href="{% url 'users:register_courier' %}">Курьера</a></li>
+                                    <hr>
+                                    <li><a href="{% url 'users:register_restaurant_admin' %}">Администратора</a></li>
+                                </ul>
+                            </div>
+                        {% endif %}
+                    {% endif %}
 
-        {% endfor %}
-    {% endif %}
-</div>
-<div class="email-bt">
-    <div class="text-call">
-        <span>Обратная<br>связь</span>
+                    {% if not order %}
+                        <button id="open-cart">Корзина</button>
+                    {% endif %}
+
+
+                    {% if user.is_authenticated %}
+                        <a href="{% url 'users:logout' %}">
+                            <button>Выйти</button>
+                        </a>
+                    {% else %}
+                        <a href="{% url 'users:login' %}">
+                            <button>Войти</button>
+                        </a>
+
+                    {% endif %}
+                </div>
+
+
+            </nav>
+            <hr class="line">
+
+        </header>
+
+        {% block content %}
+        {% endblock %}
     </div>
-</div>
-{% include 'yandex.html' %}
-{% block navbar %}
-    {% include 'navbar.html' %}
-{% endblock %}
-{% block content %}{% endblock %}
-<script src="{% static 'js/bootstrap.bundle.js' %}"></script>
-<script src="{% static 'js/jquery-3.6.0.min.js' %}"></script>
-<script>
-    $(document).ready(function () {
 
-        {% if messages %}
-            // Toasts
-            $(".toast").toast({delay: 10000});
-            $(".toast").toast("show");
-        {% endif %}
+    <footer>
 
-    });
-</script>
-{% block js %} {% endblock %}
+    </footer>
+    <script src="{% static 'js/catalog.js' %}"></script>
+    <script src="{% static 'js/modal.js' %}"></script>
+    <script src="{% static 'js/jquery/jquery-3.7.1.min.js' %}"></script>
+    <script src="{% static 'js/jquery/jquery-3.7.1.min.js' %}"></script>
+    <script src="{% static 'js/jquery-ajax.js' %}"></script>
 </body>
 </html>

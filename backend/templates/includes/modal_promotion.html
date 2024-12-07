@@ -1,0 +1,23 @@
+<div class="promo-modal">
+    <img src="{{ promotion.image.url }}" alt="{{ promotion.name }}">
+    <h2>{{ promotion.name }}</h2>
+    <h4>{{ promotion.description }}</h4>
+    <h4 style="margin-bottom: 20px;">C {{ promotion.start_time }} по {{ promotion.end_time }}</h4>
+    <a href="{% url 'menu:restaurans_menu' promotion.restaurant.slug %}">Перейти к ресторану</a>
+</div>
+<style>
+
+
+    .promo-modal img {
+        margin-top: 20px;
+        width: 100%;
+        border-radius: 10px;
+    }
+
+    .promo-modal a {
+        color: black;
+        font-size: 20px;
+        text-decoration: underline;
+    }
+
+</style>

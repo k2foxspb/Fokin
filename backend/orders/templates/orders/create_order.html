@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% load carts_tags %}
+
+{% block static_css %}
+<link rel="stylesheet" href="{% static 'css/order.css' %}"/> {% endblock %}
+
+{% block page_title %}
+<div class="page-title">
+    <h1>{{ page_title }}</h1>
+    <h6>{{ page_description }}</h6>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<div class="order">
+
+    <div class="order-container">
+
+        <h2>Оформление заказа</h2>
+
+        <div id="cart-items-container">
+            {% user_carts request as carts %}
+            {% include "includes/included_cart.html" %}
+        </div>
+
+        {% if messages %}
+        {% for message in messages %}
+        <div class="alert alert-danger">{{ message }}</div>
+        {% endfor %}
+        {% endif %}
+
+        <div class="details">
+            <h3>Детали заказа</h3>
+            <form action="{% url 'orders:create_order' %}" method="post" id="create_order_form">
+                {% csrf_token %}
+                <div class="order-form">
+                    <div>
+                        <label for="id_first_name" class="form-label">Имя*:</label>
+                        <input type="text" class="form-control" id="id_first_name"
+                               value="{% if form.first_name.value %}{{ form.first_name.value }}{% endif %}"
+                               name="first_name" required>
+                        {% if form.first_name.errors %}
+                        <p>{{form.password1.errors}}</p>
+                        {% endif %}
+                    </div>
+                    <div>
+                        <label for="id_last_name" class="form-label">Фамилия*:</label>
+                        <input type="text" class="form-control" id="id_last_name" name="last_name"
+                               value="{% if form.last_name.value %}{{ form.last_name.value }}{% endif %}"
+                               required>
+                        {% if form.last_name.errors %}
+                        <p>{{form.password1.errors}}</p>
+                        {% endif %}
+                    </div>
+                    <div>
+                        <label for="id_phone_number" class="form-label">Номер телефона*:</label>
+                        <input type="text" class="form-control" id="id_phone_number" name="phone_number"
+                               value="{% if form.phone_number.value %}{{ form.phone_number.value }}{% endif %}"
+                               placeholder="+375290000000"
+                               required>
+                        {% if form.phone_number.errors %}
+                        <p>{{form.password1.errors}}</p>
+                        {% endif %}
+                        <div class="alert alert-danger alert-dismissible fade show" style="display: none"
+                             id="phone_number_error">Неправильный формат
+                        </div>
+                    </div>
+                    <div class="row" id="deliveryAddressField">
+                        <label for="id_delivery_address" class="form-label">Адрес*:</label>
+                        <textarea class="form-control" id="id_delivery_address"
+                                  value="{% if form.delivery_address.value %}{{ form.delivery_address.value }}{% endif %}"
+                                  name="delivery_address" rows="2"></textarea>
+                        {% if form.delivery_address.errors %}
+                        <p>{{form.password1.errors}}</p>
+                        {% endif %}
+                    </div>
+                    <div class="row">
+                        <label class="form-label">Способ оплаты: </label>
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="radio" name="payment_on_get"
+                                   id="id_payment_on_get" value="0" checked>
+                            <label class="form-check-label" for="id_payment_on_get">Картой</label>
+                        </div>
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="radio" name="payment_on_get"
+                                   id="id_payment_on_get" value="1">
+                            <label class="form-check-label" for="id_payment_on_get">При получении</label>
+                            {% if form.payment_on_get.errors %}
+                            <p>{{form.password1.errors}}</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% if carts %}
+                <button type="submit" class="btn">Заказать</button>
+                {% endif %}
+            </form>
+        </div>
+
+    </div>
+
+
+</div>
+{% endblock %}

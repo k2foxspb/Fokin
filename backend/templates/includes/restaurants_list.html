@@ -1,0 +1,26 @@
+{% load static %}
+
+{% for rest in restaurans %}
+<div class="rest-card">
+
+    {% if rest.image %}
+    <img src="{{ rest.image.url }}" alt="{{ rest.name }}" class="card-img">
+    {% else %}
+    <img src="{% static 'img/no-photo.jpg' %}" alt="Not found image" class="card-img">
+    {% endif %}
+
+    <!--            <img src="{% static 'images/dish1.jpg' %}" alt="Завтрак" class="card-img">-->
+    <a href="{% url 'menu:restaurans_menu' rest.slug %}">
+        <div class="card-content">
+            <h3>{{ rest.name }}</h3>
+            <div class="rating">
+                <h3>4.9</h3>
+                <svg width="25" height="24" viewBox="0 0 25 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M6.71989 21.5021L8.35095 14.6577L2.88062 10.0542L10.1075 9.44524L12.9179 2.99057L15.7284 9.44524L22.9552 10.0542L17.4849 14.6577L19.116 21.5021L12.9179 17.8729L6.71989 21.5021Z"
+                          fill="#FFE976"/>
+                </svg>
+            </div>
+        </div>
+    </a>
+</div>
+{% endfor %}

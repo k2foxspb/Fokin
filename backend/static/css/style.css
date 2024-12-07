@@ -1,0 +1,205 @@
+/* Основные стили */
+
+
+.background {
+    position: relative;
+    /* height: 110%; */
+    background-image: url('../images/image.jpg'); /* Подставьте нужное изображение */
+    background-size: cover;
+    background-position: top;
+    background-repeat: no-repeat;
+}
+
+.overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(to bottom, rgba(0, 0, 0, 40%) 0%, rgba(25, 25, 25, 1) 100%);
+}
+
+.content {
+    position: relative;
+    z-index: 1;
+    /* padding: 20px; */
+    color: white;
+}
+
+
+/* Стили для остального контента */
+
+
+
+section {
+    display: flex;
+    flex-direction: column;
+    width: 78%;
+    margin-top: 50px;
+    margin-right: auto;
+    margin-left: auto;
+}
+
+.arrow {
+    background-color: rgba(116, 116, 116, 70%);
+    width: 50px;
+    height: 50px;
+    border-radius: 100%;
+    text-align: center;
+    padding: 10px;
+    z-index: 3;
+    position: absolute;
+    font-size: 23px;
+
+}
+
+.a-left {
+    left: 7%;
+}
+
+.a-right {
+    right: 7%;
+}
+
+.promotions {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.card {
+    width: 270px;
+    height: 145px;
+    border-radius: 15px;
+    position: relative;
+}
+
+.card-img {
+    width: 270px;
+    height: 145px;
+    object-fit: cover; /* Обрезаем изображение по размеру карточки */
+    border-radius: 15px;
+    position: absolute; /* Изображение размещается по всей карточке */
+
+    box-shadow: 10px 10px 30px rgba(0, 0, 0, 1);
+}
+
+.card-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(
+        to top,
+        rgba(0, 0, 0, 0) 10%, /* Прозрачный в верхней части */
+        rgba(0, 0, 0, 0.8) 100% /* Черный в нижней части */
+    );
+    border-radius: 15px;
+    z-index: 1;
+}
+
+.card-content {
+    position: relative;
+    z-index: 2;
+    color: white;
+    padding: 10px;
+
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+}
+
+.rating {
+    display: flex;
+    flex-direction: row;
+    gap: 5px;
+    align-items: center;
+}
+
+
+.rest-card {
+    width: 270px;
+    border-radius: 15px;
+    position: relative;
+    height: 190px;
+    background-color: #434242;
+    box-shadow: 10px 10px 30px rgba(0, 0, 0, 1);
+
+}
+
+.rest-card  .card-img {
+    box-shadow: 10px 10px 30px rgba(0, 0, 0, 1);
+    width: 270px;
+    height: 145px;
+    border-radius: 15px;
+    box-shadow: none;
+    position: absolute;
+    object-fit: cover;
+}
+
+.rest-card  .card-content {
+    z-index: 2;
+    color: white;
+    padding: 10px;
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+
+    width: 100%;
+    position: absolute;
+    bottom: 0;
+}
+
+
+
+.collections-sect .card {
+    width: 125px;
+    height: 100px;
+    border-radius: 15px;
+    position: relative;
+}
+
+.collections-sect .card-img {
+    width: 125px;
+    height: 100px;
+    border-radius: 15px;
+}
+
+
+.restaurans {
+    margin-bottom: 70px;
+}
+
+.filters {
+    height: 50px;
+    width: 100%;
+    background-color: #434242;
+    border-radius: 15px;
+
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+}
+
+.filters a:hover {
+
+}
+
+.filters a.active {
+    background-color: #191919; /* Цвет фона для активной ссылки */
+    padding: 10px;
+    border-radius: 12px;
+}
+
+
+.restaurans-cards {
+    margin-top: 30px;
+    display: grid; /* Включаем Grid Layout */
+    grid-template-columns: repeat(4, 1fr); /* 4 колонки одинаковой ширины */
+    gap: 20px; /* Отступы между карточками */
+    row-gap: 35px;
+}
+
+

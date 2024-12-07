@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block static_css %}
+<link rel="stylesheet" href="{% static 'css/rest-style.css' %}"/>
+{% endblock %}
+
+{% block content %}
+
+<div class="container">
+    <!-- Меню категорий -->
+    <aside class="sidebar">
+        <a href="{% url 'main:index' %}">
+            <button class="back-button">&lt; Все рестораны</button>
+        </a>
+        <nav class="category-menu">
+            <ul>
+                {% for category in categories %}
+                <li><a href="#{{ category.slug }}">{{ category.name }}</a></li>
+                {% endfor %}
+            </ul>
+        </nav>
+    </aside>
+
+    <!-- Центральная часть с меню ресторана -->
+    <main class="main-rest-content">
+        <div class="rest">
+            <div class="rest-overlay"></div>
+
+            {% if restaurant.image %}
+            <img src="{{ restaurant.image.url }}" alt="{{ restaurant.name }}" class="rest-img">
+            {% else %}
+            <img src="{% static 'img/no-photo.jpg' %}" alt="Not found image" class="rest-img">
+            {% endif %}
+
+            <div class="rest-content">
+                <h1>{{ restaurant.name }}</h1>
+                <div class="rating">
+                    <h3>4.9</h3>
+                    <svg width="25" height="24" viewBox="0 0 25 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M6.71989 21.5021L8.35095 14.6577L2.88062 10.0542L10.1075 9.44524L12.9179 2.99057L15.7284 9.44524L22.9552 10.0542L17.4849 14.6577L19.116 21.5021L12.9179 17.8729L6.71989 21.5021Z"
+                              fill="#FFE976"/>
+                    </svg>
+                </div>
+            </div>
+        </div>
+
+        {% for category, dishes in dishes_by_category.items %}
+        <h2 id="{{ category.slug }}">{{ category.name }}</h2>
+        <div class="dish-cards">
+            {% for dish in dishes %}
+            <div class="card dish-card">
+                {% if dish.image %}
+                <img src="{{ dish.image.url }}" alt="{{ dish.name }}">
+                {% else %}
+                <img src="{% static 'images/no-photo.jpg' %}" alt="Not found image">
+                {% endif %}
+                <div class="card-content">
+                    <div class=" dish-card" data-dish-id="{{ dish.id }}" style="display: flex; flex-direction:column; gap:10px;">
+                        <h3>{{ dish.price }} p.</h3>
+                        <p class="truncate">{{ dish.name }}</p>
+                        <p>{{ dish.weight }} г</p>
+                    </div>
+                    <a href="{% url 'cart:cart_add' %}" class="add-to-cart" data-dish-id="{{ dish.id }}">
+                        {% csrf_token %}
+                        <button class="btn">+ Добавить</button>
+                    </a>
+
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% endfor %}
+
+        {% include 'includes/modal_base.html' %}
+    </main>
+
+    <!-- Корзина -->
+    <aside class="cart">
+            {% include "includes/included_cart.html" %}
+    </aside>
+</div>
+
+{% endblock %}
