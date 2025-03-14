@@ -23,7 +23,7 @@
                     </li>
                     <li class="nav-item dropdown">
                         <a class="nav-link my-navbar"
-                           href="{% url 'auth:profile_edit' pk=user.pk %}">{{ user.username }}</a>
+                           href="{% url 'personal:profile' %}">{{ user.username }}</a>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link my-navbar" href="{% url 'auth:logout' %}">Выход</a>

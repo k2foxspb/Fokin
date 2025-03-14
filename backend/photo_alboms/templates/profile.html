@@ -1,0 +1,46 @@
+{% extends 'base.html' %}
+
+{% block content %}
+
+    <h2 class="text-center">Мои фотоальбомы</h2>
+    <a class="my-btn" href="{% url 'personal:create_album' %}">Создать альбом</a>
+
+    {% if albums %}
+        <div class="row">
+            {% for album in albums %}
+                <div style="margin-top: 10px" class="">  <!-- Bootstrap columns for responsive layout -->
+                    <div class="articles">
+                        <div class="card-header">
+                            <h3 style="text-align: center">{{ album.title }}</h3>
+                            <a class="my-btn" href="{% url 'personal:add_photo' album_id=album.id %}">Добавить фото</a>
+                        </div>
+                        <p class="">
+                            {% if album.photos.all %}
+                                <div class="">
+                                    {% for photo in album.photos.all %}
+                                        {% if photo.thumbnail %}  <!-- Проверка на существование миниатюры -->
+                                            <a class=""
+                                               href="{% url 'personal:fullscreen_image' album_id=album.id photo_id=photo.id %}">
+                                                <div>
+                                                    <img src="{{ photo.thumbnail.url }}" alt="{{ photo.caption }}"
+                                                         class="img-fluid">
+                                                </div>
+                                            </a>
+                                        {% else %}
+                                            <div class="col-md-6 mb-2">
+                                                <p>Миниатюра генерируется...</p>
+                                            </div>
+                                        {% endif %}
+                                    {% endfor %}
+                                </div>
+                            {% else %}
+                                <p class="text-center">В этом альбоме пока нет фотографий.</p>
+                            {% endif %}
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <p class="text-center">У вас пока нет фотоальбомов. Создайте свой первый!</p>
+    {% endif %}
+{% endblock %}
