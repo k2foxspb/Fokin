@@ -1,76 +1,68 @@
 {% extends 'base.html' %}
 {% load static %}
+
 {% block css %}
     <title>Полноэкранное изображение</title>
     <link rel="stylesheet" href="{% static 'css/fullscreen.css' %}">
 {% endblock %}
+
 {% block content %}
     <div id="fullscreen-container">
         <button id="fullscreen-close">X</button>
         <img id="fullscreen-image" src="{{ photo_url }}" alt="Фотография">
-        <button id="fullscreen-prev" class="nav-button"> &lt;</button>
-        <button id="fullscreen-next" class="nav-button"> &gt;</button>
-
+        <div class="nav-buttons">  <!-- Новый контейнер -->
+            {% if prev_photo_id %}
+                <form method="post">
+                    {% csrf_token %}
+                    <button type="submit" name="prev" value="{{ prev_photo_id }}" class="nav-button prev-button">
+                        &#8592;
+                    </button>
+                </form>
+            {% endif %}
+            {% if next_photo_id %}
+                <form method="post">
+                    {% csrf_token %}
+                    <button type="submit" name="next" value="{{ next_photo_id }}" class="nav-button next-button">
+                        &#8594;
+                    </button>
+                </form>
+            {% endif %}
+        </div>
     </div>
-
+    <script src="{% static 'js/photo/swipe.js' %}"></script>
     <script>
-        const imageUrls = {{ photo_urls|safe }};
-        let currentImageIndex = {{ current_photo_index }};
-        const albumUrl = "{% url 'photo_alboms:profile' %}";
-
         const fullscreenImage = document.getElementById('fullscreen-image');
         const closeButton = document.getElementById('fullscreen-close');
-
-        closeButton.addEventListener('click', closeFullscreen);
-        const prevButton = document.getElementById('fullscreen-prev');
-        const nextButton = document.getElementById('fullscreen-next');
-
-        prevButton.addEventListener('click', showPrevImage);
-        nextButton.addEventListener('click', showNextImage);
-
-        function showNextImage() {
-            if (imageUrls.length > 0) {
-                currentImageIndex = (currentImageIndex + 1) % imageUrls.length;
-                fullscreenImage.src = imageUrls[currentImageIndex];
-            }
-        }
-
-        function showPrevImage() {
-            if (imageUrls.length > 0) {
-                currentImageIndex = (currentImageIndex - 1 + imageUrls.length) % imageUrls.length;
-                fullscreenImage.src = imageUrls[currentImageIndex];
-            }
-        }
-
-        function closeFullscreen() {
-            window.location.href = albumUrl;
-        }
+        const profileUrl = "{% url 'photo_alboms:profile' %}";
+        closeButton.addEventListener('click', () => {
+            window.location.href = profileUrl;
+            prompt('eee')
+        });
 
         let touchstartX = 0;
-        let touchstartY = 0;
         let touchendX = 0;
-        let touchendY = 0;
+        const threshold = 50; // Порог чувствительности
 
-        fullscreenImage.addEventListener('touchstart', function (event) {
+        fullscreenImage.addEventListener('touchstart', (event) => {
             touchstartX = event.changedTouches[0].clientX;
-            touchstartY = event.changedTouches[0].clientY;
         }, {passive: true});
 
-        fullscreenImage.addEventListener('touchend', function (event) {
+        fullscreenImage.addEventListener('touchend', (event) => {
             touchendX = event.changedTouches[0].clientX;
-            touchendY = event.changedTouches[0].clientY;
-            handleGesture();
+            handleSwipe();
         }, {passive: true});
 
-        function handleGesture() {
-            const xDiff = touchendX - touchstartX;
-            const yDiff = touchendY - touchstartY;
-
-            if (Math.abs(xDiff) > Math.abs(yDiff)) { // Горизонтальный свайп
-                if (xDiff > 0) {
-                    showPrevImage();
+        function handleSwipe() {
+            const diff = touchendX - touchstartX;
+            if (Math.abs(diff) > threshold) {
+                if (diff > threshold) {
+                    // Свайп влево - предыдущая картинка
+                    const prevButton = document.querySelector('.prev-button');
+                    if (prevButton) prevButton.click();
                 } else {
-                    showNextImage();
+                    // Свайп вправо - следующая картинка
+                    const nextButton = document.querySelector('.next-button');
+                    if (nextButton) nextButton.click();
                 }
             }
         }

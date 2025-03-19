@@ -8,27 +8,25 @@
     background-color: rgba(0, 0, 0, 0.8);
     z-index: 1000;
     display: flex;
-    justify-content: center;
-    align-items: center;
-
+    flex-direction: column; /Ключевое изменение: используем flex-direction: column */
+    justify-content: center; /Выравнивание по вертикали */
+    align-items: center; /Выравнивание по горизонтали */
     border-radius: 10px;
-
 }
 
 #fullscreen-image {
-
     border-radius: 20px;
     max-width: 100%;
     max-height: 100%;
     width: auto;
     height: auto;
-    display: block; / Изменено: display: block; /
+    display: block;
     object-fit: contain;
-    touch-action: pan-y; / Оставьте touch-action /
+    touch-action: pan-y;
     user-select: none;
-    margin: 0;
+    margin-bottom: -300px;
     padding: 0;
-
+    z-index: 0; /Убедитесь, что изображение находится под кнопками */
 }
 
 #fullscreen-close {
@@ -42,57 +40,54 @@
     z-index: 1001;
 }
 
-a {
-    position: absolute;
-    bottom: 10px;
-    left: 10px;
-    color: white;
-    text-decoration: none;
+.nav-buttons {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    z-index: 1001;
+    padding: 0 20px;
 }
 
-
-
-
 .nav-button {
-    display: none;
-    position: absolute;
-    top: 50%;
-    transform: translateY(-50%);
-    background-color: rgba(255, 255, 255, 0.7);
+    background-color: rgba(255, 255, 255, 0.3);
     border: none;
     cursor: pointer;
     padding: 10px 20px;
-    z-index: 1001;
+    transition: background-color 0.3s ease;
 }
 
-#fullscreen-prev {
-    left: 20px;
+.nav-button:hover {
+    background-color: rgba(255, 255, 255, 0.7);
 }
 
-#fullscreen-next {
-    right: 20px;
-}
-
-
-@media (min-width: 768px) {
-    .nav-button {
-        display: block;
+@media (max-width: 768px) {
+    .nav-buttons {
+        display: none;
     }
 }
 
-.photo-container {
-  display: flex;
-  flex-wrap: wrap; / Разрешаем перенос на следующую строку /
-  justify-content: flex-start; / Выравнивание по левому краю /
+.swipe-left {
+    animation: swipeLeft 0.3s ease-out forwards;
 }
 
-.photo {
-  width: auto; / Ширина будет автоматически определяться /
-  margin: 55px; / Отступы /
-  display: block;
+.swipe-right {
+    animation: swipeRight 0.3s ease-out forwards;
 }
 
+@keyframes swipeLeft {
+    from {
+        transform: translateX(0);
+    }
+    to {
+        transform: translateX(100%);
+    }
+}
 
-
-
-
+@keyframes swipeRight {
+    from {
+        transform: translateX(0);
+    }
+    to {
+        transform: translateX(-100%);
+    }
+}

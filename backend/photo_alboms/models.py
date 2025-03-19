@@ -28,7 +28,17 @@ class Photo(models.Model):
         )
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
+    def get_next_photo(self):
+        try:
+            return self.album.photos.filter(id__gt=self.id).order_by('id')[0]
+        except IndexError:
+            return None
 
+    def get_previous_photo(self):
+        try:
+            return self.album.photos.filter(id__lt=self.id).order_by('-id')[0]
+        except IndexError:
+            return None
 
     def __str__(self):
         return self.caption or f"Photo in {self.album.title}"
