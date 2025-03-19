@@ -45,6 +45,7 @@ def fullscreen_image_view(request, album_id, photo_id):
 
 
 
+
     next_photo = photo.get_next_photo()
     prev_photo = photo.get_previous_photo() # Добавлено получение предыдущей фотографии
 
@@ -55,7 +56,7 @@ def fullscreen_image_view(request, album_id, photo_id):
         'next_photo_id': next_photo.id if next_photo else None,
         'prev_photo_id': prev_photo.id if prev_photo else None, # Добавлено prev_photo_id
         'album_id': album_id,
-        'profile_url': reverse('personal:profile'),
+        'album_url': reverse_lazy('personal:profile')
     }
 
     if request.method == 'POST':

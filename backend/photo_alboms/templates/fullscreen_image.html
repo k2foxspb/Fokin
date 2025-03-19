@@ -29,14 +29,13 @@
             {% endif %}
         </div>
     </div>
-    <script src="{% static 'js/photo/swipe.js' %}"></script>
+
     <script>
         const fullscreenImage = document.getElementById('fullscreen-image');
         const closeButton = document.getElementById('fullscreen-close');
-        const profileUrl = "{% url 'photo_alboms:profile' %}";
+        const profileUrl = "{{ album_url }}";
         closeButton.addEventListener('click', () => {
             window.location.href = profileUrl;
-            prompt('eee')
         });
 
         let touchstartX = 0;
@@ -68,5 +67,6 @@
         }
 
     </script>
+    <script src="{% static 'js/photo/swipe.js' %}"></script>
 
 {% endblock %}

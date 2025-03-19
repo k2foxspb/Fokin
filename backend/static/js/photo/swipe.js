@@ -1,10 +1,7 @@
 const fullscreenImage = document.getElementById('fullscreen-image');
-const closeButton = document.getElementById('fullscreen-close');
 const threshold = 50;
 
-closeButton.addEventListener('click', () => {
-    window.location.href = "{% url 'photo_alboms:profile' %}";
-});
+
 
 let touchstartX = 0;
 let touchendX = 0;
