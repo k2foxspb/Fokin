@@ -8,7 +8,15 @@
 
 {% block content %}
     <div id="fullscreen-container">
-        <button id="fullscreen-close">X</button>
+        <button class="my-btn btn" id="fullscreen-close">X</button>
+        <form method="post">
+            {% csrf_token %}
+            <button class="my-btn btn delete-button" type="submit" id="delete" name="delete">
+                <i class=" fas fa-trash"></i>
+            </button>
+        </form>
+
+
         <img id="fullscreen-image" src="{{ photo_url }}" alt="Фотография">
         <div class="nav-buttons">  <!-- Новый контейнер -->
             {% if prev_photo_id %}
@@ -27,45 +35,26 @@
                     </button>
                 </form>
             {% endif %}
+
         </div>
     </div>
 
+
+
     <script>
-        const fullscreenImage = document.getElementById('fullscreen-image');
         const closeButton = document.getElementById('fullscreen-close');
         const profileUrl = "{{ album_url }}";
+        const deleteButton = document.querySelector('.delete-button');
         closeButton.addEventListener('click', () => {
             window.location.href = profileUrl;
         });
-
-        let touchstartX = 0;
-        let touchendX = 0;
-        const threshold = 50; // Порог чувствительности
-
-        fullscreenImage.addEventListener('touchstart', (event) => {
-            touchstartX = event.changedTouches[0].clientX;
-        }, {passive: true});
-
-        fullscreenImage.addEventListener('touchend', (event) => {
-            touchendX = event.changedTouches[0].clientX;
-            handleSwipe();
-        }, {passive: true});
-
-        function handleSwipe() {
-            const diff = touchendX - touchstartX;
-            if (Math.abs(diff) > threshold) {
-                if (diff > threshold) {
-                    // Свайп влево - предыдущая картинка
-                    const prevButton = document.querySelector('.prev-button');
-                    if (prevButton) prevButton.click();
-                } else {
-                    // Свайп вправо - следующая картинка
-                    const nextButton = document.querySelector('.next-button');
-                    if (nextButton) nextButton.click();
+        if (deleteButton) {
+            deleteButton.addEventListener('click', (event) => {
+                if (!confirm("Вы уверены, что хотите удалить это изображение?")) {
+                    event.preventDefault(); // Предотвращаем отправку формы
                 }
-            }
+            });
         }
-
     </script>
     <script src="{% static 'js/photo/swipe.js' %}"></script>
 

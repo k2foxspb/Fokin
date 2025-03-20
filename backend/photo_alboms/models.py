@@ -1,5 +1,4 @@
-
-
+from django.core.files.storage import default_storage
 from django.db import models
 from imagekit.models import ProcessedImageField, ImageSpecField
 from imagekit.processors import ResizeToFill
@@ -25,7 +24,7 @@ class Photo(models.Model):
         processors=[ResizeToFill(100, 100)],
         format='JPEG',
         options={'quality': 90},
-        )
+    )
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
     def get_next_photo(self):
@@ -39,6 +38,16 @@ class Photo(models.Model):
             return self.album.photos.filter(id__lt=self.id).order_by('-id')[0]
         except IndexError:
             return None
+
+    def delete_image(self):
+        if self.image:
+            try:
+                default_storage.delete(self.image.name)
+                self.image = None
+                self.save()
+                return True
+            except FileNotFoundError:
+                return False
 
     def __str__(self):
         return self.caption or f"Photo in {self.album.title}"
