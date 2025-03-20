@@ -23,10 +23,10 @@
                                 <div class="photo-container">
                                     {% for photo in album.photos.all %}
                                         {% if photo.thumbnail %}  <!-- Проверка на существование миниатюры -->
-                                            <a style="color:rgb(0,0,0,0); margin-bottom: 5px"
+                                            <a style="color:rgb(0,0,0,0);"
                                                href="{% url 'personal:fullscreen_image' album_id=album.id photo_id=photo.id %}">
 
-                                                    <img  src="{{ photo.thumbnail.url }}" alt="{{ photo.caption }}"
+                                                    <img style="margin-top: 5px; border: #7e030e 2px solid; border-radius: 10px" src="{{ photo.thumbnail.url }}" alt="{{ photo.caption }}"
                                                          class="photo">
 
                                             </a>
