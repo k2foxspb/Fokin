@@ -30,15 +30,6 @@
 
 
 
-
-
-
-@media (max-width: 768px) {
-    .nav-buttons {
-        display: none;
-    }
-}
-
 .swipe-left {
     animation: swipeLeft 1.3s ease-out forwards;
 }
@@ -90,12 +81,24 @@
 
 .nav-buttons {
     position: absolute;
-    bottom: 20px; /Изменено: Убрал большой отступ */
+    bottom: 300px; /Изменено: Убрал большой отступ */
     left: 0;
     width: 100%;
     display: flex;
     justify-content: space-between;
     z-index: 1001;
     padding: 0 20px;
+
+}
+@media (max-width: 768px) {
+    .nav-buttons {
+        display: none;
+    }
+}
+.nav-button {
+    opacity: 0.6;
 }
 
+.nav-button:hover {
+    opacity: 0.8; /Полная непрозрачность при наведении */
+}

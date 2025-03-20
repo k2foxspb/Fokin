@@ -56,7 +56,7 @@ def fullscreen_image_view(request, album_id, photo_id):
         'album_url': reverse_lazy('personal:profile')
     }
     if request.method == 'POST' and 'delete' in request.POST:  # Обработка удаления
-        photo.delete_image()
+        photo.delete
         return redirect('photo_alboms:profile')
     if request.method == 'POST':
         if request.POST.get('next'):

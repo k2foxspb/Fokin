@@ -29,25 +29,25 @@ class Photo(models.Model):
 
     def get_next_photo(self):
         try:
-            return self.album.photos.filter(id__gt=self.id).order_by('id')[0]
+            next_photo = self.album.photos.filter(id__gt=self.id, image__isnull=False).order_by(
+                'id').first()  # Изменено
+            return next_photo
         except IndexError:
             return None
 
     def get_previous_photo(self):
         try:
-            return self.album.photos.filter(id__lt=self.id).order_by('-id')[0]
+            prev_photo = self.album.photos.filter(id__lt=self.id, image__isnull=False).order_by(
+                '-id').first()  # Изменено
+            return prev_photo
         except IndexError:
             return None
 
-    def delete_image(self):
+    def delete(self, *args, **kwargs):
         if self.image:
-            try:
-                default_storage.delete(self.image.name)
-                self.image = None
-                self.save()
-                return True
-            except FileNotFoundError:
-                return False
+            storage, path = self.image.storage, self.image.path
+            storage.delete(path)
+        super().delete(*args, **kwargs)
 
     def __str__(self):
         return self.caption or f"Photo in {self.album.title}"

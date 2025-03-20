@@ -5,7 +5,7 @@
     <title>Полноэкранное изображение</title>
     <link rel="stylesheet" href="{% static 'css/fullscreen.css' %}">
 {% endblock %}
-
+{% block navbar %}{% endblock %}
 {% block content %}
     <div id="fullscreen-container">
         <button class="my-btn btn" id="fullscreen-close">X</button>
@@ -22,7 +22,8 @@
             {% if prev_photo_id %}
                 <form method="post">
                     {% csrf_token %}
-                    <button type="submit" name="prev" value="{{ prev_photo_id }}" class="nav-button prev-button">
+                    <button type="submit" name="prev" value="{{ prev_photo_id }}"
+                            class="my-btn btn nav-button prev-button">
                         &#8592;
                     </button>
                 </form>
@@ -30,7 +31,8 @@
             {% if next_photo_id %}
                 <form method="post">
                     {% csrf_token %}
-                    <button type="submit" name="next" value="{{ next_photo_id }}" class="nav-button next-button">
+                    <button type="submit" name="next" value="{{ next_photo_id }}"
+                            class="my-btn btn nav-button next-button">
                         &#8594;
                     </button>
                 </form>
@@ -45,6 +47,7 @@
         const closeButton = document.getElementById('fullscreen-close');
         const profileUrl = "{{ album_url }}";
         const deleteButton = document.querySelector('.delete-button');
+        const navButtons = document.querySelector('.nav-button');
         closeButton.addEventListener('click', () => {
             window.location.href = profileUrl;
         });
@@ -55,6 +58,7 @@
                 }
             });
         }
+
     </script>
     <script src="{% static 'js/photo/swipe.js' %}"></script>
 
