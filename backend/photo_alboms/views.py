@@ -32,7 +32,7 @@ def create_album(request):
 class FileFieldFormView(FormView):
     form_class = FileFieldForm
     template_name = "add_photo.html"
-    success_url = reverse_lazy('photo:photos') # Изменено:  указывает на профиль
+    success_url = reverse_lazy('photo:photos') # Изменено: указывает на профиль
 
     def form_valid(self, form):
         album = get_object_or_404(PhotoAlbum, id=self.kwargs['album_id'], user=self.request.user)
@@ -61,7 +61,7 @@ def fullscreen_image_view(request, album_id, photo_id):
     if request.method == 'POST':
         if 'delete' in request.POST:
             photo.delete()
-            return redirect('photo_alboms:profile')
+            return redirect('photo_alboms:fullscreen_image', album_id=album_id, photo_id=next_photo.id)
         elif request.POST.get('next') and next_photo:
             return redirect('photo_alboms:fullscreen_image', album_id=album_id, photo_id=next_photo.id)
         elif request.POST.get('prev') and prev_photo:
