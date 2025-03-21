@@ -23,7 +23,7 @@ def create_album(request):
             album = form.save(commit=False)
             album.user = request.user
             album.save()
-            return redirect('photo_alboms:profile') # или другой URL
+            return redirect('photo:photos') # или другой URL
     else:
         form = AlbumForm()
     return render(request, 'create_album.html', {'form': form})
@@ -32,7 +32,7 @@ def create_album(request):
 class FileFieldFormView(FormView):
     form_class = FileFieldForm
     template_name = "add_photo.html"
-    success_url = reverse_lazy('photo_alboms:profile') # Изменено:  указывает на профиль
+    success_url = reverse_lazy('photo:photos') # Изменено:  указывает на профиль
 
     def form_valid(self, form):
         album = get_object_or_404(PhotoAlbum, id=self.kwargs['album_id'], user=self.request.user)
