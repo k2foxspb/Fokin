@@ -7,7 +7,7 @@
 
     <h2 class="text-center">Мои фотоальбомы</h2>
     <div class="text-center">
-    <a class="my-btn btn"  href="{% url 'personal:create_album' %}">Создать альбом</a>
+    <a class="my-btn btn"  href="{% url 'photo:create_album' %}">Создать альбом</a>
     </div>
     {% if albums %}
         <div class="row">
@@ -16,7 +16,7 @@
                     <div class="articles">
                         <div class="card-header text-center">
                             <h3>{{ album.title }}</h3>
-                            <a class="my-btn btn " href="{% url 'personal:add_photo' album_id=album.id %}">Добавить фото</a>
+                            <a class="my-btn btn " href="{% url 'photo:add_photo' album_id=album.id %}">Добавить фото</a>
                         </div>
                         <p class="">
                             {% if album.photos.all %}
@@ -24,7 +24,7 @@
                                     {% for photo in album.photos.all %}
                                         {% if photo.thumbnail %}  <!-- Проверка на существование миниатюры -->
                                             <a style="color:rgb(0,0,0,0);"
-                                               href="{% url 'personal:fullscreen_image' album_id=album.id photo_id=photo.id %}">
+                                               href="{% url 'photo:fullscreen_image' album_id=album.id photo_id=photo.id %}">
 
                                                     <img style="margin-top: 5px; border: #7e030e 2px solid; border-radius: 10px" src="{{ photo.thumbnail.url }}" alt="{{ photo.caption }}"
                                                          class="photo">

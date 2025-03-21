@@ -12,4 +12,4 @@ class RoomAdmin(admin.ModelAdmin):
 @admin.register(Photo)
 class RoomAdmin(admin.ModelAdmin):
     search_fields = ['caption']
-    fields = ['image', 'album', 'caption', 'thumbnail']
+    fields = ['user','image', 'album', 'caption']

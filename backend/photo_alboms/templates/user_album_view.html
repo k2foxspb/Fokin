@@ -1,0 +1,16 @@
+<h1>Альбом "{{ album.name }}" пользователя {{ user.username }}</h1>
+
+{% if photos %}
+  <div class="photo-grid">
+    {% for photo in photos %}
+      <a href="{{ photo.image.url }}" target="_blank">
+        <img src="{{ photo.image.url }}" alt="{{ photo.image }}" width="150" style="object-fit: cover;">
+      </a>
+    {% endfor %}
+  </div>
+{% else %}
+  <p>В альбоме нет фотографий.</p>
+{% endif %}
+
+<a href="{% url 'user_album_list' username=user.username %}">Назад к списку альбомов</a>
+<a href="{% url 'profile' username=user.username %}">Назад к профилю</a>

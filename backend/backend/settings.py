@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     'chatapp',
     'photo_alboms',
     'imagekit',
+    'profileapp'
 
 
 
