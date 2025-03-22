@@ -18,7 +18,7 @@ class PhotoAlbum(models.Model):
 class Photo(models.Model):
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='photos_by_user')
     album = models.ForeignKey(PhotoAlbum, on_delete=models.CASCADE, related_name='photos')
-    image = models.ImageField(upload_to='photos/%Y/%m/%d/')  # Путь для хранения изображений
+    image = models.FileField(upload_to='my_files/', storage=default_storage)
     caption = models.CharField(max_length=255, blank=True)
     thumbnail = ImageSpecField(
         source='image',
