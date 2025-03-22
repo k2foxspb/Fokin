@@ -271,3 +271,5 @@ MESSAGE_STORAGE = "django.contrib.messages.storage.session.SessionStorage"
 
 
 ASGI_APPLICATION = 'backend.asgi.application'
+
+
