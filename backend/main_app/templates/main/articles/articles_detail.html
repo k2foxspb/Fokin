@@ -1,6 +1,9 @@
 {% extends 'base.html' %}
 {% load static %}
 {% load comments %}
+{% block  css %}
+    <link rel="stylesheet" href="{% static 'css/comments.css' %}">
+{% endblock %}
 {% block description %}
     {{ object.preamble }}
 {% endblock description %}
@@ -8,7 +11,7 @@
     {{ object.keyword }}
 {% endblock keywords %}
 {% block title %}
-    {{ object.title|default:"Статья" }}
+    {{ object.title }}
 {% endblock title %}
 {% block content %}
     <div class="container-fluid">
@@ -46,7 +49,7 @@
 
                     {% get_comment_list for article as comment_list %}
                     {% for comment in comment_list %}
-                        <div class=" card shadow comments">
+                        <div class="articles ">
                             <p class="margin-left">{{ comment.user_name }} </p>
                             <p class="margin-left">{{ comment.comment }}</p>
                             <p class="del-update margin-left">{{ comment.submit_date }}</p>
@@ -56,20 +59,30 @@
                 </div>
 
                 {% if user.is_authenticated %}
-                    {% get_comment_form for article as form %}
-                    <form action="{% comment_form_target %}" method="POST">
-                        {% csrf_token %}
-                        {{ form.comment }}
-                        {{ form.honeypot }}
-                        {{ form.content_type }}
-                        {{ form.object_pk }}
-                        {{ form.timestamp }}
-                        {{ form.security_hash }}
-                        <input type="hidden" name="next" value="{% url 'main:article_detail' article.slug %}"/>
-                        <input type="submit" value="Add comment" id="id_submit"/>
-                    </form>
+                    <div class="comment-form">
+                        {% get_comment_form for article as form %}
+                        <form action="{% comment_form_target %}" method="POST">
+                            {% csrf_token %}
+                            <div class="form-group">
+                                <label for="id_comment">Comment</label>
+                                <textarea id="id_comment" name="comment" class="form-control fixed-size"
+                                          rows="5"></textarea></div>
+
+                            {# Скрытые поля - лучше не показывать #}
+                            {{ form.honeypot }}
+                            {{ form.content_type }}
+                            {{ form.object_pk }}
+                            {{ form.timestamp }}
+                            {{ form.security_hash }}
+
+                            <input type="hidden" name="next" value="{% url 'main:article_detail' article.slug %}"/>
+                            <button type="submit" class="btn my-btn">Add comment</button>
+                        </form>
+                    </div>
                 {% else %}
-                    <p>Please <a href="{% url 'auth_login' %}">log in</a> to leave a comment.</p>
+                    <div class="comment-form">
+                        <p>Please <a href="{% url 'authapp:login' %}">log in</a> to leave a comment.</p>
+                    </div>
                 {% endif %}
 
             </div>
