@@ -3,7 +3,7 @@ import logging
 from django.core.files.storage import default_storage
 from django.db import models
 from google.cloud import storage
-from imagekit.models import ProcessedImageField, ImageSpecField
+from imagekit.models import ImageSpecField
 from imagekit.processors import ResizeToFill
 
 from authapp.models import CustomUser
