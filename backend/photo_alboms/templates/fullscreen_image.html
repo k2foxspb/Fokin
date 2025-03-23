@@ -1,0 +1,65 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block css %}
+    <title>Полноэкранное изображение</title>
+    <link rel="stylesheet" href="{% static 'css/fullscreen.css' %}">
+{% endblock %}
+{% block navbar %}{% endblock %}
+{% block content %}
+    <div id="fullscreen-container">
+        <button class="my-btn btn" id="fullscreen-close">X</button>
+        <form method="post">
+            {% csrf_token %}
+            <button class="my-btn btn delete-button" type="submit" id="delete" name="delete">
+                <i class=" fas fa-trash"></i>
+            </button>
+        </form>
+
+
+        <img id="fullscreen-image" src="{{ photo_url }}" alt="Фотография">
+        <div class="nav-buttons">  <!-- Новый контейнер -->
+            {% if prev_photo_id %}
+                <form method="post">
+                    {% csrf_token %}
+                    <button type="submit" name="prev" value="{{ prev_photo_id }}"
+                            class="my-btn btn nav-button prev-button">
+                        &#8592;
+                    </button>
+                </form>
+            {% endif %}
+            {% if next_photo_id %}
+                <form method="post">
+                    {% csrf_token %}
+                    <button type="submit" name="next" value="{{ next_photo_id }}"
+                            class="my-btn btn nav-button next-button">
+                        &#8594;
+                    </button>
+                </form>
+            {% endif %}
+
+        </div>
+    </div>
+
+
+
+    <script>
+        const closeButton = document.getElementById('fullscreen-close');
+        const profileUrl = "{{ album_url }}";
+        const deleteButton = document.querySelector('.delete-button');
+        const navButtons = document.querySelector('.nav-button');
+        closeButton.addEventListener('click', () => {
+            window.location.href = profileUrl;
+        });
+        if (deleteButton) {
+            deleteButton.addEventListener('click', (event) => {
+                if (!confirm("Вы уверены, что хотите удалить это изображение?")) {
+                    event.preventDefault(); // Предотвращаем отправку формы
+                }
+            });
+        }
+
+    </script>
+    <script src="{% static 'js/photo/swipe.js' %}"></script>
+
+{% endblock %}

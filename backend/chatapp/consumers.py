@@ -1,9 +1,12 @@
 import json
+from datetime import  datetime
+from pprint import pprint
 
 from asgiref.sync import async_to_sync
 from channels.generic.websocket import WebsocketConsumer
 
 from .models import Room, Message
+from .telegram import send_message
 
 
 class ChatConsumer(WebsocketConsumer):
@@ -35,10 +38,10 @@ class ChatConsumer(WebsocketConsumer):
         # send the user list to the newly joined user
         self.send(json.dumps({
             'type': 'user_list',
-            'users': [user.username for user in self.room.online.all()],
+            'users': [user.username for user in self.room.online.all()]
         }))
 
-        if self.user.is_authenticated:
+        if self.user.is_authenticated and self.user not in self.room.online.all():
             # create a user inbox for private messages
             async_to_sync(self.channel_layer.group_add)(
                 self.user_inbox,
@@ -53,7 +56,7 @@ class ChatConsumer(WebsocketConsumer):
                     'user': self.user.username,
                 }
             )
-            self.room.online.add(self.user)
+            self.room.join(self.user)
 
     def disconnect(self, close_code):
         async_to_sync(self.channel_layer.group_discard)(
@@ -76,11 +79,12 @@ class ChatConsumer(WebsocketConsumer):
                     'user': self.user.username,
                 }
             )
-            self.room.online.remove(self.user)
+            self.room.leave(self.user)
 
     def receive(self, text_data=None, bytes_data=None):
         text_data_json = json.loads(text_data)
         message = text_data_json['message']
+        print(text_data_json)
 
         if not self.user.is_authenticated:
             return
@@ -113,9 +117,15 @@ class ChatConsumer(WebsocketConsumer):
                 'type': 'chat_message',
                 'user': self.user.username,
                 'message': message,
+                'time': datetime.astimezone(datetime.now()).strftime('%d.%m.%Y, %H:%M:%S'),
             }
         )
         Message.objects.create(user=self.user, room=self.room, content=message)
+        send_message(
+            f'name: {self.user}\n'
+            f'room: {self.room}\n'
+            f'msg: {message}'
+        )
 
     def chat_message(self, event):
         self.send(text_data=json.dumps(event))

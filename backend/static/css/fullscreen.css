@@ -1,0 +1,109 @@
+#fullscreen-container {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    background-color: rgba(0, 0, 0, 0.8);
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+#fullscreen-image {
+    border-radius: 20px;
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
+    display: block;
+    object-fit: contain;
+    touch-action: pan-y;
+    user-select: none;
+    margin: 0; /Убрано margin-bottom */
+    padding: 0;
+    z-index: 0;
+}
+
+
+
+
+.swipe-left {
+    animation: swipeLeft 1.3s ease-out forwards;
+}
+
+.swipe-right {
+    animation: swipeRight 1.3s ease-out forwards;
+}
+
+@keyframes swipeLeft {
+    from {
+        transform: translateX(0);
+    }
+    to {
+        transform: translateX(100%);
+    }
+}
+
+@keyframes swipeRight {
+    from {
+        transform: translateX(0);
+    }
+    to {
+        transform: translateX(-100%);
+    }
+}
+
+#fullscreen-close,
+#delete {
+    position: absolute;
+    top: 10px;
+    background-color: rgba(255, 255, 255, 0.7);
+    border: none;
+    cursor: pointer;
+    padding: 10px;
+    z-index: 1002;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border-radius: 10px;
+
+}
+
+#fullscreen-close {
+    right: 10px; /Отступ для кнопки удаления */
+}
+
+#delete {
+    right: 60px; /Отступ для кнопки удаления */
+}
+
+
+
+.nav-buttons {
+    position: absolute;
+    bottom: 300px; /Изменено: Убрал большой отступ */
+    left: 0;
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    z-index: 1001;
+    padding: 0 20px;
+
+}
+@media (max-width: 768px) {
+    .nav-buttons {
+        display: none;
+    }
+}
+.nav-button {
+    opacity: 0.6;
+}
+
+.nav-button:hover {
+    opacity: 0.8; /Полная непрозрачность при наведении */
+}

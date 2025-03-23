@@ -70,7 +70,7 @@
     font-weight: 800;
 }
 
-.my-navbar:hover { 
+.my-navbar:hover {
     color: #670000;
     font-weight: 900;
 }
@@ -81,7 +81,7 @@
 
 .my-prgm {
     justify-content: center;
-    display: flex;   
+    display: flex;
     align-items: center;
 }
 
@@ -92,6 +92,192 @@
     color: black !important;
 }
 
+
 #id_honeypot {
     display: none;
 }
+
+.date {
+    text-align: right;
+    color: #abb1bf;
+    font-size: x-small;
+}
+
+.mydiv {
+    height: 70%;
+    overflow-y: auto;
+    scrollbar-color: #670000 #504d4d;
+    scrollbar-width: none;
+}
+.message {
+    border: 1px solid #670000;
+    border-radius: 20px;
+    padding: 10px;
+    margin: 5px;
+    background-color: rgb(81, 80, 80);
+    font-size: small;
+
+}
+.joinedTheRoom {
+    text-align: center;
+}
+input[type="text"] {
+    padding: 10px;
+    border-radius: 10px;
+    border: 0 solid #880000;
+    margin: 0 5px;
+    width: 65%;
+}
+
+input[type="text"]:focus {
+    box-shadow: 0 0 10px 5px rgb(136, 0, 0);
+}
+
+input[type="password"] {
+    padding: 10px;
+    border-radius: 10px;
+    border: 0 solid #880000;
+    margin: 0 5px;
+    width: 65%;
+}
+
+input[type="password"]:focus {
+    box-shadow: 0 0 10px 5px rgb(136, 0, 0);
+}
+
+input[type="number"] {
+    padding: 10px;
+    border-radius: 10px;
+    border: 0 solid #880000;
+    margin: 0 5px;
+    width: 25%;
+}
+
+input[type="number"]:focus {
+    box-shadow: 0 0 10px 5px rgb(136, 0, 0);
+}
+
+input[type="file"] {
+    padding: 10px;
+    border-radius: 10px;
+    border: 0 solid #880000;
+    margin: 0 5px;
+    width: 65%;
+}
+
+input[type="file"]:focus {
+    box-shadow: 0 0 10px 5px rgb(136, 0, 0);
+}
+
+
+/*кнопка обратной связи*/
+.email-bt {
+    background: #610505;
+    border-radius: 50%;
+    box-shadow: 0 8px 10px rgba(249, 92, 24, 0.3);
+    cursor: pointer;
+    border: 2px solid transparent;
+    display: block;
+    height: 75px;
+    width: 75px;
+    text-align: center;
+    position: fixed;
+    right: 8%;
+    bottom: 18%;
+    z-index: 999;
+    transition: .3s ease-in-out;
+    -webkit-animation: email-an linear 1s infinite;
+    animation: email-an linear 1s infinite;
+}
+
+.email-bt:hover {
+    background: #ffffff;
+    border: 2px solid #610505;
+}
+
+.email-bt .text-call {
+    height: 75px;
+    width: 75px;
+    border-radius: 50%;
+    position: relative;
+}
+
+.email-bt .text-call:after {
+    content: "\f1d8";
+    display: block;
+    font-family: FontAwesome;
+
+    color: #fff;
+    font-size: 34px;
+    line-height: 75px;
+    height: 75px;
+    width: 75px;
+    opacity: 1;
+    transition: .3s ease-in-out;
+    -webkit-animation: opsimple 3s infinite;
+    animation: opsimple 3s infinite;
+}
+
+.email-bt .text-call:hover:after {
+    opacity: 0;
+}
+
+.email-bt .text-call span {
+    color: #610505;
+    display: block;
+    left: 50%;
+    top: 50%;
+    position: absolute;
+    transform: translate(-50%, -50%);
+    z-index: 1;
+    opacity: 0;
+    font-size: 11px;
+    line-height: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    transition: .3s ease-in-out;
+
+}
+
+.email-bt .text-call:hover span {
+    opacity: 1;
+}
+
+@keyframes email-an {
+    0% {
+        box-shadow: 0 8px 10px rgb(97, 5, 5), 0 0 0 0 rgb(128, 7, 7), 0 0 0 0 rgb(181, 5, 5)
+    }
+
+    40% {
+        box-shadow: 0 8px 10px rgb(97, 5, 5), 0 0 0 15px rgb(120, 7, 7), 0 0 0 0 rgb(168, 7, 7)
+    }
+
+    80% {
+        box-shadow: 0 8px 10px rgba(249, 92, 24, 0.3), 0 0 0 30px rgba(249, 92, 24, 0), 0 0 0 26.7px rgba(249, 92, 24, 0.067)
+    }
+
+    100% {
+        box-shadow: 0 8px 10px rgba(249, 92, 24, 0.3), 0 0 0 30px rgba(249, 92, 24, 0), 0 0 0 40px rgba(249, 92, 24, 0.0)
+    }
+}
+
+@keyframes opsimple {
+    0% {
+        opacity: 0;
+        transform: rotate(0deg);
+    }
+
+    40% {
+        opacity: 1;
+    }
+
+    80% {
+        opacity: 1;
+    }
+
+    100% {
+        opacity: 0;
+        transform: rotate(360deg);
+    }
+}
+
