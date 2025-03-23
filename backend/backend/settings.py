@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     'django_ckeditor_5',
     "django.contrib.sites",  # проверка пароля
     'chatapp',
+    'django_comments',
     'photo_alboms',
     'imagekit',
     'profileapp',
@@ -265,7 +266,8 @@ CKEDITOR_5_CONFIGS = {
 CKEDITOR_5_FILE_UPLOAD_PERMISSION = "staff"  # Possible values: "staff", "authenticated", "any"
 CKEDITOR_5_CUSTOM_CSS = 'css/my.css'
 SITE_ID = 1
-
+ADMINS = [('Валерий', 'k2foxspb@mail.ru')]
+MANAGERS = ADMINS
 MESSAGE_STORAGE = "django.contrib.messages.storage.session.SessionStorage"
 
 ASGI_APPLICATION = 'backend.asgi.application'

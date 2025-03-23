@@ -92,6 +92,11 @@
     color: black !important;
 }
 
+
+#id_honeypot {
+    display: none;
+}
+
 .date {
     text-align: right;
     color: #abb1bf;
@@ -276,4 +281,3 @@ input[type="file"]:focus {
     }
 }
 
-/* конец кнопки звязи */
