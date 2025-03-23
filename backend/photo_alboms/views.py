@@ -61,7 +61,12 @@ def fullscreen_image_view(request, album_id, photo_id):
     if request.method == 'POST':
         if 'delete' in request.POST:
             photo.delete()
-            return redirect('photo_alboms:fullscreen_image', album_id=album_id, photo_id=next_photo.id)
+            if next_photo:
+                return redirect('photo_alboms:fullscreen_image', album_id=album_id, photo_id=next_photo.id)
+            elif prev_photo:
+                return redirect('photo_alboms:fullscreen_image', album_id=album_id, photo_id=prev_photo.id)
+            else:
+                return redirect('photo:photos',)
         elif request.POST.get('next') and next_photo:
             return redirect('photo_alboms:fullscreen_image', album_id=album_id, photo_id=next_photo.id)
         elif request.POST.get('prev') and prev_photo:

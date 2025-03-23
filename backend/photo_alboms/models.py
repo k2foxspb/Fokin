@@ -1,9 +1,13 @@
+import logging
+
 from django.core.files.storage import default_storage
 from django.db import models
+from google.cloud import storage
 from imagekit.models import ProcessedImageField, ImageSpecField
 from imagekit.processors import ResizeToFill
 
 from authapp.models import CustomUser
+logger = logging.getLogger(__name__)
 
 
 class PhotoAlbum(models.Model):
@@ -45,9 +49,22 @@ class Photo(models.Model):
             return None
 
     def delete(self, *args, **kwargs):
+        # Удаляем файл из Yandex Cloud Object Storage
+
         if self.image:
-            storage, path = self.image.storage, self.image.path
-            storage.delete(path)
+
+            try:
+                client = storage.Client() #Инициализация клиента без service account, использует default credentials
+                bucket_name = 'fokin.fun' # замените на имя вашего бакета
+                blob_name = self.image.name
+                bucket = client.bucket(bucket_name)
+                blob = bucket.blob(blob_name)
+                blob.delete()
+                logger.info(f"Файл {blob_name} удален из Yandex Cloud Storage.")
+            except Exception as e:
+                blob_name = self.image.name
+                logger.info(f"Ошибка при удалении файла {blob_name} из Yandex Cloud Storage: {e}")
+        # Удаляем запись из базы данных
         super().delete(*args, **kwargs)
 
     def __str__(self):
