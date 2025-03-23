@@ -97,6 +97,7 @@
     display: none;
 }
 
+
 .date {
     text-align: right;
     color: #abb1bf;
@@ -205,7 +206,7 @@ input[type="file"]:focus {
 .email-bt .text-call:after {
     content: "\f1d8";
     display: block;
-    font-family: FontAwesome;
+    font-family: FontAwesome, serif;
 
     color: #fff;
     font-size: 34px;
