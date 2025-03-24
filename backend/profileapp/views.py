@@ -5,8 +5,10 @@ from authapp.models import CustomUser
 
 def profile_view(request, username):
     user = get_object_or_404(CustomUser, username=username)
+    is_authenticated = request.user.is_authenticated
     context = {
         'user': user,
+        'is_authenticated': is_authenticated,
     }
     return render(request, 'profile.html', context)
 

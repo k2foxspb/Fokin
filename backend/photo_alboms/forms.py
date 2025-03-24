@@ -33,5 +33,5 @@ class FileFieldForm(forms.Form):
 class AlbumForm(forms.ModelForm):
     class Meta:
         model = PhotoAlbum
-        fields = ('title',)
+        fields = ('title','hidden_flag')
 

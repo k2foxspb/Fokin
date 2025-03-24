@@ -23,7 +23,7 @@
                     </li>
                     <li class="nav-item dropdown">
                         <a class="nav-link my-navbar"
-                           href="{% url 'photo:photos' %}">Мои фотографии</a>
+                           href="{% url 'photo:photos' username=user.username %}">Мои фотографии</a>
                     </li>
 
                 {% endif %}
@@ -36,9 +36,11 @@
                 <li class="nav-item">
                     <a class="nav-link my-navbar" href="{% url 'profile:all_users' %}">Все пользователи</a>
                 </li>
+                {% if user.is_authenticated %}
                 <li class="nav-item">
                     <a class="nav-link my-navbar" href="{% url 'auth:logout' %}">Выход</a>
                 </li>
+                {% endif %}
 
             </ul>
         </div>

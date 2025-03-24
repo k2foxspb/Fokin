@@ -1,3 +1,5 @@
+from django.contrib.auth import get_user_model
+from django.http import HttpResponseForbidden
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.urls import reverse_lazy, reverse
@@ -9,12 +11,20 @@ from .models import PhotoAlbum, Photo
 from .forms import AlbumForm, FileFieldForm
 
 
-@login_required
-def photo_view(request):
-    albums = PhotoAlbum.objects.filter(user=request.user).prefetch_related('photos')
-    return render(request, 'photo.html', {'albums': albums})
-
-
+def photo_list(request, username=None):
+    if username:
+        user = get_object_or_404(get_user_model(), username=username)
+        if user != request.user and not request.user.is_superuser and request.user.is_authenticated:
+            return HttpResponseForbidden()
+        albums = user.albums.all()
+    else:
+        if request.user.is_authenticated:
+            albums = PhotoAlbum.objects.filter(user=request.user)
+        else:
+            albums = PhotoAlbum.objects.filter(public=True)
+    is_authenticated = request.user.is_authenticated
+    context = {'albums': albums, 'user': user if username else None, 'is_authenticated': is_authenticated}
+    return render(request, 'photo.html', context)
 @login_required
 def create_album(request):
     if request.method == 'POST':
@@ -74,9 +84,4 @@ def fullscreen_image_view(request, album_id, photo_id):
 
     return render(request, 'fullscreen_image.html', context)
 
-
-def user_album_list(request, username):
-    user = get_object_or_404(CustomUser, username=username)
-    albums = user.albums.all()
-    return render(request, 'user_album_list.html', {'albums': albums, 'user': user})
 

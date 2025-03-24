@@ -13,7 +13,7 @@
             <p>Имя: {{ user.first_name }}</p>
             <p>Фамилия: {{ user.last_name }}</p>
             <p>Возраст: {{ user.age }}</p>
-            <p><a href="{% url 'photo:user_album_list' username=user.username %}">Альбомы</a></p>
+            <p><a href="{% url 'photo:photos' username=user.username %}">Альбомы</a></p>
         </div>
 
     </div>
