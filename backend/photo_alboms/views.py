@@ -80,9 +80,3 @@ def user_album_list(request, username):
     albums = user.albums.all()
     return render(request, 'user_album_list.html', {'albums': albums, 'user': user})
 
-
-def user_album_view(request, username, album_id):
-    user = get_object_or_404(CustomUser, username=username)
-    album = get_object_or_404(PhotoAlbum, pk=album_id, user=user)
-    photos = album.photos.all() # исправлено: photos вместо albums
-    return render(request, 'user_album_view.html', {'photos': photos, 'album': album})

@@ -16,7 +16,7 @@
                         <div class="photo-grid">
                             {% for photo in album.photos.all %}
                                 <a href="{{ photo.image.url }}" target="_blank">
-                                    <img src="{{ photo.thumbnail.url }}" alt="{{ photo.caption|default:'Фотография' }}" class="photo-grid-img">
+                                    <img style="margin-top: 5px; border: #7e030e 2px solid; border-radius: 10px" src="{{ photo.thumbnail.url }}" alt="{{ photo.caption|default:'Фотография' }}" class="photo">
                                 </a>
                             {% endfor %}
                         </div>

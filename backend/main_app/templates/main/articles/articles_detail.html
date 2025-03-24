@@ -49,10 +49,20 @@
 
                     {% get_comment_list for article as comment_list %}
                     {% for comment in comment_list %}
-                        <div class="articles ">
-                            <p class="margin-left">{{ comment.user_name }} </p>
-                            <p class="margin-left">{{ comment.comment }}</p>
-                            <p class="del-update margin-left">{{ comment.submit_date }}</p>
+                        <div class="articles">
+                            <div class="comment-avatar">
+                                {% if comment.user.avatar %}
+                                    <img src="{{ comment.user.avatar.url }}" alt="{{ comment.user_name }} avatar">
+                                {% else %}
+                                    <img src="{% static 'img/logo/background.webp' %}" alt="{{ comment.user_name }} avatar">
+                                    {# Или какой-то дефолтный аватар #}
+                                {% endif %}
+                            </div>
+                            <div class="comment-content">
+                                <p class=""><strong>{{ comment.user_name }}</strong></p>
+                                <p class="">{{ comment.comment }}</p>
+                                <p class="comment-date">{{ comment.submit_date }}</p>
+                            </div>
                         </div>
                     {% endfor %}
 
