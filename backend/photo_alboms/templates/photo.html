@@ -47,8 +47,8 @@
                     </div>
                 {% elif is_authenticated %}
                     {% if user == album.user or user.is_superuser %}
-                        <div class="col-md-4 mb-4">
-                            <div class="card">
+                        <div class="">
+                            <div class="articles">
                                 <div class="card-header text-center">
                                     <h3>{{ album.title }}</h3>
                                     <a class="my-btn btn" href="{% url 'photo:add_photo' album_id=album.id %}">Добавить фото</a>

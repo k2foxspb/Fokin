@@ -1,31 +1,35 @@
 from django.contrib.auth import get_user_model
-from django.http import HttpResponseForbidden
+from django.http import HttpResponseForbidden, Http404, HttpResponseNotFound
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.urls import reverse_lazy, reverse
 from django.views.generic import FormView
-
 
 from authapp.models import CustomUser
 from .models import PhotoAlbum, Photo
 from .forms import AlbumForm, FileFieldForm
 
 
-def photo_list(request, username=None):
-    if username:
-        user = get_object_or_404(get_user_model(), username=username)
-        if user != request.user and not request.user.is_superuser and request.user.is_authenticated:
-            return HttpResponseForbidden()
-        albums = user.albums.all()
-    else:
-        if request.user.is_authenticated:
-            albums = PhotoAlbum.objects.filter(user=request.user)
-        else:
-            albums = PhotoAlbum.objects.filter(public=True)
-    is_authenticated = request.user.is_authenticated
-    context = {'albums': albums, 'user': user if username else None, 'is_authenticated': is_authenticated}
-    return render(request, 'photo.html', context)
 @login_required
+def photo_list(request):
+    username = request.GET.get('username')  # Получаем username из GET параметров
+
+    if username:
+        try:
+            user = get_object_or_404(get_user_model(), username=username)
+            if user != request.user and not request.user.is_superuser:
+                return HttpResponseForbidden()
+            albums = user.albums.all()
+            context = {'albums': albums, 'user': user, 'is_authenticated': True}
+        except Http404:
+            return HttpResponseNotFound("Пользователь не найден")
+    else:
+        albums = PhotoAlbum.objects.filter(user=request.user)
+        context = {'albums': albums, 'user': request.user, 'is_authenticated': True}
+
+    return render(request, 'photo.html', context)
+
+
 def create_album(request):
     if request.method == 'POST':
         form = AlbumForm(request.POST)
@@ -33,7 +37,7 @@ def create_album(request):
             album = form.save(commit=False)
             album.user = request.user
             album.save()
-            return redirect('photo:photos') # или другой URL
+            return redirect('photo:photos')  # или другой URL
     else:
         form = AlbumForm()
     return render(request, 'create_album.html', {'form': form})
@@ -42,7 +46,7 @@ def create_album(request):
 class FileFieldFormView(FormView):
     form_class = FileFieldForm
     template_name = "add_photo.html"
-    success_url = reverse_lazy('photo:photos') # Изменено: указывает на профиль
+    success_url = reverse_lazy('photo:photos')  # Изменено: указывает на профиль
 
     def form_valid(self, form):
         album = get_object_or_404(PhotoAlbum, id=self.kwargs['album_id'], user=self.request.user)
@@ -66,22 +70,20 @@ def fullscreen_image_view(request, album_id, photo_id):
         'next_photo_id': next_photo.id if next_photo else None,
         'prev_photo_id': prev_photo.id if prev_photo else None,
         'album_id': album_id,
-        'album_url': reverse_lazy('photo:photos') # проверьте URL
+        'album_url': reverse('photo:photos', )  # проверьте URL
     }
     if request.method == 'POST':
         if 'delete' in request.POST:
             photo.delete()
             if next_photo:
-                return redirect('photo_alboms:fullscreen_image', album_id=album_id, photo_id=next_photo.id)
+                return redirect('photo:fullscreen_image', album_id=album_id, photo_id=next_photo.id)
             elif prev_photo:
-                return redirect('photo_alboms:fullscreen_image', album_id=album_id, photo_id=prev_photo.id)
+                return redirect('photo:fullscreen_image', album_id=album_id, photo_id=prev_photo.id)
             else:
-                return redirect('photo:photos',)
+                return redirect('photo:photos', )
         elif request.POST.get('next') and next_photo:
-            return redirect('photo_alboms:fullscreen_image', album_id=album_id, photo_id=next_photo.id)
+            return redirect('photo:fullscreen_image', album_id=album_id, photo_id=next_photo.id)
         elif request.POST.get('prev') and prev_photo:
-            return redirect('photo_alboms:fullscreen_image', album_id=album_id, photo_id=prev_photo.id)
+            return redirect('photo:fullscreen_image', album_id=album_id, photo_id=prev_photo.id)
 
     return render(request, 'fullscreen_image.html', context)
-
-
