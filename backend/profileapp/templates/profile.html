@@ -1,7 +1,7 @@
-{% extends 'base.html' %}
+{% extends 'photo.html' %}
 {% block content %}
 
-    <h1>Профиль</h1>
+
     {% if user %}
         <h1>Профиль {{ user.username }}</h1>
         <div style="display: flex; align-items: center;">
@@ -16,7 +16,7 @@
                 <p>Фамилия: {{ user.last_name }}</p>
                 <p>Возраст: {{ user.age }}</p>
                 {% if user.username %}
-                    <p><a href="{% url 'photo:photos' %}?username={{ user.username }}">Альбомы пользователя {{ user.username }}</a></p>
+                    <p><a class="nav-link my-navbar" href="{% url 'photo:photos' %}?username={{ user.username }}">Альбомы</a></p>
                 {% endif %}
             </div>
         </div>

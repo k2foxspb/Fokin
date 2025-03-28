@@ -13,19 +13,19 @@ import os
 from pathlib import Path
 import environ
 
-env = environ.Env(DEBUG=(bool, False))
 
+env = environ.Env(DEBUG=(bool, False))
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
-environ.Env.read_env(os.path.join(BASE_DIR, ".env"))
+env.read_env(os.path.join(BASE_DIR, ".env"))
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = env("SECRET_KEY")
+SECRET_KEY = env('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = env("DEBUG")
+DEBUG = env('DEBUG')
 
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS")
 
@@ -161,9 +161,8 @@ AUTHENTICATION_BACKENDS = ["authapp.backend.UserModelBackend"]
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 EMAIL_HOST = "smtp.mail.ru"
 EMAIL_HOST_USER = "k2foxspb@mail.ru"
-EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD")
+EMAIL_HOST_PASSWORD = env('EMAIL_HOST_PASSWORD')
 EMAIL_PORT = 465
-EMAIL_USE_TLS = False
 EMAIL_USE_SSL = True
 DEFAULT_FROM_EMAIL = 'k2foxspb@mail.ru'
 
@@ -272,16 +271,19 @@ MESSAGE_STORAGE = "django.contrib.messages.storage.session.SessionStorage"
 
 ASGI_APPLICATION = 'backend.asgi.application'
 # storage
-if os.environ.get("AWS_ACCESS_KEY_ID"):
+if env("AWS_ACCESS_KEY_ID"):
     STORAGES = {
         "default": {"BACKEND": "storages.backends.s3boto3.S3Boto3Storage"},
         "staticfiles": {
             "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
         },
     }
-AWS_DEFAULT_REGION = 'ru-central1'
+AWS_DEFAULT_REGION = 'ru-central1-a'
 AWS_STORAGE_BUCKET_NAME = 'fokin.fun'
 AWS_S3_ENDPOINT_URL = 'https://storage.yandexcloud.net/'
-AWS_ACCESS_KEY_ID = os.environ['AWS_ACCESS_KEY_ID']
-AWS_SECRET_ACCESS_KEY = os.environ['AWS_SECRET_ACCESS_KEY']
+AWS_ACCESS_KEY_ID = env('AWS_ACCESS_KEY_ID')
+AWS_SECRET_ACCESS_KEY = env('AWS_SECRET_ACCESS_KEY')
 # storage and image = models.FileField(upload_to='my_files/', storage=default_storage)
+
+# 1) iex (New-Object System.Net.WebClient).DownloadString('https://storage.yandexcloud.net/yandexcloud-yc/install.ps1')
+# 2)

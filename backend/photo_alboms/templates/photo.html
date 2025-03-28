@@ -5,6 +5,59 @@
     <link rel="stylesheet" href="{% static 'css/fullscreen.css' %}">
 {% endblock %}
 
+{% block navbar %}
+    <nav class="navbar navbar-expand-sm  ">
+        <div class="container-lg">
+            <a class="navbar-brand" href="{% url 'main:main_category' %}"><img style="width: 50px"
+                                                                               src="{% static 'img/logo/logo_white.png' %}"
+                                                                               alt="logo"></a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
+                    aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav">
+                    {% if user.is_staff and is_authenticated %}
+                        <li class="nav-item">
+                            <a class="nav-link my-navbar" href="{% url 'admin:index' %}">Панель администратора</a>
+                        </li>
+                    {% endif %}
+                    {% if user.is_anonymous or is_authenticated == False %}
+                        <li class="nav-item">
+                            <a class="nav-link my-navbar" href="{% url 'auth:login' %}">Вход</a>
+                            {% else %}
+                        </li>
+
+
+                    {% endif %}
+
+                    <li class="nav-item">
+                        <a class="nav-link my-navbar" href="{% url 'main:about' %}">Контакты</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link my-navbar" href="{% url 'chat:chat-index' %}">Комнаты чатов</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link my-navbar" href="{% url 'profile:all_users' %}">Все пользователи</a>
+                    </li>
+
+                    {% if is_authenticated %}
+                        <li class="nav-item dropdown">
+                            <a class="nav-link my-navbar"
+                               href="{% url 'photo:photos' %}">Мои фотографии</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link my-navbar" href="{% url 'auth:logout' %}">Выход</a>
+                        </li>
+                    {% endif %}
+
+                </ul>
+            </div>
+        </div>
+    </nav>
+{% endblock navbar %}
+
+
 {% block content %}
     <h2 class="text-center">Фотоальбомы</h2>
 
@@ -18,13 +71,14 @@
         <div class="row">
             {% for album in albums %}
                 {% if album.public %}
-                    <div  style="margin-top: 10px">
+                    <div style="margin-top: 10px">
                         <div class="articles">
                             <div class="card-header text-center">
                                 <h3>{{ album.title }}</h3>
                                 {% if is_authenticated %}
                                     {% if user == album.user or user.is_superuser %}
-                                        <a class="my-btn btn" href="{% url 'photo:add_photo' album_id=album.id %}">Добавить фото</a>
+                                        <a class="my-btn btn" href="{% url 'photo:add_photo' album_id=album.id %}">Добавить
+                                            фото</a>
                                     {% endif %}
                                 {% endif %}
                             </div>
@@ -34,7 +88,8 @@
                                         {% for photo in album.photos.all %}
                                             {% if photo.thumbnail %}
                                                 <a href="{% url 'photo:fullscreen_image' album_id=album.id photo_id=photo.id %}">
-                                                    <img src="{{ photo.thumbnail.url }}" alt="{{ photo.caption }}" class="photo img-fluid">
+                                                    <img src="{{ photo.thumbnail.url }}" alt="{{ photo.caption }}"
+                                                         class="photo img-fluid">
                                                 </a>
                                             {% endif %}
                                         {% endfor %}
@@ -51,7 +106,8 @@
                             <div class="articles">
                                 <div class="card-header text-center">
                                     <h3>{{ album.title }}</h3>
-                                    <a class="my-btn btn" href="{% url 'photo:add_photo' album_id=album.id %}">Добавить фото</a>
+                                    <a class="my-btn btn" href="{% url 'photo:add_photo' album_id=album.id %}">Добавить
+                                        фото</a>
                                 </div>
                                 <div class="card-body">
                                     {% if album.photos.all %}
@@ -59,7 +115,8 @@
                                             {% for photo in album.photos.all %}
                                                 {% if photo.thumbnail %}
                                                     <a href="{% url 'photo:fullscreen_image' album_id=album.id photo_id=photo.id %}">
-                                                        <img src="{{ photo.thumbnail.url }}" alt="{{ photo.caption }}" class="photo img-fluid">
+                                                        <img src="{{ photo.thumbnail.url }}" alt="{{ photo.caption }}"
+                                                             class="photo img-fluid">
                                                     </a>
                                                 {% endif %}
                                             {% endfor %}
@@ -71,10 +128,16 @@
                             </div>
                         </div>
                     {% endif %}
+                {% else %}
+                    <div class="articles">войдите в <a href="{% url 'auth:login' %}">аккаунт</a>, что бы увидеть фотографии пользователя</div>
                 {% endif %}
             {% endfor %}
         </div>
     {% else %}
-        <p class="text-center">У вас пока нет фотоальбомов. Создайте свой первый!</p>
+        {% if user == albums.user %}
+            <p class="text-center">У вас пока нет фотоальбомов. Создайте свой первый!</p>
+        {% else %}
+            <p class="text-center">У пользователя нет фотоальбомов</p>
+        {% endif %}
     {% endif %}
 {% endblock %}

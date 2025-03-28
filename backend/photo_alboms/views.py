@@ -10,25 +10,34 @@ from .models import PhotoAlbum, Photo
 from .forms import AlbumForm, FileFieldForm
 
 
-@login_required
+
 def photo_list(request):
-    username = request.GET.get('username')  # Получаем username из GET параметров
+    username = request.GET.get('username')
 
     if username:
         try:
             user = get_object_or_404(get_user_model(), username=username)
-            if user != request.user and not request.user.is_superuser:
-                return HttpResponseForbidden()
-            albums = user.albums.all()
-            context = {'albums': albums, 'user': user, 'is_authenticated': True}
+            if request.user.is_authenticated: #Проверка авторизации
+                if request.user == user or request.user.is_superuser:
+                    albums = user.albums.all()
+                else:
+                    albums = user.albums.filter(hidden_flag=False)
+                context = {'albums': albums, 'user': user, 'is_authenticated': request.user.is_authenticated}
+            else:
+                albums = user.albums.filter(hidden_flag=False) #Только публичные и не скрытые
+                context = {'albums': albums, 'user': user, 'is_authenticated': False}
+
         except Http404:
             return HttpResponseNotFound("Пользователь не найден")
     else:
-        albums = PhotoAlbum.objects.filter(user=request.user)
-        context = {'albums': albums, 'user': request.user, 'is_authenticated': True}
+        if request.user.is_authenticated:
+            albums = PhotoAlbum.objects.filter(user=request.user)
+            context = {'albums': albums, 'user': request.user, 'is_authenticated': True}
+        else:
+            albums = PhotoAlbum.objects.filter(hidden_flag=False) #Только публичные и не скрытые
+            context = {'albums': albums, 'user': None, 'is_authenticated': False}
 
     return render(request, 'photo.html', context)
-
 
 def create_album(request):
     if request.method == 'POST':
