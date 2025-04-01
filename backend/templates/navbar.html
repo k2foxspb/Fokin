@@ -23,7 +23,7 @@
                     </li>
                     <li class="nav-item dropdown">
                         <a class="nav-link my-navbar"
-                           href="{% url 'photo:photos' %}">Мои фотографии</a>
+                           href="{% url 'photo:photos' %}?username={{ user.username }}">Мои фотографии</a>
                     </li>
 
                 {% endif %}

@@ -7,7 +7,7 @@ from photo_alboms.models import PhotoAlbum, Photo
 @admin.register(PhotoAlbum)
 class RoomAdmin(admin.ModelAdmin):
     search_fields = ['title']
-    fields = ['title', 'user']
+    fields = ['title', 'hidden_flag']
 
 @admin.register(Photo)
 class RoomAdmin(admin.ModelAdmin):

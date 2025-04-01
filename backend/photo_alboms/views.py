@@ -22,7 +22,7 @@ def photo_list(request):
                     albums = user.albums.all()
                 else:
                     albums = user.albums.filter(hidden_flag=False)
-                context = {'albums': albums, 'user': user, 'is_authenticated': request.user.is_authenticated}
+                context = {'albums': albums, 'user': user, 'is_authenticated': request.user.is_authenticated, 'username': request.user.username}
             else:
                 albums = user.albums.filter(hidden_flag=False) #Только публичные и не скрытые
                 context = {'albums': albums, 'user': user, 'is_authenticated': False}
