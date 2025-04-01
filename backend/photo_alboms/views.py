@@ -9,7 +9,7 @@ from authapp.models import CustomUser
 from .models import PhotoAlbum, Photo
 from .forms import AlbumForm, FileFieldForm
 
-
+@login_required(login_url='auth:login')
 def photo_list(request):
     username = request.GET.get('username')
 

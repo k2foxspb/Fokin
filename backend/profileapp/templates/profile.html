@@ -12,11 +12,15 @@
                 {% endif %}
             </div>
             <div style="margin-left: 20px;">
+                {% if user_come.is_staff and user.username == user_come.username%}
+                    <p><a class="nav-link my-navbar" href="{% url 'admin:index' %}">вход в панель администратора</a></p>
+                {% endif %}
                 <p>Имя: {{ user.first_name }}</p>
                 <p>Фамилия: {{ user.last_name }}</p>
                 <p>Возраст: {{ user.age }}</p>
                 {% if user.username %}
-                    <p><a class="nav-link my-navbar" href="{% url 'photo:photos' %}?username={{ user.username }}">Альбомы</a></p>
+                    <p><a class="nav-link my-navbar" href="{% url 'photo:photos' %}?username={{ user.username }}">Альбомы</a>
+                    </p>
                 {% endif %}
             </div>
         </div>

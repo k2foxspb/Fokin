@@ -5,59 +5,6 @@
     <link rel="stylesheet" href="{% static 'css/fullscreen.css' %}">
 {% endblock %}
 
-{% block navbar %}
-    <nav class="navbar navbar-expand-sm  ">
-        <div class="container-lg">
-            <a class="navbar-brand" href="{% url 'main:main_category' %}"><img style="width: 50px"
-                                                                               src="{% static 'img/logo/logo_white.png' %}"
-                                                                               alt="logo"></a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
-                    aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav">
-                    {% if user.is_staff and is_authenticated %}
-                        <li class="nav-item">
-                            <a class="nav-link my-navbar" href="{% url 'admin:index' %}">Панель администратора</a>
-                        </li>
-                    {% endif %}
-                    {% if user.is_anonymous or is_authenticated == False %}
-                        <li class="nav-item">
-                            <a class="nav-link my-navbar" href="{% url 'auth:login' %}">Вход</a>
-                            {% else %}
-                        </li>
-
-
-                    {% endif %}
-
-                    <li class="nav-item">
-                        <a class="nav-link my-navbar" href="{% url 'main:about' %}">Контакты</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link my-navbar" href="{% url 'chat:chat-index' %}">Комнаты чатов</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link my-navbar" href="{% url 'profile:all_users' %}">Все пользователи</a>
-                    </li>
-
-                    {% if is_authenticated %}
-                        <li class="nav-item dropdown">
-                            <a class="nav-link my-navbar"
-                               href="{% url 'photo:photos' %}?username={{ username }}">Мои фотографии</a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link my-navbar" href="{% url 'auth:logout' %}">Выход</a>
-                        </li>
-                    {% endif %}
-
-                </ul>
-            </div>
-        </div>
-    </nav>
-{% endblock navbar %}
-
-
 {% block content %}
     <h2 class="text-center">Фотоальбомы</h2>
 
