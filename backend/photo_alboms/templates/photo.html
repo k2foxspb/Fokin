@@ -74,7 +74,7 @@
                     <div class="articles">
                         <div class="card-header text-center">
                             <h3>{{ album.title }}</h3>
-                            {% if user == username %}
+                            {% if username == user.username %}
                                 <a class="my-btn btn" href="{% url 'photo:add_photo' album_id=album.id %}">Добавить фото</a>
                             {% endif %}
                         </div>
