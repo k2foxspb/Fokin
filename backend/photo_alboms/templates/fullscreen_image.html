@@ -48,7 +48,7 @@
 
     <script>
         const closeButton = document.getElementById('fullscreen-close');
-        const profileUrl = "{{ album_url }}";
+        const profileUrl = " {% url 'photo:photos' %}?username={{ album.user.username }}";
         const deleteButton = document.querySelector('.delete-button');
         const navButtons = document.querySelector('.nav-button');
         closeButton.addEventListener('click', () => {

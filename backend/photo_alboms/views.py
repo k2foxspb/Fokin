@@ -10,21 +10,21 @@ from .models import PhotoAlbum, Photo
 from .forms import AlbumForm, FileFieldForm
 
 
-
 def photo_list(request):
     username = request.GET.get('username')
 
     if username:
         try:
             user = get_object_or_404(get_user_model(), username=username)
-            if request.user.is_authenticated: #Проверка авторизации
+            if request.user.is_authenticated:  # Проверка авторизации
                 if request.user == user or request.user.is_superuser:
                     albums = user.albums.all()
                 else:
                     albums = user.albums.filter(hidden_flag=False)
-                context = {'albums': albums, 'user': user, 'is_authenticated': request.user.is_authenticated, 'username': request.user.username}
+                context = {'albums': albums, 'user': user, 'is_authenticated': request.user.is_authenticated,
+                           'username': request.user.username}
             else:
-                albums = user.albums.filter(hidden_flag=False) #Только публичные и не скрытые
+                albums = user.albums.filter(hidden_flag=False)  # Только публичные и не скрытые
                 context = {'albums': albums, 'user': user, 'is_authenticated': False}
 
         except Http404:
@@ -34,10 +34,11 @@ def photo_list(request):
             albums = PhotoAlbum.objects.filter(user=request.user)
             context = {'albums': albums, 'user': request.user, 'is_authenticated': True}
         else:
-            albums = PhotoAlbum.objects.filter(hidden_flag=False) #Только публичные и не скрытые
+            albums = PhotoAlbum.objects.filter(hidden_flag=False)  # Только публичные и не скрытые
             context = {'albums': albums, 'user': None, 'is_authenticated': False}
 
     return render(request, 'photo.html', context)
+
 
 def create_album(request):
     if request.method == 'POST':
@@ -46,7 +47,7 @@ def create_album(request):
             album = form.save(commit=False)
             album.user = request.user
             album.save()
-            return redirect('photo:photos')  # или другой URL
+            return redirect('photos')  # или другой URL
     else:
         form = AlbumForm()
     return render(request, 'create_album.html', {'form': form})
@@ -79,7 +80,6 @@ def fullscreen_image_view(request, album_id, photo_id):
         'next_photo_id': next_photo.id if next_photo else None,
         'prev_photo_id': prev_photo.id if prev_photo else None,
         'album_id': album_id,
-        'album_url': reverse('photo:photos', )  # проверьте URL
     }
     if request.method == 'POST':
         if 'delete' in request.POST:
@@ -89,7 +89,7 @@ def fullscreen_image_view(request, album_id, photo_id):
             elif prev_photo:
                 return redirect('photo:fullscreen_image', album_id=album_id, photo_id=prev_photo.id)
             else:
-                return redirect('photo:photos', )
+                return redirect('profile:profile', username=album.user.username)
         elif request.POST.get('next') and next_photo:
             return redirect('photo:fullscreen_image', album_id=album_id, photo_id=next_photo.id)
         elif request.POST.get('prev') and prev_photo:
