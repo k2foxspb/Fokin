@@ -6,7 +6,8 @@ from django.contrib.auth.base_user import AbstractBaseUser
 from django.contrib.auth.models import PermissionsMixin, UserManager
 from django.contrib.auth.validators import ASCIIUsernameValidator
 from django.db import models
-
+from imagekit.models import ImageSpecField
+from pilkit.processors import ResizeToFill
 
 
 def users_avatars_path(instance, filename):
@@ -33,6 +34,12 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     age = models.PositiveIntegerField("Возраст", blank=True, null=True)
     avatar = models.ImageField(
         "Ваше фото", upload_to=users_avatars_path, blank=True, null=True
+    )
+    thumbnail = ImageSpecField(
+        source='avatar',
+        processors=[ResizeToFill(100, 100)],
+        format='JPEG',
+        options={'quality': 90},
     )
     email = models.CharField(
         "адрес электронной почты",

@@ -51,8 +51,8 @@
                     {% for comment in comment_list %}
                         <div class="articles">
                             <div class="comment-avatar">
-                                {% if comment.user.avatar %}
-                                    <img src="{{ comment.user.avatar.url }}" alt="{{ comment.user_name }} avatar">
+                                {% if comment.user.thumbnail %}
+                                    <img src="{{ comment.user.thumbnail.url }}" alt="{{ comment.user_name }} avatar">
                                 {% else %}
                                     <img src="{% static 'img/logo/background.webp' %}" alt="{{ comment.user_name }} avatar">
                                     {# Или какой-то дефолтный аватар #}
