@@ -4,19 +4,22 @@
 {% block description %}авторизоваться{% endblock %}
 {% block navbar %}
 {% endblock %}
+{% block css %}
+    <link rel="stylesheet" href="{% static 'css/users.css' %}">
+{% endblock %}
 {% block content %}
-    <div class="row justify-content-around align-items-center " style="height: 100vh; margin: 0px">
+    <div class="row justify-content-around align-items-center " style="height: 100vh; margin: 0">
         <div class="text-center" style="max-width: 500px">
             <p>
                 <a href="{% url 'main:main_category' %}"><img src="{% static "img/logo/logo_white_text.png" %}"
                                                               style="width: 300px" alt=""></a>
             </p>
             <h2>Вход пользователя</h2>
-            <form method="POST">
+            <form class="myForm" method="POST">
 
                 {% csrf_token %}
-                <p>
-                    <label for="id_username"></label><input type="text" name="username" autofocus=""
+
+                    <label  for="id_username"></label><input type="text" name="username" autofocus=""
                                                             autocapitalize="none"
                                                             autocomplete="username"
                                                             maxlength="150" class="form-control"
@@ -24,8 +27,9 @@
                                                             placeholder="логин или email"
                                                             style="text-align: center;
                                                             margin-left: auto;
-                                                            margin-right: auto; ">
-                </p>
+                                                            margin-right: auto;
+                                                            width:50%">
+
                 <p>
                     <label for="id_password"></label><input type="password" name="password"
                                                             autocomplete="current-password"
@@ -33,7 +37,9 @@
                                                             id="id_password" placeholder="Пароль"
                                                             style="text-align: center;
                                                             margin-left: auto;
-                                                            margin-right: auto;">
+                                                            margin-right: auto;
+                                                            width:50%
+                                                            ">
                 </p>
                 <p>
                     <button type="submit" class="btn my-btn">Войти</button>
@@ -42,8 +48,8 @@
             <p>
             <div class="row justify-content-between">
                 <div class="col">
-                    <a href="{% url 'auth:register' %}"><small>Регистрация</small></a><br>
-                                    <a href="{% url 'auth:password_reset' %}"><small>Восстановление пароля</small></a>
+                    <a class="my-btn" href="{% url 'auth:register' %}"><small>Регистрация</small></a><br><br>
+                    <p><a class="my-btn" href="{% url 'auth:password_reset' %}"><small>Восстановление пароля</small></a></p>
                 </div>
 
             </div>

@@ -6,6 +6,18 @@ from django.core.exceptions import ValidationError
 
 
 class CustomUserCreationForm(UserCreationForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        password_field = self.fields.get('password')
+        if password_field:
+            if self.instance.pk:  # Проверяем, существует ли уже экземпляр
+                password_field.help_text = "Пароли хранятся в зашифрованном виде,\
+        поэтому нет возможности посмотреть пароль)"
+                password_field.widget.attrs['class'] = 'form-control'
+        for field_name in self.fields:
+            if field_name != 'password':  # Исключаем поле пароля, для него класс уже задан
+                self.fields[field_name].widget.attrs['class'] = '.form-control'
+
     class Meta:
         model = get_user_model()
         fields = (
@@ -15,6 +27,7 @@ class CustomUserCreationForm(UserCreationForm):
             "password2",
             "first_name",
             "last_name",
+            "gender",
             "age",
             "avatar",
         )
@@ -22,8 +35,18 @@ class CustomUserCreationForm(UserCreationForm):
 
 
 class CustomUserChangeForm(UserChangeForm):
-    help_text = "Пароли хранятся в зашифрованном виде,\
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        password_field = self.fields.get('password')
+        if password_field:
+            if self.instance.pk:  # Проверяем, существует ли уже экземпляр
+                password_field.help_text = "Пароли хранятся в зашифрованном виде,\
      поэтому нет возможности посмотреть пароль)"
+                password_field.widget.attrs['class'] = 'password-form-control'
+        for field_name in self.fields:
+            if field_name != 'password':  # Исключаем поле пароля, для него класс уже задан
+                self.fields[field_name].widget.attrs['class'] = 'form-control'
 
     class Meta:
         model = get_user_model()
@@ -32,6 +55,7 @@ class CustomUserChangeForm(UserChangeForm):
             "username",
             "first_name",
             "last_name",
+            "gender",
             "age",
             "avatar",
         )
@@ -48,7 +72,7 @@ class CustomUserChangeForm(UserChangeForm):
         data = self.cleaned_data.get("age")
         if data:
             if data < 18:
-                raise ValidationError("нужно немного повзрослеть &#128521;")
+                raise ValidationError("нужно немного повзрослеть))")
             elif data > 90:
                 raise ValidationError("Столько не живут &#128519;")
         return data

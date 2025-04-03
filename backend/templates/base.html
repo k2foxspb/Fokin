@@ -2,13 +2,16 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    {% block css %}{% endblock %}
+
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="shortcut icon" type="image/x-icon" href="{% static 'img/logo/favicon.ico' %}"/>
     <link rel="stylesheet" href="{% static 'css/bootstrap.css' %}">
     <link rel="stylesheet" href="{% static 'css/my.css' %}">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" integrity="sha512-9usAa10IRO0HhonpyAIVpjrylPvoDwiPUiKdWk5t3PyolY1cOd4DSE0Ga+ri4AuTroPR5aQvXU9xC6qOPnzFeg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    {% block css %}{% endblock %}
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
+          integrity="sha512-9usAa10IRO0HhonpyAIVpjrylPvoDwiPUiKdWk5t3PyolY1cOd4DSE0Ga+ri4AuTroPR5aQvXU9xC6qOPnzFeg=="
+          crossorigin="anonymous" referrerpolicy="no-referrer"/>
     <title>{% block title %}заметки программиста{% endblock %}</title>
     <meta name="description" content='{% block description %}{% endblock %}'>
     <meta name="keywords"
@@ -16,14 +19,16 @@
 </head>
 
 <body
-    {% block body %}
-        class=" text-white " style="background-repeat: no-repeat; background-size: cover; background-attachment: fixed; background-color: #000000; background-image: url({% static 'img/logo/bacground-darken.jpg' %})"
-    {% endblock %}>
+        {% block body %}
+            class=" text-white "
+            style="background-repeat: no-repeat; background-size: cover; background-attachment: fixed; background-color: #000000; background-image: url({% static 'img/logo/bacground-darken.jpg' %})"
+        {% endblock %}>
 
 <div class="toast-container bottom-0 end-0">
     {% if messages %}
         {% for message in messages %}
-            <div class="toast align-items-center" style="background: #670000" role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="toast align-items-center" style="background: #670000" role="alert" aria-live="assertive"
+                 aria-atomic="true">
                 <div class="d-flex">
                     <div class="toast-body" style="color: #f4f4f4">
                         {{ message }}

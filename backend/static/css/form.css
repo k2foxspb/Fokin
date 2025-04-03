@@ -1,0 +1,17 @@
+.form-control {
+    width: 100%;
+    color: #bd0101
+}
+#hint_id_username, #hint_id_password, #hint_id_password1, #hint_id_password2 {
+    color: white;
+}
+
+.form-control:focus {
+  border-color: #fd081d;
+  outline: none;
+  box-shadow: 0 0 0 2px #930303;
+    color: #ff0000
+}
+.password-form-control {
+    display: none;
+}

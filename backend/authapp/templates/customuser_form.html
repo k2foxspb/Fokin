@@ -1,7 +1,9 @@
 {% extends 'base.html' %}
 {% load crispy_forms_filters %}
 {% load static %}
-
+{% block css %}
+    <link rel="stylesheet" href="{% static 'css/form.css' %}">
+{% endblock %}
 
 
 {% block title %}Форма{% endblock %}
@@ -15,23 +17,35 @@
             {% else %}
                 <h3 class="text-center">Редактировать профиль</h3>
                 <div class="row justify-content-center">
-                    <div class="col-sm-7 col-md-5 col-lg-4">
+                    <div style="text-align: center" class="col-sm-7 col-md-5 col-lg-4">
                         {% if user.thumbnail %}
-                            <img src="{{ user.thumbnail.url }}" alt="Аватар {{ user.username }}" width="100" height="100"
-                         style="border-radius: 50%; object-fit: cover;">
+                            <img src="{{ user.thumbnail.url }}" alt="Аватар {{ user.username }}" width="100"
+                                 height="100"
+                                 style="border-radius: 50%;
+                                  object-fit: cover;
+                                  ">
                         {% else %}
-                            <img src="{% static 'img/logo/logo_white.png' %}" alt="Аватар {{ user.username }}" width="100" height="100"
-                         style="border-radius: 10%; object-fit: cover;">
+                            {% if user.gender == 'female' %}
+                                <img src="{% static 'img/avatar/female.png' %}" alt="Аватар {{ user.username }}"
+                                     width="100" height="100"
+                                     style="border-radius: 10%; object-fit: cover;">
+                            {% else %}
+                                <img src="{% static 'img/avatar/male.png' %}" alt="Аватар {{ user.username }}"
+                                     width="100" height="100"
+                                     style="border-radius: 10%; object-fit: cover;">
+                            {% endif %}
                         {% endif %}
                     </div>
                 </div>
             {% endif %}
 
-            <form method="post" class="mt-2 cole" enctype="multipart/form-data">
+            <form method="post" enctype="multipart/form-data">
                 {% csrf_token %}
                 {{ form|crispy }}
-                <a href="{% url "authapp:privacy_policy" %}">Нажимая кнопку "Зарегистрироваться" я подтвержаю, что
-                    ознакомился с политикой конфиденциальности</a><br>
+                {% if user.is_anonymous %}
+                    <a href="{% url "authapp:privacy_policy" %}">Нажимая кнопку "Зарегистрироваться" я подтвержаю, что
+                        ознакомился с политикой конфиденциальности</a><br>
+                {% endif %}
                 <button type="submit" class="btn btn-primary btn-block">
                     {% if user.is_anonymous %}
                         Зарегистрироваться

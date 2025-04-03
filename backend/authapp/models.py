@@ -1,7 +1,6 @@
 from pathlib import Path
 from time import time
 
-
 from django.contrib.auth.base_user import AbstractBaseUser
 from django.contrib.auth.models import PermissionsMixin, UserManager
 from django.contrib.auth.validators import ASCIIUsernameValidator
@@ -19,6 +18,9 @@ def users_avatars_path(instance, filename):
 
 
 class CustomUser(AbstractBaseUser, PermissionsMixin):
+    GENDER_CHOICES = [
+        ('male', 'Мужчина'),
+        ('female', 'Женщина'), ]
     username_validator = ASCIIUsernameValidator()
 
     username = models.CharField(
@@ -32,6 +34,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     first_name = models.CharField("Имя", max_length=150, blank=True)
     last_name = models.CharField("Фамилия", max_length=150, blank=True)
     age = models.PositiveIntegerField("Возраст", blank=True, null=True)
+    gender = models.CharField(max_length=20, choices=GENDER_CHOICES, default='male')
     avatar = models.ImageField(
         "Ваше фото", upload_to=users_avatars_path, blank=True, null=True
     )

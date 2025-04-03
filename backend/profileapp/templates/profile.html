@@ -1,32 +1,50 @@
 {% extends 'photo.html' %}
+{% load static %}
 {% block content %}
 
 
     {% if user %}
-        <h1>Профиль {{ user.username }}</h1>
-        <div style="display: flex; align-items: center;">
+        <h1 style="text-align: center">Профиль {{ user.username }}</h1>
+        <div class="container" style="display: flex; align-items: center;">
             <div>
                 {% if user.thumbnail %}
                     <img src="{{ user.thumbnail.url }}" alt="Аватар {{ user.username }}" width="100" height="100"
                          style="border-radius: 50%; object-fit: cover;">
+                {% else %}
+                    {% if user.gender == 'male' %}
+                        <img src="{% static 'img/avatar/male.png' %}" alt="Аватар {{ user.username }}" width="100"
+                             height="100" style="border-radius: 50%; object-fit: cover;">
+                    {% else %}
+                        <img src="{% static 'img/avatar/female.png' %}" alt="Аватар {{ user.username }}" width="100"
+                             height="100" style="border-radius: 50%; object-fit: cover;">
+                    {% endif %}
                 {% endif %}
             </div>
-            <div style="margin-left: 20px;">
+            <div  style="margin-left: 20px;">
                 {% if user_come.is_staff and user.username == user_come.username %}
                     <p><a class="nav-link my-navbar" href="{% url 'admin:index' %}">вход в панель администратора</a></p>
                 {% endif %}
-                {% if user.username == user_come.username %}
-                    <p><a class="nav-link my-navbar" href="{% url 'auth:profile_edit' user.pk %}" >редактировать профиль</a></p>
-                {% endif %}
+
                 <p>Имя: {{ user.first_name }}</p>
                 <p>Фамилия: {{ user.last_name }}</p>
                 <p>Возраст: {{ user.age }}</p>
-                {% if user.username %}
-                    <p><a class="nav-link my-navbar" href="{% url 'photo:photos' %}?username={{ user.username }}">Альбомы</a>
-                    </p>
-                {% endif %}
+
             </div>
         </div>
+        <p>
+        <div class="container">
+        {% if user.username == user_come.username %}
+                <a class="nav-link my-navbar" href="{% url 'auth:profile_edit' user.pk %}">редактировать
+                    профиль</a>
+            {% endif %}
+            {% if user.username %}
+                <p><a class="nav-link my-navbar"
+                      href="{% url 'photo:photos' %}?username={{ user.username }}">Альбомы</a>
+                </p>
+            {% endif %}
+
+        </div>
+
     {% else %}
         <p>Пользователь не найден.</p>
     {% endif %}
