@@ -46,11 +46,54 @@
 {#        <span>Обратная<br>связь</span>#}
 {#    </div>#}
 {#</div>#}
-{% include 'yandex.html' %}
+
 {% block navbar %}
-    {% include 'navbar.html' %}
+    <nav class="navbar navbar-expand-sm  ">
+    <div class="container-lg">
+        <a class="navbar-brand" href="{% url 'main:main_category' %}"><img style="width: 50px"
+                                                                           src="{% static 'img/logo/logo_white.png' %}"
+                                                                           alt="logo"></a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
+                aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav">
+
+                {% if user.is_anonymous %}
+                    <li class="nav-item">
+                        <a class="nav-link my-navbar" href="{% url 'auth:login' %}">Вход</a>
+                        {% else %}
+                    </li>
+                {% endif %}
+                <li class="nav-item">
+                    <a class="nav-link my-navbar" href="{% url 'main:about' %}">Контакты</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link my-navbar" href="{% url 'chat:chat-index' %}">Комнаты чатов</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link my-navbar" href="{% url 'profile:all_users' %}">Все пользователи</a>
+                </li>
+                {% if user.is_authenticated %}
+                    {% block my_str %}
+                    <li class="nav-item">
+                        <a class="nav-link my-navbar" href="{% url 'profile:profile' user.username %}">моя страница</a>
+                    </li>
+                    {% endblock %}
+                    <li class="nav-item">
+                        <a class="nav-link my-navbar" href="{% url 'auth:logout' %}">Выход</a>
+                    </li>
+                {% endif %}
+
+            </ul>
+        </div>
+    </div>
+</nav>
+
 {% endblock %}
 {% block content %}{% endblock %}
+{% include 'yandex.html' %}
 <script src="{% static 'js/bootstrap.bundle.js' %}"></script>
 <script src="{% static 'js/jquery-3.6.0.min.js' %}"></script>
 <script>
