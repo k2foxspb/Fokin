@@ -26,7 +26,7 @@
                     {% endif %}
                 {% endif %}
             </div>
-            <div  style="margin-left: 20px;">
+            <div style="margin-left: 20px;">
                 {% if user_come.is_staff and user.username == user_come.username %}
                     <p><a class="nav-link my-navbar" href="{% url 'admin:index' %}">вход в панель администратора</a></p>
                 {% endif %}
@@ -39,7 +39,7 @@
         </div>
         <p>
         <div class="container">
-        {% if user.username == user_come.username %}
+            {% if user.username == user_come.username %}
                 <a class="nav-link my-navbar" href="{% url 'auth:profile_edit' user.pk %}">редактировать
                     профиль</a>
             {% endif %}
@@ -50,6 +50,33 @@
             {% endif %}
 
         </div>
+        <a href="#" onclick="initiateChat('{{ user.username }}')">Начать чат с </a>
+
+        <script>
+            async function initiateChat(recipientUsername) {
+                const username = '{{ request.user.username }}';
+
+
+                const apiUrl = `http://127.0.0.1:8000/chat/api/get_private_room/${username}/${recipientUsername}`;
+                prompt(apiUrl)
+                try {
+                    const response = await fetch(apiUrl);
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    const data = await response.json();
+                    if (data.error) {
+                        alert(`Ошибка: ${data.error}`);
+                        return;
+                    }
+                    const roomName = data.room_name;
+                    window.location.href = `http://127.0.0.1:8000/chat/ws/private/${roomName}/`;
+                } catch (error) {
+                    console.error('Error initiating chat:', error);
+                    alert(`Ошибка при запуске чата: ${error.message}`);
+                }
+            }
+        </script>
 
     {% else %}
         <p>Пользователь не найден.</p>

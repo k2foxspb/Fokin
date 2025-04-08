@@ -1,11 +1,14 @@
 import json
+import logging
 from datetime import  datetime
 from pprint import pprint
 
-from asgiref.sync import async_to_sync
-from channels.generic.websocket import WebsocketConsumer
+from asgiref.sync import async_to_sync, sync_to_async
+from channels.generic.websocket import WebsocketConsumer, AsyncWebsocketConsumer
+from django.core.exceptions import ObjectDoesNotExist
 
-from .models import Room, Message
+from authapp.models import CustomUser
+from .models import Room, Message, PrivateChatRoom, PrivateMessage
 from .telegram import send_message
 
 
@@ -141,3 +144,62 @@ class ChatConsumer(WebsocketConsumer):
 
     def private_message_delivered(self, event):
         self.send(text_data=json.dumps(event))
+
+
+logger = logging.getLogger(__name__)
+class PrivateChatConsumer(AsyncWebsocketConsumer):
+    async def connect(self):
+        self.room_name = self.scope['url_route']['kwargs']['room_name']
+        self.user = self.scope['user']
+        logger.info(f"Connecting to room: {self.room_name}, user: {self.user}")
+
+        if not self.user.is_authenticated:
+            await self.close()
+            return
+
+        await self.channel_layer.group_add(self.room_name, self.channel_name)
+        await self.accept()
+
+    async def disconnect(self, close_code):
+        await self.channel_layer.group_discard(self.room_name, self.channel_name)
+
+    async def receive(self, text_data):
+        try:
+            text_data_json = json.loads(text_data)
+            message = text_data_json['message']
+            timestamp = text_data_json.get('timestamp')
+            user1 = text_data_json['user1'] # получаем id пользователя 1
+            user2 = text_data_json['user2'] # получаем id пользователя 2
+            print(user1, user2)
+
+            await self.save_message(user1, user2, message, timestamp, self.user)
+
+            await self.channel_layer.group_send(
+                self.room_name,
+                {
+                    'type': 'chat_message',
+                    'message': message,
+                    'sender': self.user.username,
+                    'timestamp': timestamp or 'N/A',
+                }
+            )
+        except (json.JSONDecodeError, KeyError) as e:
+            logger.error(f"Error processing message: {e}")
+        except Exception as e:
+            logger.exception(f"Error in receive: {e}")
+
+    async def chat_message(self, event):
+        await self.send(text_data=json.dumps(event))
+
+    @sync_to_async
+    def save_message(self, user1, user2, message, timestamp, user):
+        print(user1, user2)
+        try:
+            # Находим или создаём комнату по user1 и user2
+            room, created = PrivateChatRoom.objects.get_or_create(
+                user1=CustomUser.objects.get(pk=user1),
+                user2=CustomUser.objects.get(pk=user2),
+            )
+            PrivateMessage.objects.create(room=room, sender=user, message=message, timestamp=timestamp)
+        except Exception as e:
+            logger.exception(f"Error saving message: {e}")

@@ -1,0 +1,81 @@
+{% extends 'base.html' %}
+
+{% block content %}
+    <h1>Private Chat:{{ room_name }} </h1>
+    <div id="chatbox"></div>
+    <label for="messageInput"></label><input type="text" id="messageInput">
+    <button id="sendMessageButton">Send</button>
+    <style>
+        #chatbox {
+            height: 300px;
+            overflow-y: scroll;
+            border: 1px solid #ccc;
+            padding: 10px;
+        }
+
+        .my-message {
+            text-align: right;
+            color: blue;
+        }
+
+        .other-message {
+            text-align: left;
+            color: green;
+        }
+
+        .timestamp {
+            font-size: smaller;
+            color: gray;
+        }
+
+    </style>
+    <script>
+        const username = '{{ request.user.username }}';
+        const roomName = '{{ room_name }}';
+        const user1 = {{ user1_id }};
+        const user2 = {{ user2_id }};
+        const websocket = new WebSocket(`ws://${window.location.host}/ws/private/${roomName}`);
+
+        const chatbox = document.getElementById('chatbox');
+        const messageInput = document.getElementById('messageInput');
+        const sendMessageButton = document.getElementById('sendMessageButton');
+
+        websocket.onopen = function (event) {
+            console.log('WebSocket connection opened:', event);
+        };
+
+        websocket.onmessage = function (event) {
+            const data = JSON.parse(event.data);
+            const messageDiv = document.createElement('div');
+            messageDiv.classList.add(data.sender === username ? 'my-message' : 'other-message');
+            messageDiv.innerHTML = `<strong>${data.sender}:</strong> ${data.message} <span class="timestamp">(${data.timestamp})</span>`;
+            chatbox.appendChild(messageDiv);
+            chatbox.scrollTop = chatbox.scrollHeight;
+        };
+
+        websocket.onerror = function (event) {
+            console.error('WebSocket error:', event);
+            alert('Произошла ошибка соединения с WebSocket. Попробуйте позже.');
+        };
+
+        websocket.onclose = function (event) {
+            console.log('WebSocket connection closed:', event);
+            alert('Соединение с WebSocket закрыто.');
+        };
+
+        sendMessageButton.addEventListener('click', function () {
+            const message = messageInput.value;
+            if (message.trim() !== '') {
+                const timestamp = new Date().toISOString();
+                websocket.send(JSON.stringify({
+                    message: message,
+                    timestamp: timestamp,
+                    user1: user1,
+                    user2: user2,
+                }));
+
+                messageInput.value = '';
+            }
+        });
+    </script>
+{% endblock %}

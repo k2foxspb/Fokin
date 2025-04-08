@@ -65,3 +65,24 @@ class Message(models.Model):
 
 
 
+class PrivateChatRoom(models.Model):
+    user1 = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='private_chat_room1')
+    user2 = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='private_chat_room2')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Private chat between {self.user1} and {self.user2}"
+
+    @property
+    def room_name(self):
+        # Generate a unique room name.  Order doesn't matter
+        return f"private_chat_{min(self.user1.id, self.user2.id)}_{max(self.user1.id, self.user2.id)}"
+
+class PrivateMessage(models.Model):
+    room = models.ForeignKey(PrivateChatRoom, on_delete=models.CASCADE, related_name='messages')
+    sender = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
+    message = models.TextField()
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+
+
