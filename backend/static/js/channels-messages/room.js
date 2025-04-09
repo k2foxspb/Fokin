@@ -5,18 +5,18 @@ const roomName = JSON.parse(document.getElementById('roomName').textContent);
 let chatMessageInput = document.querySelector("#chatMessageInput");
 let chatMessageSend = document.querySelector("#chatMessageSend");
 let onlineUsersSelector = document.querySelector("#onlineUsersSelector");
-let myDiv = document.querySelector('#mydiv')
+let myDiv = document.querySelector('#mydiv');
 let myDivMess;
 let myName;
 let myMessage;
-let myDate
+let myDate;
 
 // adds a new option to 'onlineUsersSelector'
 function onlineUsersSelectorAdd(value) {
 
     let newOption = document.createElement("div");
     newOption.textContent = value;
-    newOption.id = 'user_id_' + value
+    newOption.id = 'user_id_' + value;
     newOption.innerHTML = value;
     onlineUsersSelector.appendChild(newOption);
 }
@@ -49,11 +49,11 @@ chatMessageSend.onclick = function() {
 let chatSocket = null;
 
 function connect() {
-    chatSocket = new WebSocket("ws://" + window.location.host + "/ws/chat/" + roomName + "/");
-    console.log(chatSocket)
+    chatSocket = new WebSocket("wss://" + window.location.host + "/wss/chat/" + roomName + "/");
+    console.log(chatSocket);
     chatSocket.onopen = function(e) {
         console.log("Successfully connected to the WebSocket.");
-    }
+    };
 
     chatSocket.onclose = function(e) {
         console.log("WebSocket connection closed unexpectedly. Trying to reconnect in 2s...");
@@ -70,17 +70,17 @@ function connect() {
         switch (data.type) {
             case "chat_message":
                 let now = new Date();
-                myDiv.appendChild( myDivMess = document.createElement('div'))
-                myDivMess.className += 'message'
-                myDivMess.appendChild( myName = document.createElement('div'))
+                myDiv.appendChild( myDivMess = document.createElement('div'));
+                myDivMess.className += 'message';
+                myDivMess.appendChild( myName = document.createElement('div'));
                 myName.textContent +=  data.user + '\n';
-                myDivMess.appendChild( myMessage = document.createElement('div'))
-                myMessage.textContent += data.message
-                myDivMess.appendChild( myDate = document.createElement('div'))
-                myDate.className += 'date'
-                myDate.textContent += data.time
+                myDivMess.appendChild( myMessage = document.createElement('div'));
+                myMessage.textContent += data.message;
+                myDivMess.appendChild( myDate = document.createElement('div'));
+                myDate.className += 'date';
+                myDate.textContent += data.time;
 
-                myDiv.scrollTop = myDiv.scrollHeight
+                myDiv.scrollTop = myDiv.scrollHeight;
                 chatMessageInput.focus();
                 break;
 
@@ -90,15 +90,15 @@ function connect() {
                 }
                 break;
             case "user_join":
-                myDiv.appendChild( myDivMess = document.createElement('div'))
-                myDivMess.className = 'joinedTheRoom'
+                myDiv.appendChild( myDivMess = document.createElement('div'));
+                myDivMess.className = 'joinedTheRoom';
                 myDivMess.textContent += data.user + " joined the room.\n";
-                myDiv.scrollTop = myDiv.scrollHeight
+                myDiv.scrollTop = myDiv.scrollHeight;
                 onlineUsersSelectorAdd(data.user);
                 break;
             case "user_leave":
-                myDiv.appendChild(myDivMess = document.createElement('div'))
-                myDivMess.className = 'joinedTheRoom'
+                myDiv.appendChild(myDivMess = document.createElement('div'));
+                myDivMess.className = 'joinedTheRoom';
                 myDivMess.textContent += data.user + " left the room.\n";
                 onlineUsersSelectorRemove(data.user);
                 break;
@@ -114,14 +114,14 @@ function connect() {
         }
 
         // scroll 'chatLog' to the bottom
-        myDiv.scrollTop = myDiv.scrollHeight
+        myDiv.scrollTop = myDiv.scrollHeight;
     };
 
     chatSocket.onerror = function(err) {
         console.log("WebSocket encountered an error: " + err.message);
         console.log("Closing the socket.");
         chatSocket.close();
-    }
+    };
 }
 connect();
 

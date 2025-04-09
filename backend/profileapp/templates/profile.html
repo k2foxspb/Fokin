@@ -57,7 +57,7 @@
                 const username = '{{ request.user.username }}';
 
 
-                const apiUrl = `http://127.0.0.1:8000/chat/api/get_private_room/${username}/${recipientUsername}`;
+                const apiUrl =  window.location.host + `/chat/api/get_private_room/${username}/${recipientUsername}`;
 
                 try {
                     const response = await fetch(apiUrl);
@@ -70,7 +70,7 @@
                         return;
                     }
                     const roomName = data.room_name;
-                    window.location.href = `http://127.0.0.1:8000/chat/ws/private/${roomName}/`;
+                    window.location.href =  window.location.host + `/chat/ws/private/${roomName}/`;
                 } catch (error) {
                     console.error('Error initiating chat:', error);
                     alert(`Ошибка при запуске чата: ${error.message}`);
