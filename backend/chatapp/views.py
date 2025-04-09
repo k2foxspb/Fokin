@@ -3,12 +3,14 @@ import re
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import Permission
 from django.core.exceptions import ObjectDoesNotExist
+from django.db.models.signals import post_save
+from django.dispatch import receiver
 from django.http import JsonResponse
-from django.shortcuts import render
+from django.shortcuts import render, get_object_or_404
 from django.views.generic import ListView, DetailView
 
 from authapp.models import CustomUser
-from chatapp.models import Room, PrivateChatRoom
+from chatapp.models import Room, PrivateChatRoom, UserChat, PrivateMessage
 
 
 class IndexView(ListView, Permission):
@@ -69,3 +71,36 @@ def private_chat_view(request, room_name):
         return render(request, 'private_message.html', {'room_name': room_name})
     except PrivateChatRoom.DoesNotExist:
         return render(request, 'index.html', {'message': 'Room not found'})
+
+
+@login_required
+def user_chats(request):
+    user_chats = UserChat.objects.filter(user=request.user).select_related('chat_room').prefetch_related('last_message__sender')
+    chat_data = [{
+        'id': chat.chat_room.id,
+        'user2_id': chat.chat_room.user2.id if chat.chat_room.user1_id == request.user.id else chat.chat_room.user1.id,
+        'user2': chat.chat_room.user2.username if chat.chat_room.user1_id == request.user.id else chat.chat_room.user1.username,
+        'last_message': chat.last_message.message if chat.last_message else '',
+        'last_message_time': chat.last_message.timestamp if chat.last_message else '',
+        'unread_count': chat.unread_count,
+    } for chat in user_chats]
+    return JsonResponse(chat_data, safe=False)
+
+@receiver(post_save, sender=PrivateMessage)
+def update_unread_count(sender, instance, created, **kwargs):
+    if created:
+        user = instance.room.user1 if instance.room.user2 == instance.sender else instance.room.user2
+        user_chat, created = UserChat.objects.get_or_create(chat_room=instance.room, user=user)
+        user_chat.unread_count += 1
+        user_chat.last_message = instance
+        user_chat.save()
+
+def get_chat_history(request, room_name):
+    match = re.match(r"private_chat_(\d+)_(\d+)", room_name)
+    if match:
+        user1_id = int(match.group(1))
+        user2_id = int(match.group(2))
+    room = get_object_or_404(PrivateChatRoom, user1_id=user1_id, user2_id=user2_id)
+    messages = PrivateMessage.objects.filter(room=room).order_by('timestamp').values('sender__username', 'message', 'timestamp')
+    messages_list = list(messages)
+    return JsonResponse({'messages': messages_list, 'unread_count': request.user.chats.get(chat_room=room).unread_count})

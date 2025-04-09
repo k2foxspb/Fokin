@@ -58,7 +58,7 @@
 
 
                 const apiUrl = `http://127.0.0.1:8000/chat/api/get_private_room/${username}/${recipientUsername}`;
-                prompt(apiUrl)
+
                 try {
                     const response = await fetch(apiUrl);
                     if (!response.ok) {

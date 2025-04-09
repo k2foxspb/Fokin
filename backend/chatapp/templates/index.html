@@ -14,30 +14,4 @@
             {% endfor %}
         </div>
     </div>
-    <a href="#" onclick="initiateChat('username_of_recipient')">Начать чат с username_of_recipient</a>
-
-<script>
-async function initiateChat(recipientUsername) {
-  const username = '{{ request.user.username }}'; // Добавьте этот код, чтобы получить username из контекста Django
-    prompt(username)
-    const apiUrl = `api/get_private_room/${username}/ff`;
-
-  try {
-    const response = await fetch(apiUrl);
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    const data = await response.json();
-    if (data.error) {
-      alert(`Ошибка: ${data.error}`);
-      return;
-    }
-    const roomName = data.room_name;
-    window.location.href = `ws/private/${roomName}/`;
-  } catch (error) {
-    console.error('Error initiating chat:', error);
-    alert(`Ошибка при запуске чата: ${error.message}`);
-  }
-}
-</script>
 {% endblock %}

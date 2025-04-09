@@ -5,6 +5,8 @@
     <div id="chatbox"></div>
     <label for="messageInput"></label><input type="text" id="messageInput">
     <button id="sendMessageButton">Send</button>
+    <div id="chat-list"></div>
+    <h1>Private Chat: {{ room.user1 }} - {{ room.user2 }} <span id="unread-count"></span></h1>
     <style>
         #chatbox {
             height: 300px;
@@ -28,52 +30,91 @@
             color: gray;
         }
 
+        #chat-list {
+            border: 1px solid #ccc;
+            padding: 10px;
+        }
+
+        #chat-list div {
+            margin-bottom: 10px;
+            padding: 5px;
+            border: 1px solid #eee;
+        }
+
     </style>
     <script>
-        const username = '{{ request.user.username }}';
+        const username = '{{ request.user.username|escapejs }}';
         const roomName = '{{ room_name }}';
         const user1 = {{ user1_id }};
         const user2 = {{ user2_id }};
-        const websocket = new WebSocket(`ws://${window.location.host}/ws/private/${roomName}`);
-
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+        const websocket = new WebSocket(`${wsProtocol}://${window.location.host}/ws/private/${roomName}`);
         const chatbox = document.getElementById('chatbox');
         const messageInput = document.getElementById('messageInput');
         const sendMessageButton = document.getElementById('sendMessageButton');
+        const chatList = document.getElementById('chat-list');
+        const unreadCountElement = document.getElementById('unread-count');
 
-        websocket.onopen = function (event) {
+        websocket.onopen = async function (event) {
             console.log('WebSocket connection opened:', event);
+            await loadChatHistory();
         };
 
-        websocket.onmessage = function (event) {
-            const data = JSON.parse(event.data);
+        async function loadChatHistory() {
+            try {
+                const response = await fetch(`/chat/api/chat_history/${roomName}/`); // Используем roomName
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                data.messages.forEach(addMessageToChatbox);
+                updateUnreadCount(data.unread_count);
+            } catch (error) {
+                console.error('Error loading chat history:', error);
+                // Можно добавить обработку ошибки, например, показать пользователю сообщение об ошибке
+            }
+        }
+
+        function addMessageToChatbox(messageData) {
             const messageDiv = document.createElement('div');
-            messageDiv.classList.add(data.sender === username ? 'my-message' : 'other-message');
-            messageDiv.innerHTML = `<strong>${data.sender}:</strong> ${data.message} <span class="timestamp">(${data.timestamp})</span>`;
+            const senderElement = document.createElement('strong');
+            senderElement.textContent = messageData.sender__username + ':';
+            messageDiv.appendChild(senderElement);
+            const messageText = document.createTextNode(messageData.message);
+            messageDiv.appendChild(messageText);
+            const timestampSpan = document.createElement('span');
+            timestampSpan.classList.add('timestamp');
+            timestampSpan.textContent = `(${new Date(messageData.timestamp).toLocaleString()})`;
+            messageDiv.appendChild(timestampSpan);
+            messageDiv.classList.add(messageData.sender__username === username ? 'my-message' : 'other-message');
             chatbox.appendChild(messageDiv);
             chatbox.scrollTop = chatbox.scrollHeight;
+        }
+
+        websocket.onmessage = function (event) {
+            try {
+                const data = JSON.parse(event.data);
+                addMessageToChatbox(data);
+                updateUnreadCount(data.unread_count);
+            } catch (error) {
+                console.error('Error parsing WebSocket message:', error, event.data);
+            }
         };
 
-        websocket.onerror = function (event) {
-            console.error('WebSocket error:', event);
-            alert('Произошла ошибка соединения с WebSocket. Попробуйте позже.');
-        };
-
-        websocket.onclose = function (event) {
-            console.log('WebSocket connection closed:', event);
-            alert('Соединение с WebSocket закрыто.');
-        };
+        function updateUnreadCount(count) {
+            unreadCountElement.textContent = count > 0 ? ` (${count})` : '';
+        }
 
         sendMessageButton.addEventListener('click', function () {
             const message = messageInput.value;
             if (message.trim() !== '') {
-                const timestamp = new Date().toISOString();
+                const timestamp = Math.floor(Date.now() / 1000);
                 websocket.send(JSON.stringify({
                     message: message,
                     timestamp: timestamp,
                     user1: user1,
                     user2: user2,
                 }));
-
                 messageInput.value = '';
             }
         });
