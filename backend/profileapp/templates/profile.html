@@ -57,7 +57,7 @@
                 const username = '{{ request.user.username }}';
 
 
-                const apiUrl =  window.location.host + `/chat/api/get_private_room/${username}/${recipientUsername}`;
+                const apiUrl = 'wss'+ window.location.host + `/chat/api/get_private_room/${username}/${recipientUsername}`;
 
                 try {
                     const response = await fetch(apiUrl);
