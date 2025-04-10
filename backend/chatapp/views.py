@@ -96,11 +96,13 @@ def update_unread_count(sender, instance, created, **kwargs):
         user_chat.save()
 
 def get_chat_history(request, room_name):
+
     match = re.match(r"private_chat_(\d+)_(\d+)", room_name)
     if match:
         user1_id = int(match.group(1))
         user2_id = int(match.group(2))
-    room = get_object_or_404(PrivateChatRoom, user1_id=user1_id, user2_id=user2_id)
+    user = CustomUser.objects.get(pk=user2_id)
+    room = get_object_or_404(PrivateChatRoom, user1=user1_id, user2=user2_id)
     messages = PrivateMessage.objects.filter(room=room).order_by('timestamp').values('sender__username', 'message', 'timestamp')
     messages_list = list(messages)
-    return JsonResponse({'messages': messages_list, 'unread_count': request.user.chats.get(chat_room=room).unread_count})
+    return JsonResponse({'messages': messages_list, 'unread_count': user.chats.get(chat_room=room).unread_count})
