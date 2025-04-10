@@ -57,7 +57,7 @@
                 const username = '{{ request.user.username }}';
 
 
-                const apiUrl = `https://fokin.fun/chat/api/get_private_room/${username}/${recipientUsername}`;
+                const apiUrl = `${window.location.protocol}//${window.location.host}/chat/api/get_private_room/${username}/${recipientUsername}`;
 
                 try {
                     const response = await fetch(apiUrl);
@@ -70,7 +70,7 @@
                         return;
                     }
                     const roomName = data.room_name;
-                    window.location.href =  `https://fokin.fun/chat/wss/private/${roomName}/`;
+                    window.location.href =  `${window.location.protocol}//${window.location.host}/chat/wss/private/${roomName}/`;
                 } catch (error) {
                     console.error('Error initiating chat:', error);
                     alert(`Ошибка при запуске чата: ${error.message}`);
