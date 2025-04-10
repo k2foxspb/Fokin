@@ -1,12 +1,14 @@
 {% extends 'base.html' %}
 
 {% block content %}
-    <h1>Private Chat:{{ room_name }} </h1>
+    <div class="container">
+    <h1>Private Chat:{{ recipient.username }} </h1>
     <div id="chatbox"></div>
     <label for="messageInput"></label><input type="text" id="messageInput">
     <button id="sendMessageButton">Send</button>
+    </div>
 
-    <h1>Private Chat: {{ room.user1 }} - {{ room.user2 }} <span id="unread-count"></span></h1>
+
     <style>
         #chatbox {
             height: 300px;
@@ -66,7 +68,6 @@
                 }
                 const data = await response.json();
                 data.messages.forEach(addMessageToChatbox);
-                updateUnreadCount(data.unread_count);
             } catch (error) {
                 console.error('Error loading chat history:', error);
                 // Можно добавить обработку ошибки, например, показать пользователю сообщение об ошибке
@@ -100,9 +101,7 @@
             }
         };
 
-        function updateUnreadCount(count) {
-            unreadCountElement.textContent = count > 0 ? ` (${count})` : '';
-        }
+
 
         sendMessageButton.addEventListener('click', function () {
             const message = messageInput.value;

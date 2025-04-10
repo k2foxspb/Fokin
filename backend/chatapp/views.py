@@ -60,11 +60,18 @@ def private_chat_view(request, room_name):
         if match:
             user1_id = int(match.group(1))
             user2_id = int(match.group(2))
+            if request.user == user1_id:
+                recipient = CustomUser.objects.get(id=user1_id)
+                print('id1=', user1_id)
+            else:
+                recipient = CustomUser.objects.get(id=user2_id)
+                print('id2=', user2_id)
             return render(request, 'private_message.html', {
                 'room_name': room_name,
                 'user1_id': user1_id,
                 'user2_id': user2_id,
                 'username': request.user.username,
+                'recipient': recipient,
             })
         return render(request, 'private_message.html', {'room_name': room_name})
     except PrivateChatRoom.DoesNotExist:

@@ -1,6 +1,6 @@
 import json
 import logging
-from datetime import  datetime
+from datetime import datetime
 from pprint import pprint
 
 from asgiref.sync import async_to_sync, sync_to_async
@@ -148,6 +148,8 @@ class ChatConsumer(WebsocketConsumer):
 
 
 logger = logging.getLogger(__name__)
+
+
 class PrivateChatConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         self.room_name = self.scope['url_route']['kwargs']['room_name']
@@ -168,13 +170,13 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
         try:
             text_data_json = json.loads(text_data)
             message = text_data_json['message']
-            timestamp = int(text_data_json['timestamp']) # Проверка на число
-            user1_id = int(text_data_json['user1']) # Проверка на число
-            user2_id = int(text_data_json['user2']) # Проверка на число
+            timestamp = int(text_data_json['timestamp'])  # Проверка на число
+            user1_id = int(text_data_json['user1'])  # Проверка на число
+            user2_id = int(text_data_json['user2'])  # Проверка на число
 
             new_message = await self.save_message(user1_id, user2_id, message, timestamp, self.user)
 
-            if new_message: # Проверка на None
+            if new_message:  # Проверка на None
                 await self.channel_layer.group_send(
                     self.room_name,
                     {
@@ -185,6 +187,17 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
                         'id': new_message.id
                     }
                 )
+                if new_message.sender != self.user:
+                    await self.channel_layer.group_send(
+                        f"notification_{self.user.id}",  # Уникальное имя группы для каждого пользователя
+                        {
+                            'type': 'new_message_notification',
+                            'room_name': self.room_name,
+                            'sender': new_message.sender.username,
+                            'unread_count': new_message.room.unread_count.count(),
+                            # Добавьте функцию для подсчета непрочитанных сообщений
+                        }
+                    )
             else:
                 logger.error("Failed to save message.")
                 # Можно отправить сообщение об ошибке клиенту
@@ -195,7 +208,6 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
         except Exception as e:
             logger.exception(f"Error in receive from user {self.user}: {e}")
 
-
     async def chat_message(self, event):
         await self.send(text_data=json.dumps({
             'message': event['message'],
@@ -203,6 +215,7 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
             'timestamp': event['timestamp'],
             'id': event['id']
         }))
+        self.set_message_read(event)
 
     @sync_to_async
     def set_message_read(self, event):
