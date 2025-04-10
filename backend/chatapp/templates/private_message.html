@@ -63,7 +63,7 @@
 
         async function loadChatHistory() {
             try {
-                const response = await fetch(`/chat/api/chat_history/${roomName}/`); // Используем roomName
+                const response = await fetch(`${wsProtocol}://${window.location.host}/chat/api/chat_history/${roomName}/`); // Используем roomName
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
