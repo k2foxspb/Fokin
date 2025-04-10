@@ -48,9 +48,9 @@
                       href="{% url 'photo:photos' %}?username={{ user.username }}">Альбомы</a>
                 </p>
             {% endif %}
-
+            <p><a class="nav-link my-navbar" href="#" onclick="initiateChat('{{ user.username }}')">Написать сообщение </a></p>
         </div>
-        <a href="#" onclick="initiateChat('{{ user.username }}')">Начать чат с </a>
+
 
         <script>
             async function initiateChat(recipientUsername) {
