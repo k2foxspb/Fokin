@@ -6,6 +6,7 @@ from pprint import pprint
 from asgiref.sync import async_to_sync, sync_to_async
 from channels.generic.websocket import WebsocketConsumer, AsyncWebsocketConsumer
 from django.core.exceptions import ObjectDoesNotExist
+from django.db import transaction
 
 from authapp.models import CustomUser
 from .models import Room, Message, PrivateChatRoom, PrivateMessage, UserChat
@@ -220,16 +221,17 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
     @sync_to_async
     def save_message(self, user1_id, user2_id, message, timestamp, user):
         try:
-            user1 = CustomUser.objects.get(pk=user1_id)
-            user2 = CustomUser.objects.get(pk=user2_id)
-            room, created = PrivateChatRoom.objects.get_or_create(user1=user1, user2=user2)
-            new_message = PrivateMessage.objects.create(room=room, sender=user, message=message,
-                                                        timestamp=datetime.fromtimestamp(timestamp))
-            user_chat, created = UserChat.objects.get_or_create(user=user2, chat_room=room)
-            user_chat.unread_count += 1
-            user_chat.last_message = new_message
-            user_chat.save()
-            return new_message
+            with transaction.atomic():
+                user1 = CustomUser.objects.get(pk=user1_id)
+                user2 = CustomUser.objects.get(pk=user2_id)
+                room, created = PrivateChatRoom.objects.get_or_create(user1=user1, user2=user2)
+                new_message = PrivateMessage.objects.create(room=room, sender=user, message=message,
+                                                            timestamp=datetime.fromtimestamp(timestamp))
+                user_chat, created = UserChat.objects.get_or_create(user=user2, chat_room=room)
+                user_chat.unread_count += 1
+                user_chat.last_message = new_message
+                user_chat.save()
+                return new_message
         except Exception as e:
             logger.exception(f"Error saving message from user {user}: {e}")
             return None
