@@ -48,13 +48,14 @@
         const user1 = {{ user1_id }};
         const user2 = {{ user2_id }};
         const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-        const websocket = new WebSocket(`wss://${window.location.host}/wss/chat/private/${roomName}/`);
+        const websocket = new WebSocket(`${wsProtocol}://${window.location.host}/wss/chat/private/${roomName}/`);
         const chatbox = document.getElementById('chatbox');
         const messageInput = document.getElementById('messageInput');
         const sendMessageButton = document.getElementById('sendMessageButton');
         const chatList = document.getElementById('chat-list');
         const unreadCountElement = document.getElementById('unread-count');
-
+        websocket.onerror = function(error) {
+        console.error('WebSocket error:', error);};
         websocket.onopen = async function (event) {
             console.log('WebSocket connection opened:', event);
             await loadChatHistory();
