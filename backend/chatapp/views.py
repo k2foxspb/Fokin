@@ -18,8 +18,6 @@ class IndexView(ListView, Permission):
     template_name = 'index.html'
 
 
-
-
 # class RoomDetailView(DetailView):
 #     def get_context_data(self, **kwargs):
 #         context = super().get_context_data(**kwargs)
@@ -75,7 +73,8 @@ def private_chat_view(request, room_name):
 
 @login_required
 def user_chats(request):
-    user_chats = UserChat.objects.filter(user=request.user).select_related('chat_room').prefetch_related('last_message__sender')
+    user_chats = UserChat.objects.filter(user=request.user).select_related('chat_room').prefetch_related(
+        'last_message__sender')
     chat_data = [{
         'id': chat.chat_room.id,
         'user2_id': chat.chat_room.user2.id if chat.chat_room.user1_id == request.user.id else chat.chat_room.user1.id,
@@ -86,6 +85,7 @@ def user_chats(request):
     } for chat in user_chats]
     return JsonResponse(chat_data, safe=False)
 
+
 @receiver(post_save, sender=PrivateMessage)
 def update_unread_count(sender, instance, created, **kwargs):
     if created:
@@ -95,14 +95,19 @@ def update_unread_count(sender, instance, created, **kwargs):
         user_chat.last_message = instance
         user_chat.save()
 
-def get_chat_history(request, room_name):
 
+@login_required
+def get_chat_history(request, room_name):
     match = re.match(r"private_chat_(\d+)_(\d+)", room_name)
     if match:
         user1_id = int(match.group(1))
         user2_id = int(match.group(2))
     user = CustomUser.objects.get(pk=user2_id)
     room = get_object_or_404(PrivateChatRoom, user1=user1_id, user2=user2_id)
-    messages = PrivateMessage.objects.filter(room=room).order_by('timestamp').values('sender__username', 'message', 'timestamp')
+    messages = PrivateMessage.objects.filter(room=room).order_by('timestamp').values('sender__username', 'message',
+                                                                                     'timestamp')
+
+    if request.user.id != user1_id and request.user.id != user2_id:
+        return JsonResponse({'error': 'Unauthorized access'}, status=403)
     messages_list = list(messages)
     return JsonResponse({'messages': messages_list, 'unread_count': user.chats.get(chat_room=room).unread_count})
