@@ -5,7 +5,7 @@
     <div id="chatbox"></div>
     <label for="messageInput"></label><input type="text" id="messageInput">
     <button id="sendMessageButton">Send</button>
-    <div id="chat-list"></div>
+
     <h1>Private Chat: {{ room.user1 }} - {{ room.user2 }} <span id="unread-count"></span></h1>
     <style>
         #chatbox {
@@ -30,10 +30,7 @@
             color: gray;
         }
 
-        #chat-list {
-            border: 1px solid #ccc;
-            padding: 10px;
-        }
+
 
         #chat-list div {
             margin-bottom: 10px;
@@ -52,7 +49,7 @@
         const chatbox = document.getElementById('chatbox');
         const messageInput = document.getElementById('messageInput');
         const sendMessageButton = document.getElementById('sendMessageButton');
-        const chatList = document.getElementById('chat-list');
+
         const unreadCountElement = document.getElementById('unread-count');
         websocket.onerror = function(error) {
         console.error('WebSocket error:', error);};
@@ -63,7 +60,7 @@
 
         async function loadChatHistory() {
             try {
-                const response = await fetch(`https://${window.location.host}/chat/api/chat_history/${roomName}/`); // Используем roomName
+                const response = await fetch(`${window.location.protocol}//${window.location.host}/chat/api/chat_history/${roomName}/`);
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
@@ -77,6 +74,7 @@
         }
 
         function addMessageToChatbox(messageData) {
+
             const messageDiv = document.createElement('div');
             const senderElement = document.createElement('strong');
             senderElement.textContent = messageData.sender__username + ':';
