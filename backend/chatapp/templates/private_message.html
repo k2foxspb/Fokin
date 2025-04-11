@@ -3,8 +3,8 @@
 {% block content %}
     <div class="container">
         <h1><a class="nav-link my-navbar" href="{% url 'profile:profile' recipient.username %}"><img style="border-radius: 20px; margin-bottom: 10px" src="{{ recipient_avatar_url }}" alt="{{ recipient.username }}'s avatar" width="32"
-                    height="32" > {{ recipient.username }}{{ recipient.username }} </a>
-        <div id="chatbox"></div>
+                                                                                                     height="32" > {{ recipient.username }}{{ recipient.username }} </a></h1>
+        <div class="mydiv" id="chatbox"></div>
         <label for="messageInput"></label><input type="text" id="messageInput">
         <button id="sendMessageButton">Send</button>
     </div>
@@ -12,7 +12,8 @@
         #chatbox {
             height: 300px;
             overflow-y: scroll;
-            border: 1px solid #ccc;
+            border: 1px solid #a30101;
+            border-radius: 10px;
             padding: 10px;
         }
 
@@ -49,8 +50,7 @@
         const chatbox = document.getElementById('chatbox');
         const messageInput = document.getElementById('messageInput');
         const sendMessageButton = document.getElementById('sendMessageButton');
-
-        const unreadCountElement = document.getElementById('unread-count');
+        messageInput.focus()
         websocket.onerror = function (error) {
             console.error('WebSocket error:', error);
         };
@@ -88,13 +88,13 @@
             messageDiv.classList.add(messageData.sender__username === username ? 'my-message' : 'other-message');
             chatbox.appendChild(messageDiv);
             chatbox.scrollTop = chatbox.scrollHeight;
+            messageInput.focus()
         }
 
         websocket.onmessage = function (event) {
             try {
                 const data = JSON.parse(event.data);
                 addMessageToChatbox(data);
-                updateUnreadCount(data.unread_count);
             } catch (error) {
                 console.error('Error parsing WebSocket message:', error, event.data);
             }
