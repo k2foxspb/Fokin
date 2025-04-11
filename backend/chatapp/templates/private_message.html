@@ -2,13 +2,12 @@
 
 {% block content %}
     <div class="container">
-    <h1>Private Chat:{{ recipient.username }} </h1>
-    <div id="chatbox"></div>
-    <label for="messageInput"></label><input type="text" id="messageInput">
-    <button id="sendMessageButton">Send</button>
+        <h1><a class="nav-link my-navbar" href="{% url 'profile:profile' recipient.username %}"><img style="border-radius: 20px; margin-bottom: 10px" src="{{ recipient_avatar_url }}" alt="{{ recipient.username }}'s avatar" width="32"
+                    height="32" > {{ recipient.username }}{{ recipient.username }} </a>
+        <div id="chatbox"></div>
+        <label for="messageInput"></label><input type="text" id="messageInput">
+        <button id="sendMessageButton">Send</button>
     </div>
-
-
     <style>
         #chatbox {
             height: 300px;
@@ -33,7 +32,6 @@
         }
 
 
-
         #chat-list div {
             margin-bottom: 10px;
             padding: 5px;
@@ -53,8 +51,9 @@
         const sendMessageButton = document.getElementById('sendMessageButton');
 
         const unreadCountElement = document.getElementById('unread-count');
-        websocket.onerror = function(error) {
-        console.error('WebSocket error:', error);};
+        websocket.onerror = function (error) {
+            console.error('WebSocket error:', error);
+        };
         websocket.onopen = async function (event) {
             console.log('WebSocket connection opened:', event);
             await loadChatHistory();
@@ -84,7 +83,7 @@
             messageDiv.appendChild(messageText);
             const timestampSpan = document.createElement('span');
             timestampSpan.classList.add('timestamp');
-            timestampSpan.textContent = `(${new Date(messageData.timestamp).toLocaleString()})`;
+            timestampSpan.textContent = `(${new Date(messageData.timestamp * 1000).toLocaleString()})`;
             messageDiv.appendChild(timestampSpan);
             messageDiv.classList.add(messageData.sender__username === username ? 'my-message' : 'other-message');
             chatbox.appendChild(messageDiv);
@@ -100,7 +99,6 @@
                 console.error('Error parsing WebSocket message:', error, event.data);
             }
         };
-
 
 
         sendMessageButton.addEventListener('click', function () {
