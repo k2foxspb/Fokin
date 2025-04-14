@@ -1,13 +1,15 @@
+import os
 from pathlib import Path
 from time import time
 
+from django.conf import settings
 from django.contrib.auth.base_user import AbstractBaseUser
 from django.contrib.auth.models import PermissionsMixin, UserManager
 from django.contrib.auth.validators import ASCIIUsernameValidator
 from django.db import models
 from imagekit.models import ImageSpecField
 from pilkit.processors import ResizeToFill
-
+from django.core.files import File
 
 def users_avatars_path(instance, filename):
     # file will be uploaded to
@@ -77,3 +79,18 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     def get_full_name(self):
         full_name = "%s %s" % (self.first_name, self.last_name)
         return full_name.strip()
+
+    def save(self, *args, **kwargs):
+        if not self.avatar and self.gender:  # Проверяем, есть ли пол и аватар
+            if self.gender == 'male':
+                default_avatar_path = os.path.join(settings.STATIC_ROOT, 'img/avatar/male.png')
+                print(default_avatar_path)
+            else:
+                default_avatar_path =os.path.join(settings.STATIC_ROOT, 'img', 'avatar', 'female.png')
+
+            try:
+                with open(default_avatar_path, 'rb') as f:
+                    self.avatar.save('default_avatar.jpg', File(f), save=False)  # сохраняем аватарку
+            except FileNotFoundError:
+                print("Файл дефолтного аватара не найден!")
+        super().save(*args, **kwargs)  # вызов родительского метода save()

@@ -48,47 +48,52 @@
 
 {% block navbar %}
     <nav class="navbar navbar-expand-sm  ">
-    <div class="container-lg">
-        <a class="navbar-brand" href="{% url 'main:main_category' %}"><img style="width: 50px"
-                                                                           src="{% static 'img/logo/logo_white.png' %}"
-                                                                           alt="logo"></a>
-        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
-                aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
-            <span class="navbar-toggler-icon"></span>
-        </button>
-        <div class="collapse navbar-collapse" id="navbarNav">
-            <ul class="navbar-nav">
+        <div class="container-lg">
+            <a class="navbar-brand" href="{% url 'main:main_category' %}"><img style="width: 50px"
+                                                                               src="{% static 'img/logo/logo_white.png' %}"
+                                                                               alt="logo"></a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
+                    aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav">
+                    {% if user.is_authenticated %}
+                        {% block my_str %}
+                            <li class="nav-item">
 
-                {% if user.is_anonymous %}
+                                <a class="nav-link my-navbar" href="{% url 'profile:profile' user.username %}">
+                                    <img style="border-radius: 20px;width: 20px;height: 20px" src="{{ request.user.thumbnail.url }}"
+                                         alt="{{ request.user.username }}">
+                                    Моя страница
+                                </a>
+                            </li>
+                        {% endblock %}
+                        <li class="nav-item">
+                            <a class="nav-link my-navbar" href="{% url 'auth:logout' %}">Выход</a>
+                        </li>
+                    {% endif %}
+                    {% if user.is_anonymous %}
+                        <li class="nav-item">
+                            <a class="nav-link my-navbar" href="{% url 'auth:login' %}">Вход</a>
+                            {% else %}
+                        </li>
+                    {% endif %}
                     <li class="nav-item">
-                        <a class="nav-link my-navbar" href="{% url 'auth:login' %}">Вход</a>
-                        {% else %}
+                        <a class="nav-link my-navbar" href="{% url 'main:about' %}">Контакты</a>
                     </li>
-                {% endif %}
-                <li class="nav-item">
-                    <a class="nav-link my-navbar" href="{% url 'main:about' %}">Контакты</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link my-navbar" href="{% url 'chat:chat-index' %}">Комнаты чатов</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link my-navbar" href="{% url 'profile:all_users' %}">Все пользователи</a>
-                </li>
-                {% if user.is_authenticated %}
-                    {% block my_str %}
                     <li class="nav-item">
-                        <a class="nav-link my-navbar" href="{% url 'profile:profile' user.username %}">моя страница</a>
+                        <a class="nav-link my-navbar" href="{% url 'chat:chat-index' %}">Комнаты чатов</a>
                     </li>
-                    {% endblock %}
                     <li class="nav-item">
-                        <a class="nav-link my-navbar" href="{% url 'auth:logout' %}">Выход</a>
+                        <a class="nav-link my-navbar" href="{% url 'profile:all_users' %}">Все пользователи</a>
                     </li>
-                {% endif %}
 
-            </ul>
+
+                </ul>
+            </div>
         </div>
-    </div>
-</nav>
+    </nav>
 
 {% endblock %}
 {% block content %}{% endblock %}
