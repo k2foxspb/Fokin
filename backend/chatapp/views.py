@@ -64,11 +64,11 @@ def private_chat_view(request, room_name):
             if request.user.id != user1_id and request.user.id != user2_id:
                 return JsonResponse({'error': 'Unauthorized access'}, status=403)
             if request.user == user1_id:
-                recipient = CustomUser.objects.get(id=user1_id)
-                print('id1=', user1_id)
-            else:
                 recipient = CustomUser.objects.get(id=user2_id)
-                print('id2=', user2_id)
+
+            else:
+                recipient = CustomUser.objects.get(id=user1_id)
+
             default_avatar = get_default_avatar(recipient)
             return render(request, 'private_message.html', {
                 'room_name': room_name,

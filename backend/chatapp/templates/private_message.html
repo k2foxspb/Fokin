@@ -3,7 +3,7 @@
 {% block content %}
     <div class="container">
         <h1><a class="nav-link my-navbar" href="{% url 'profile:profile' recipient.username %}"><img style="border-radius: 20px; margin-bottom: 10px" src="{{ recipient_avatar_url }}" alt="{{ recipient.username }}'s avatar" width="32"
-                                                                                                     height="32" > {{ recipient.username }}{{ recipient.username }} </a></h1>
+                                                                                                     height="32" > {{ recipient.username }} </a></h1>
         <div class="mydiv" id="chatbox"></div>
         <label for="messageInput"></label><input type="text" id="messageInput">
         <button id="sendMessageButton">Send</button>
@@ -46,7 +46,7 @@
         const user1 = {{ user1_id }};
         const user2 = {{ user2_id }};
         const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-        const websocket = new WebSocket(`${wsProtocol}://${window.location.host}/wss/private/${roomName}/`);
+        const websocket = new WebSocket(`${wsProtocol}://${window.location.host}/ws/private/${roomName}/`);
         const chatbox = document.getElementById('chatbox');
         const messageInput = document.getElementById('messageInput');
         const sendMessageButton = document.getElementById('sendMessageButton');
