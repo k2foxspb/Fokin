@@ -8,6 +8,8 @@ from django.views.generic import FormView
 from authapp.models import CustomUser
 from .models import PhotoAlbum, Photo
 from .forms import AlbumForm, FileFieldForm
+from backend.utils import get_default_avatar
+
 
 @login_required(login_url='auth:login')
 def photo_list(request):
@@ -22,7 +24,8 @@ def photo_list(request):
                 else:
                     albums = user.albums.filter(hidden_flag=False)
                 context = {'albums': albums, 'user': user, 'is_authenticated': request.user.is_authenticated,
-                           'come_user': request.user.username}
+                           'come_user': request.user.username,
+                           'recipient_avatar_url': user.thumbnail.url if user.avatar else get_default_avatar(user), }
             else:
                 albums = user.albums.filter(hidden_flag=False)  # Только публичные и не скрытые
                 context = {'albums': albums, 'user': user, 'is_authenticated': False}

@@ -10,9 +10,11 @@
     </li>
 {% endblock %}
 {% block content %}
-    <h2 class="text-center">Фотоальбомы</h2>
+    <div class="container">
+    <h1><a class="nav-link my-navbar" href="{% url 'profile:profile' user.username %}"><img style="border-radius: 20px; margin-bottom: 10px" src="{{ recipient_avatar_url }}" alt="{{ user.username }}'s avatar" width="32"
+                                                                                                     height="32" > {{ user.username }}{{ user.username }} </a></h1>
 
-    {% if username == user.username %}
+    {% if come_user == user.username %}
         <div class="text-center">
             <a class="my-btn btn" href="{% url 'photo:create_album' %}">Создать альбом</a>
         </div>
@@ -25,7 +27,7 @@
                     <div class="articles">
                         <div class="card-header text-center">
                             <h3>{{ album.title }}</h3>
-                            {% if username == user.username %}
+                            {% if come_user == user.username %}
                                 <a class="my-btn btn" href="{% url 'photo:add_photo' album_id=album.id %}">Добавить
                                     фото</a>
                             {% endif %}
@@ -55,5 +57,5 @@
     {% else %}
         <p>Нет альбомов для отображения.</p>
     {% endif %}
-
+    </div>
 {% endblock %}

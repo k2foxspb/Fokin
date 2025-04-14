@@ -7,11 +7,11 @@ from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.http import JsonResponse
 from django.shortcuts import render, get_object_or_404
-from django.views.generic import ListView, DetailView
+from django.views.generic import ListView
 
 from authapp.models import CustomUser
 from chatapp.models import Room, PrivateChatRoom, UserChat, PrivateMessage
-from chatapp.utils import get_default_avatar
+from backend.utils import get_default_avatar
 
 
 class IndexView(ListView, Permission):
@@ -61,6 +61,8 @@ def private_chat_view(request, room_name):
         if match:
             user1_id = int(match.group(1))
             user2_id = int(match.group(2))
+            if request.user.id != user1_id and request.user.id != user2_id:
+                return JsonResponse({'error': 'Unauthorized access'}, status=403)
             if request.user == user1_id:
                 recipient = CustomUser.objects.get(id=user1_id)
                 print('id1=', user1_id)
