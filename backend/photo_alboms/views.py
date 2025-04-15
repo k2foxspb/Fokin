@@ -1,14 +1,13 @@
 from django.contrib.auth import get_user_model
-from django.http import HttpResponseForbidden, Http404, HttpResponseNotFound
+from django.http import Http404, HttpResponseNotFound
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
-from django.urls import reverse_lazy, reverse
+from django.urls import reverse_lazy
 from django.views.generic import FormView
 
-from authapp.models import CustomUser
+
 from .models import PhotoAlbum, Photo
 from .forms import AlbumForm, FileFieldForm
-from backend.utils import get_default_avatar
 
 
 @login_required(login_url='auth:login')
