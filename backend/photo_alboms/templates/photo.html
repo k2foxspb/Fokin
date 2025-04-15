@@ -11,7 +11,7 @@
 {% endblock %}
 {% block content %}
     <div class="container">
-    <h1><a class="nav-link my-navbar" href="{% url 'profile:profile' user.username %}"><img style="border-radius: 20px; margin-bottom: 10px" src="{{ recipient_avatar_url }}" alt="{{ user.username }}'s avatar" width="32"
+    <h1><a class="nav-link my-navbar" href="{% url 'profile:profile' user.username %}"><img style="border-radius: 20px; margin-bottom: 10px" src="{{ user.thumbnail.url }}" alt="{{ user.username }}'s avatar" width="32"
                                                                                                      height="32" > {{ user.username }}{{ user.username }} </a></h1>
 
     {% if come_user == user.username %}

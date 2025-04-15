@@ -24,11 +24,9 @@ def photo_list(request):
                 else:
                     albums = user.albums.filter(hidden_flag=False)
                 context = {'albums': albums, 'user': user, 'is_authenticated': request.user.is_authenticated,
-                           'come_user': request.user.username,
-                           'recipient_avatar_url': user.thumbnail.url if user.avatar else get_default_avatar(user), }
+                           'come_user': request.user.username,}
             else:
-                albums = user.albums.filter(hidden_flag=False)  # Только публичные и не скрытые
-                context = {'albums': albums, 'user': user, 'is_authenticated': False}
+                HttpResponseNotFound('Войдите в систему чтобы просматривать фотографии пользователей')
 
         except Http404:
             return HttpResponseNotFound("Пользователь не найден")

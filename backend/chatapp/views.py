@@ -54,7 +54,7 @@ def get_private_room(request, username1, username2):
         return JsonResponse({'error': str(e)}, status=500)
 
 
-@login_required
+@login_required(login_url='auth:login')
 def private_chat_view(request, room_name):
     try:
         match = re.match(r"private_chat_(\d+)_(\d+)", room_name)
@@ -82,7 +82,7 @@ def private_chat_view(request, room_name):
         return render(request, 'index.html', {'message': 'Room not found'})
 
 
-@login_required
+@login_required(login_url='auth:login')
 def user_chats(request):
     user_chats = UserChat.objects.filter(user=request.user).select_related('chat_room').prefetch_related(
         'last_message__sender')
@@ -107,7 +107,7 @@ def update_unread_count(sender, instance, created, **kwargs):
         user_chat.save()
 
 
-@login_required
+@login_required(login_url='auth:login')
 def get_chat_history(request, room_name):
     match = re.match(r"private_chat_(\d+)_(\d+)", room_name)
     if match:
