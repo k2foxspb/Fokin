@@ -11,7 +11,7 @@ from django.views.generic import ListView
 
 from authapp.models import CustomUser
 from chatapp.models import Room, PrivateChatRoom, UserChat, PrivateMessage
-from backend.utils import get_default_avatar
+
 
 
 class IndexView(ListView, Permission):
@@ -27,7 +27,7 @@ class IndexView(ListView, Permission):
 
 def room_view(request, room_name):
     chat_room = Room.objects.get(name=room_name)
-    print(type(room_name))
+
     return render(request, 'room.html', {
         'room': chat_room,
     })
@@ -63,20 +63,19 @@ def private_chat_view(request, room_name):
             user2_id = int(match.group(2))
             if request.user.id != user1_id and request.user.id != user2_id:
                 return JsonResponse({'error': 'Unauthorized access'}, status=403)
-            if request.user == user1_id:
-                recipient = CustomUser.objects.get(id=user1_id)
-
-            else:
+            if request.user.id == user1_id:
                 recipient = CustomUser.objects.get(id=user2_id)
 
-            default_avatar = get_default_avatar(recipient)
+            else:
+                recipient = CustomUser.objects.get(id=user1_id)
+
+
             return render(request, 'private_message.html', {
                 'room_name': room_name,
                 'user1_id': user1_id,
                 'user2_id': user2_id,
                 'username': request.user.username,
                 'recipient': recipient,
-                'recipient_avatar_url': recipient.thumbnail.url if recipient.avatar else default_avatar,
             })
         return render(request, 'private_message.html', {'room_name': room_name})
     except PrivateChatRoom.DoesNotExist:

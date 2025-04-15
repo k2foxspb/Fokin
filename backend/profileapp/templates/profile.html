@@ -72,8 +72,9 @@
                         alert(`Ошибка: ${data.error}`);
                         return;
                     }
+                    const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
                     const roomName = data.room_name;
-                    window.location.href =  `${window.location.protocol}//${window.location.host}/chat/wss/private/${roomName}/`;
+                    window.location.href =  `${window.location.protocol}//${window.location.host}/chat/${wsProtocol}/private/${roomName}/`;
                 } catch (error) {
                     console.error('Error initiating chat:', error);
                     alert(`Ошибка при запуске чата: ${error.message}`);
