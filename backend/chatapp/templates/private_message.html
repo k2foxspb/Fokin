@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
-
+{% block footer %}
+{% endblock %}
 {% block content %}
     <div class="container">
         <h1><a class="nav-link my-navbar" href="{% url 'profile:profile' recipient.username %}"><img style="border-radius: 20px; margin-bottom: 10px" src="{{ recipient.thumbnail.url }}" alt="{{ recipient.username }}'s avatar" width="32"

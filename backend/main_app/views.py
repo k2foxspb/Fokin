@@ -20,12 +20,6 @@ from main_app import models
 #     def get_queryset(self):
 #         return super().get_queryset().filter(status='pu')
 
-
-
-class About_me(TemplateView):
-    template_name = "about_me/about_me.html"
-
-
 class CategoryListView(ListView):
     model = models.Category
     template_name = "main/articles/category.html"

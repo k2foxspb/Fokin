@@ -69,9 +69,6 @@
                                 </a>
                             </li>
                         {% endblock %}
-                        <li class="nav-item">
-                            <a class="nav-link my-navbar" href="{% url 'auth:logout' %}">Выход</a>
-                        </li>
                     {% endif %}
                     {% if user.is_anonymous %}
                         <li class="nav-item">
@@ -79,9 +76,7 @@
                             {% else %}
                         </li>
                     {% endif %}
-                    <li class="nav-item">
-                        <a class="nav-link my-navbar" href="{% url 'main:about' %}">Контакты</a>
-                    </li>
+
                     <li class="nav-item">
                         <a class="nav-link my-navbar" href="{% url 'chat:chat-index' %}">Комнаты чатов</a>
                     </li>
@@ -97,6 +92,10 @@
 
 {% endblock %}
 {% block content %}{% endblock %}
+
+{% block footer %}
+    {% include 'footer.html' %}
+{% endblock %}
 {% include 'yandex.html' %}
 <script src="{% static 'js/bootstrap.bundle.js' %}"></script>
 <script src="{% static 'js/jquery-3.6.0.min.js' %}"></script>

@@ -34,7 +34,6 @@
 }
 
 
-
 .my-background {
     background-size: cover;
     background-repeat: no-repeat;
@@ -53,9 +52,6 @@
     text-decoration: none;
     color: #ededed;
 }
-
-
-
 
 
 .code-tool {
@@ -88,6 +84,7 @@
 .my-text {
     color: #ffffff;
 }
+
 .ck.ck-editor {
     color: black !important;
 }
@@ -110,6 +107,7 @@
     scrollbar-color: #670000 #504d4d;
     scrollbar-width: none;
 }
+
 .message {
     border: 1px solid #670000;
     border-radius: 20px;
@@ -119,10 +117,10 @@
     font-size: small;
 
 }
+
 .joinedTheRoom {
     text-align: center;
 }
-
 
 
 /*кнопка обратной связи*/
@@ -235,4 +233,3 @@
         transform: rotate(360deg);
     }
 }
-

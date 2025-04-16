@@ -5,7 +5,7 @@
     <li class="nav-item">
         <a class="nav-link my-navbar" href="{% url 'profile:profile' user_come.username %}">
             <img style="border-radius: 20px;width: 20px;height: 20px" src="{{ user_come.thumbnail.url }}"
-                                         alt="{{ user_come.username }}">
+                 alt="{{ user_come.username }}">
             Моя страница</a>
     </li>
 {% endblock %}
@@ -45,13 +45,15 @@
             {% if user.username == user_come.username %}
                 <a class="nav-link my-navbar" href="{% url 'auth:profile_edit' user.pk %}">редактировать
                     профиль</a>
+                <a class="nav-link my-navbar" href="{% url 'auth:logout' %}">Выход</a>
             {% endif %}
             {% if user.username %}
                 <p><a class="nav-link my-navbar"
                       href="{% url 'photo:photos' %}?username={{ user.username }}">Альбомы</a>
                 </p>
             {% endif %}
-            <p><a class="nav-link my-navbar" href="#" onclick="initiateChat('{{ user.username }}')">Написать сообщение </a></p>
+            <p><a class="nav-link my-navbar" href="#" onclick="initiateChat('{{ user.username }}')">Написать
+                сообщение </a></p>
         </div>
 
 
@@ -74,7 +76,7 @@
                     }
                     const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
                     const roomName = data.room_name;
-                    window.location.href =  `${window.location.protocol}//${window.location.host}/chat/${wsProtocol}/private/${roomName}/`;
+                    window.location.href = `${window.location.protocol}//${window.location.host}/chat/${wsProtocol}/private/${roomName}/`;
                 } catch (error) {
                     console.error('Error initiating chat:', error);
                     alert(`Ошибка при запуске чата: ${error.message}`);
