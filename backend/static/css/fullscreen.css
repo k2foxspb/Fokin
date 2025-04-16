@@ -86,11 +86,11 @@
 
 .nav-buttons {
     position: absolute;
-    bottom: 300px; /Изменено: Убрал большой отступ */
+    bottom: 300px;
     left: 0;
     width: 100%;
     display: flex;
-    justify-content: center;
+    justify-content: space-between;
     z-index: 1001;
     padding: 0 20px;
 
