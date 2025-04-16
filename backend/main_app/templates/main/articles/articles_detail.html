@@ -73,7 +73,7 @@
                         {% get_comment_form for article as form %}
                         <form action="{% comment_form_target %}" method="POST">
                             {% csrf_token %}
-                            <div class="form-group">
+                            <div class="form-group container-fluid">
                                 <label for="id_comment">Comment</label>
                                 <textarea id="id_comment" name="comment" class="form-control fixed-size"
                                           rows="5"></textarea></div>
