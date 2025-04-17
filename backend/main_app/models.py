@@ -82,6 +82,7 @@ class Category(models.Model):
         unique=True,
         editable=False,
     )
+    status = models.CharField(max_length=3, choices=STATUS_CHOICES, default="pu")
 
     def get_article(self):
         return self.article_set.all()
