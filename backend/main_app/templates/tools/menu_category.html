@@ -10,6 +10,7 @@
     {% for category in categories %}
         <ul>
             <li>
+            {% if category.status == 'pu' %}
                 <a href="{% url 'main:category_detail' slug=category.slug %}" class="my-text">{{ category }}</a>
                 <input type="checkbox" class="subCat" id="{{ category.id }}"/>
                 <label class="chka" for="{{ category.id }}"></label>
@@ -24,6 +25,7 @@
                     {% endfor %}
                 </ul>
             </li>
+            {% endif %}
         </ul>
     {% endfor %}
 </div>
