@@ -20,11 +20,6 @@ class ArticleAdmin(admin.ModelAdmin):
     fields = ['title', 'preamble', 'category', 'content']
 
 
-@admin.register(models.Category)
-class CategoryAdmin(admin.ModelAdmin):
-    list_display = ['title']
-    actions = [make_published, make_deleted]
-
 @admin.action(description='пометить категорию удалённой')
 def make_deleted(modeladmin, request, queryset):
     queryset.update(status='del')
@@ -33,3 +28,9 @@ def make_deleted(modeladmin, request, queryset):
 @admin.action(description='опубликовать категорию')
 def make_published(modeladmin, request, queryset):
     queryset.update(status='pu')
+
+
+@admin.register(models.Category)
+class CategoryAdmin(admin.ModelAdmin):
+    list_display = ['title']
+    actions = [make_published, make_deleted]
