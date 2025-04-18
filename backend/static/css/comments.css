@@ -42,3 +42,20 @@
     margin-left: auto;
     margin-top: 5px;
 }
+
+.ck-powered-by {
+    display: none !important;
+}
+.comment-content {
+    position: relative; / Необходимо для абсолютного позиционирования крестика /
+}
+
+.delete-comment {
+    position: absolute;
+    top: 0;
+    right: 0;
+    color: red;
+    text-decoration: none;
+    cursor: pointer;
+    font-weight: bold;
+}

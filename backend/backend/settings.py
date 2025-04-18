@@ -45,7 +45,7 @@ INSTALLED_APPS = [
     "authapp.apps.AuthappConfig",
     "ckeditor",
     'django_ckeditor_5',
-    "django.contrib.sites",  # проверка пароля
+    "django.contrib.sites",
     'chatapp',
     'django_comments',
     'photo_alboms',
@@ -195,69 +195,110 @@ customColorPalette = [
         'label': 'Blue'
     },
 ]
-#   CKEDITOR_5_CUSTOM_CSS = 'path_to.css' # optional
-#   CKEDITOR_5_FILE_STORAGE = "path_to_storage.CustomStorage" # optional
+CKEDITOR_5_UPLOAD_FILE_TYPES = ['jpeg', 'jpg', 'png']
+# CKEDITOR_5_FILE_STORAGE = "blog.storage.CustomStorage"
 CKEDITOR_5_ALLOW_ALL_FILE_TYPES = True  # загрузить любые файлы
 CKEDITOR_5_CONFIGS = {
-    'default': {
-        'toolbar': ['heading', '|', 'bold', 'italic', 'link',
-                    'bulletedList', 'numberedList', 'blockQuote', 'imageUpload', ],
-        'language': 'ru',
-    },
     'extends': {
-        'blockToolbar': [
-            'paragraph', 'heading1', 'heading2', 'heading3',
-            '|',
-            'bulletedList', 'numberedList',
-            '|',
-            'blockQuote',
-
-        ],
-        'toolbar': ['heading', '|', 'outdent', 'indent', '|', 'bold', 'italic', 'link', 'underline', 'strikethrough',
-                    'code', 'subscript', 'superscript', 'highlight', '|', 'codeBlock', 'sourceEditing', 'insertImage',
-                    'bulletedList', 'numberedList', 'todoList', '|', 'blockQuote', 'imageUpload', '|',
-                    'fontSize', 'fontFamily', 'fontColor', 'fontBackgroundColor', 'mediaEmbed', 'removeFormat',
-                    'insertTable', ],
-        'image': {
-            'toolbar': ['imageTextAlternative', '|', 'imageStyle:alignLeft',
-                        'imageStyle:alignRight', 'imageStyle:alignCenter', 'imageStyle:side', '|'],
-            'styles': [
-                'full',
-                'side',
-                'alignLeft',
-                'alignRight',
-                'alignCenter',
-            ]
-
+        'toolbar': {
+            'items': [
+                'undo', 'redo', '|', 'selectAll', 'findAndReplace', '|', 'heading', '|', 'fontSize', 'fontColor',
+                'fontBackgroundColor', '|', 'bold', 'italic', 'underline', 'strikethrough', 'subscript', 'superscript',
+                'highlight', '|', 'link', 'insertImage', 'mediaEmbed', 'fileUpload', 'insertTable', '|',
+                'blockQuote', 'specialCharacters', 'horizontalLine', '|', 'alignment', 'bulletedList', 'numberedList',
+                'outdent', 'indent', 'removeFormat'
+            ],
+            'shouldNotGroupWhenFull': True
         },
-        'table': {
-            'contentToolbar': ['tableColumn', 'tableRow', 'mergeTableCells',
-                               'tableProperties', 'tableCellProperties'],
-            'tableProperties': {
-                'borderColors': customColorPalette,
-                'backgroundColors': customColorPalette
-            },
-            'tableCellProperties': {
-                'borderColors': customColorPalette,
-                'backgroundColors': customColorPalette
-            }
+        'fontSize': {
+            'options': [10, 12, 14, 'default', 18, 20, 22],
+            'supportAllValues': True
         },
         'heading': {
             'options': [
-                {'model': 'paragraph', 'title': 'Paragraph', 'class': 'ck-heading_paragraph'},
-                {'model': 'heading1', 'view': 'h1', 'title': 'Heading 1', 'class': 'ck-heading_heading1'},
-                {'model': 'heading2', 'view': 'h2', 'title': 'Heading 2', 'class': 'ck-heading_heading2'},
-                {'model': 'heading3', 'view': 'h3', 'title': 'Heading 3', 'class': 'ck-heading_heading3'}
+                {
+                    'model': 'paragraph',
+                    'title': 'Paragraph',
+                    'class': 'ck-heading_paragraph'
+                },
+                {
+                    'model': 'heading1',
+                    'view': 'h1',
+                    'title': 'Heading 1',
+                    'class': 'ck-heading_heading1'
+                },
+                {
+                    'model': 'heading2',
+                    'view': 'h2',
+                    'title': 'Heading 2',
+                    'class': 'ck-heading_heading2'
+                },
+                {
+                    'model': 'heading3',
+                    'view': 'h3',
+                    'title': 'Heading 3',
+                    'class': 'ck-heading_heading3'
+                },
+                {
+                    'model': 'heading4',
+                    'view': 'h4',
+                    'title': 'Heading 4',
+                    'class': 'ck-heading_heading4'
+                },
+                {
+                    'model': 'heading5',
+                    'view': 'h5',
+                    'title': 'Heading 5',
+                    'class': 'ck-heading_heading5'
+                },
+                {
+                    'model': 'heading6',
+                    'view': 'h6',
+                    'title': 'Heading 6',
+                    'class': 'ck-heading_heading6'
+                }
             ]
         },
-        'language': 'ru',
-    },
-    'list': {
-        'properties': {
-            'styles': 'true',
-            'startIndex': 'true',
-            'reversed': 'true',
-        }
+        'htmlSupport': {
+            'allow': [
+                {
+                    'name': '/^.*$/',
+                    'styles': True,
+                    'attributes': True,
+                    'classes': True
+                }
+            ]
+        },
+        'image': {
+            'toolbar': [
+                'toggleImageCaption', 'imageTextAlternative', '|', 'imageStyle:inline', 'imageStyle:wrapText',
+                'imageStyle:breakText', '|', 'resizeImage'
+            ]
+        },
+        'link': {
+            'addTargetToExternalLinks': True,
+            'defaultProtocol': 'https://',
+            'decorators': {
+                'toggleDownloadable': {
+                    'mode': 'manual',
+                    'label': 'Downloadable',
+                    'attributes': {
+                        'download': 'file'
+                    }
+                }
+            }
+        },
+        'list': {
+            'properties': {
+                'styles': True,
+                'startIndex': True,
+                'reversed': True
+            }
+        },
+        'placeholder': 'Type something',
+        'table': {
+            'contentToolbar': ['tableColumn', 'tableRow', 'mergeTableCells', 'tableProperties', 'tableCellProperties']
+        },
     }
 }
 
