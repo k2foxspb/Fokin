@@ -43,7 +43,6 @@ INSTALLED_APPS = [
     "crispy_forms",
     "crispy_bootstrap5",
     "authapp.apps.AuthappConfig",
-    "ckeditor",
     'django_ckeditor_5',
     "django.contrib.sites",
     'chatapp',
@@ -134,7 +133,6 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/4.2/howto/static-files/
 
-STATIC_URL = "static/"
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
@@ -195,6 +193,7 @@ customColorPalette = [
         'label': 'Blue'
     },
 ]
+
 CKEDITOR_5_UPLOAD_FILE_TYPES = ['jpeg', 'jpg', 'png']
 # CKEDITOR_5_FILE_STORAGE = "blog.storage.CustomStorage"
 CKEDITOR_5_ALLOW_ALL_FILE_TYPES = True  # загрузить любые файлы
@@ -210,6 +209,7 @@ CKEDITOR_5_CONFIGS = {
             ],
             'shouldNotGroupWhenFull': True
         },
+        'language': 'ru',
         'fontSize': {
             'options': [10, 12, 14, 'default', 18, 20, 22],
             'supportAllValues': True
@@ -310,20 +310,19 @@ ADMINS = [('Валерий', 'k2foxspb@mail.ru')]
 MANAGERS = ADMINS
 MESSAGE_STORAGE = "django.contrib.messages.storage.session.SessionStorage"
 
-ASGI_APPLICATION = 'backend.asgi.application'
 # storage
-if env("AWS_ACCESS_KEY_ID"):
+if not DEBUG:
     STORAGES = {
         "default": {"BACKEND": "storages.backends.s3boto3.S3Boto3Storage"},
         "staticfiles": {
             "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
         },
     }
-AWS_DEFAULT_REGION = 'ru-central1-a'
-AWS_STORAGE_BUCKET_NAME = 'fokin.fun'
-AWS_S3_ENDPOINT_URL = 'https://storage.yandexcloud.net/'
-AWS_ACCESS_KEY_ID = env('AWS_ACCESS_KEY_ID')
-AWS_SECRET_ACCESS_KEY = env('AWS_SECRET_ACCESS_KEY')
+    AWS_DEFAULT_REGION = 'ru-central1-a'
+    AWS_STORAGE_BUCKET_NAME = 'fokin.fun'
+    AWS_S3_ENDPOINT_URL = 'https://storage.yandexcloud.net/'
+    AWS_ACCESS_KEY_ID = env('AWS_ACCESS_KEY_ID')
+    AWS_SECRET_ACCESS_KEY = env('AWS_SECRET_ACCESS_KEY')
 # storage and image = models.FileField(upload_to='my_files/', storage=default_storage)
 
 # 1) iex (New-Object System.Net.WebClient).DownloadString('https://storage.yandexcloud.net/yandexcloud-yc/install.ps1')

@@ -25,7 +25,7 @@ STATUS_CHOICES = [("del", "Delete"), ("pu", "Published"), ("wi", "Withdrawn")]
 class Article(models.Model):
 
     title = models.CharField(max_length=256, unique=True, verbose_name="Заголовок")
-    preamble = CKEditor5Field(max_length=1024, config_name='list', verbose_name="Преамбула")
+    preamble = CKEditor5Field(max_length=1024, config_name='extends', verbose_name="Преамбула")
     category = models.ForeignKey(
         "Category", on_delete=models.CASCADE, verbose_name="Категория", default=None
     )

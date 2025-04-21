@@ -14,18 +14,18 @@
     {{ object.title }}
 {% endblock title %}
 {% block content %}
-    <div class="container-fluid">
+    <div class="container-fluid ck-content">
         <div class="row row-cols-md-2">
             <div class="col-md-9  ">
                 <div itemscope itemtype="https://schema.org/Article" class="articles-detail">
                     {% autoescape off %}
-                        <h6 class="card-footer text-end" itemprop="datePublished">{{ object.created|safe }}</h6>
-                        <h1 class="card-title text-center" itemprop="headline name">{{ object.title|safe }}</h1>
+                        <h6 class="card-footer text-end" itemprop="datePublished">{{ object.created }}</h6>
+                        <h1 class="card-title text-center" itemprop="headline name">{{ object.title }}</h1>
 
                         <h5 class="card-title text-center" itemprop="description">{{ object.preamble|safe }}</h5>
                         {% if object.content %}
 
-                            <div itemprop="articleBody">{{ object.content | safe }}</div>
+                            <div class=""  itemprop="articleBody">{{ object.content|safe }}</div>
 
                         {% endif %}
                     {% endautoescape %}

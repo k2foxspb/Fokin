@@ -14,10 +14,10 @@
                 {% for article in articles %}
 
                     {% if article.status == 'pu' %}
-                        <div itemscope itemtype="https://schema.org/Article" class="articles">
+                        <div itemscope itemtype="https://schema.org/Article" class="articles ck-content">
                             {% autoescape off %}
                                 <h3 class="text-center" itemprop="headline name">{{ article.title }}</h3>
-                                <h5 class="text-center" itemprop="description">{{ article.preamble }}</h5>
+                                <h5  itemprop="description">{{ article.preamble }}</h5>
                                 <div style="text-align: justify" itemprop="articleBody">{{ article.content|truncatewords:20 }}</div>
                                 {% if article.updated > article.created %}
                                     <h6 class="del-update text-start" itemprop="dateModified">Обновлено {{ article.updated }}</h6>
