@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>Ваши диалоги</h1>
+<ul>
+    {% for dialog in dialogs %}
+        <li>
+            <a href="{% url 'chat:private_chat' dialog.id %}">
+                {{ dialog.other_user_username }}
+                ({{ dialog.unread_count }} непрочитанных)
+            </a>
+            <br>
+            Последнее сообщение: {{ dialog.last_message }} ({{ dialog.last_message_time }})
+        </li>
+    {% endfor %}
+</ul>
+
+{% endblock %}

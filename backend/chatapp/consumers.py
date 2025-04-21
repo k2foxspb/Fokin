@@ -170,7 +170,7 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
                             'room_name': self.room_name,
                             'sender': new_message.sender.username,
                             'unread_count': new_message.room.unread_count.count(),
-                            # Добавьте функцию для подсчета непрочитанных сообщений
+
                         }
                     )
             else:

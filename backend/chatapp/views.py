@@ -1,8 +1,10 @@
 import re
 
 from django.contrib.auth.decorators import login_required
-from django.contrib.auth.models import Permission
+from django.contrib.auth.mixins import LoginRequiredMixin
+
 from django.core.exceptions import ObjectDoesNotExist
+from django.db.models import Max, Count, Q, F, Subquery, OuterRef, IntegerField
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.http import JsonResponse
@@ -13,8 +15,7 @@ from authapp.models import CustomUser
 from chatapp.models import Room, PrivateChatRoom, UserChat, PrivateMessage
 
 
-
-class IndexView(ListView, Permission):
+class IndexView(ListView, LoginRequiredMixin):
     model = Room
     template_name = 'index.html'
 
@@ -41,11 +42,11 @@ def get_private_room(request, username1, username2):
         room, created = PrivateChatRoom.objects.get_or_create(
             user1=user1, user2=user2
         )
-        print(user1.id, user2.id)
+        print(room.pk)
         return JsonResponse({
             'user1_id': user1.id,
             'user2_id': user2.id,
-            'room_name': room.room_name,
+            'room_name': room.pk,
         })
 
     except ObjectDoesNotExist:
@@ -55,29 +56,20 @@ def get_private_room(request, username1, username2):
 
 
 @login_required(login_url='auth:login')
-def private_chat_view(request, room_name):
+def private_chat_view(request, room_id):
     try:
-        match = re.match(r"private_chat_(\d+)_(\d+)", room_name)
-        if match:
-            user1_id = int(match.group(1))
-            user2_id = int(match.group(2))
-            if request.user.id != user1_id and request.user.id != user2_id:
-                return JsonResponse({'error': 'Unauthorized access'}, status=403)
-            if request.user.id == user1_id:
-                recipient = CustomUser.objects.get(id=user2_id)
+        room = PrivateChatRoom.objects.get(pk=room_id)
+        if request.user != room.user1 and request.user != room.user2:
+            return JsonResponse({'error': 'Unauthorized access'}, status=403)
 
-            else:
-                recipient = CustomUser.objects.get(id=user1_id)
-
-
-            return render(request, 'private_message.html', {
-                'room_name': room_name,
-                'user1_id': user1_id,
-                'user2_id': user2_id,
-                'username': request.user.username,
-                'recipient': recipient,
-            })
-        return render(request, 'private_message.html', {'room_name': room_name})
+        recipient = room.user1 if request.user == room.user2 else room.user2
+        return render(request, 'private_message.html', {
+            'room': room,  # Передаем объект room
+            'user1_id': room.user1.id,
+            'user2_id': room.user2.id,
+            'username': request.user.username,
+            'recipient': recipient,
+        })
     except PrivateChatRoom.DoesNotExist:
         return render(request, 'index.html', {'message': 'Room not found'})
 
@@ -108,17 +100,51 @@ def update_unread_count(sender, instance, created, **kwargs):
 
 
 @login_required(login_url='auth:login')
-def get_chat_history(request, room_name):
-    match = re.match(r"private_chat_(\d+)_(\d+)", room_name)
-    if match:
-        user1_id = int(match.group(1))
-        user2_id = int(match.group(2))
-    user = CustomUser.objects.get(pk=user2_id)
-    room = get_object_or_404(PrivateChatRoom, user1=user1_id, user2=user2_id)
+def get_chat_history(request, room_id):
+    room = PrivateChatRoom.objects.get(pk=room_id)
+    if request.user != room.user1 and request.user != room.user2:
+        return JsonResponse({'error': 'Unauthorized access'}, status=403)
+    user = CustomUser.objects.get(pk=room.user2.pk)
+
     messages = PrivateMessage.objects.filter(room=room).order_by('timestamp').values('sender__username', 'message',
                                                                                      'timestamp')
-
-    if request.user.id != user1_id and request.user.id != user2_id:
-        return JsonResponse({'error': 'Unauthorized access'}, status=403)
     messages_list = [{**m, 'timestamp': int(m['timestamp'].timestamp())} for m in list(messages)]
     return JsonResponse({'messages': messages_list, 'unread_count': user.chats.get(chat_room=room).unread_count})
+
+
+@login_required
+def user_dialog_list(request):
+    unread_message_count_subquery = Subquery(
+        PrivateMessage.objects.filter(
+            room_id=OuterRef('chat_room__id'),
+            is_read=False,
+        ).exclude(sender_id=request.user.id).values('room_id').annotate(count=Count('id')).values('count')[:1],
+        output_field=IntegerField()
+    )
+
+    user_chats = UserChat.objects.filter(
+        Q(chat_room__user1=request.user) | Q(chat_room__user2=request.user)  # Изменено условие фильтрации
+    ) \
+        .select_related('chat_room', 'last_message__sender') \
+        .annotate(
+        room_id=F('chat_room__id'),
+        last_message_time=Max('chat_room__messages__timestamp'),
+        last_message_text=Max('chat_room__messages__message'),
+        unread_message_count=unread_message_count_subquery
+    ) \
+        .order_by('-last_message_time')
+
+    context = {
+        'dialogs': [{
+            'id': chat.room_id,
+            'other_user': chat.chat_room.user1 if chat.chat_room.user2 == request.user else chat.chat_room.user2,
+            'last_message': chat.last_message_text if chat.last_message_text else 'Нет сообщений',
+            'last_message_time': chat.last_message_time.strftime(
+                '%Y-%m-%d %H:%M') if chat.last_message_time else 'Нет сообщений',
+            'unread_count': chat.unread_message_count if chat.unread_message_count is not None else 0,
+            'other_user_username': (
+                chat.chat_room.user1 if chat.chat_room.user2 == request.user else chat.chat_room.user2).username,
+        } for chat in user_chats]
+    }
+
+    return render(request, 'user_dialogs.html', context)
