@@ -39,21 +39,26 @@ def get_private_room(request, username1, username2):
         user1 = CustomUser.objects.get(username=username1)
         user2 = CustomUser.objects.get(username=username2)
 
-        room, created = PrivateChatRoom.objects.get_or_create(
-            user1=user1, user2=user2
+        room = PrivateChatRoom.objects.get(
+            Q(user1=user1, user2=user2) | Q(user1=user2, user2=user1)
         )
-        print(room.pk)
         return JsonResponse({
             'user1_id': user1.id,
             'user2_id': user2.id,
             'room_name': room.pk,
         })
 
-    except ObjectDoesNotExist:
+    except PrivateChatRoom.DoesNotExist:
+        room, created = PrivateChatRoom.objects.get_or_create(user1=user1, user2=user2) #Создаём если не существует
+        return JsonResponse({
+            'user1_id': user1.id,
+            'user2_id': user2.id,
+            'room_name': room.pk,
+        })
+    except CustomUser.DoesNotExist:
         return JsonResponse({'error': 'One or both users not found'}, status=404)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
-
 
 @login_required(login_url='auth:login')
 def private_chat_view(request, room_id):
@@ -104,12 +109,11 @@ def get_chat_history(request, room_id):
     room = PrivateChatRoom.objects.get(pk=room_id)
     if request.user != room.user1 and request.user != room.user2:
         return JsonResponse({'error': 'Unauthorized access'}, status=403)
-    user = CustomUser.objects.get(pk=room.user2.pk)
 
     messages = PrivateMessage.objects.filter(room=room).order_by('timestamp').values('sender__username', 'message',
                                                                                      'timestamp')
     messages_list = [{**m, 'timestamp': int(m['timestamp'].timestamp())} for m in list(messages)]
-    return JsonResponse({'messages': messages_list, 'unread_count': user.chats.get(chat_room=room).unread_count})
+    return JsonResponse({'messages': messages_list})
 
 
 @login_required

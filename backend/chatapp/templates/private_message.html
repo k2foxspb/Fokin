@@ -74,8 +74,8 @@
             }
         }
 
-        function addMessageToChatbox(messageData) {
-
+        async function addMessageToChatbox(messageData) {
+            console.log(messageData.sender)
             const messageDiv = document.createElement('div');
             const senderElement = document.createElement('strong');
             senderElement.textContent = messageData.sender__username + ':';
@@ -96,6 +96,7 @@
             try {
                 const data = JSON.parse(event.data);
                 addMessageToChatbox(data);
+                console.log(data)
             } catch (error) {
                 console.error('Error parsing WebSocket message:', error, event.data);
             }

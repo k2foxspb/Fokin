@@ -7,6 +7,7 @@ from asgiref.sync import async_to_sync, sync_to_async
 from channels.generic.websocket import WebsocketConsumer, AsyncWebsocketConsumer
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
+from django.db.models import Q
 
 from authapp.models import CustomUser
 from .models import Room, Message, PrivateChatRoom, PrivateMessage, UserChat
@@ -157,7 +158,7 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
                     {
                         'type': 'chat_message',
                         'message': message,
-                        'sender': self.user.username,
+                        'sender__username': self.user.username,
                         'timestamp': timestamp,
                         'id': new_message.id
                     }
@@ -168,7 +169,7 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
                         {
                             'type': 'new_message_notification',
                             'room_name': self.room_name,
-                            'sender': new_message.sender.username,
+                            'sender__username': new_message.sender.username,
                             'unread_count': new_message.room.unread_count.count(),
 
                         }
@@ -186,7 +187,7 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
     async def chat_message(self, event):
         await self.send(text_data=json.dumps({
             'message': event['message'],
-            'sender__username': event['sender'],  # Используем event['sender']
+            'sender__username': event['sender__username'],  # Используем event['sender']
             'timestamp': event['timestamp'],
             'id': event['id']
         }))
@@ -212,14 +213,25 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
             with transaction.atomic():
                 user1 = CustomUser.objects.get(pk=user1_id)
                 user2 = CustomUser.objects.get(pk=user2_id)
-                room, created = PrivateChatRoom.objects.get_or_create(user1=user1, user2=user2)
+
+                room = PrivateChatRoom.objects.get(
+                    Q(user1=user1, user2=user2) | Q(user1=user2, user2=user1)
+                )
+
                 new_message = PrivateMessage.objects.create(room=room, sender=user, message=message,
                                                             timestamp=datetime.fromtimestamp(timestamp))
-                user_chat, created = UserChat.objects.get_or_create(user=user2, chat_room=room)
+
+                recipient = user2 if user != user2 else user1  # определяем получателя
+                user_chat, created = UserChat.objects.get_or_create(user=recipient,
+                                                                    chat_room=room)  # обновляем данные получателя
                 user_chat.unread_count += 1
                 user_chat.last_message = new_message
                 user_chat.save()
                 return new_message
+
+        except CustomUser.DoesNotExist:
+            logger.error(f"User with id {user1_id} or {user2_id} not found")
+            return None
         except Exception as e:
             logger.exception(f"Error saving message from user {user}: {e}")
             return None
