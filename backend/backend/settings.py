@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     'profileapp',
     'storages',
 
+
 ]
 
 MIDDLEWARE = [
@@ -94,8 +95,8 @@ CHANNEL_LAYERS = {
         },
     },
 }
-CELERY_BROKER_URL = 'redis://localhost:6379/0'  # Redis URL
-CELERY_RESULT_BACKEND = 'redis://localhost:6379/0' # Опционально, для хранения результатов задач
+CELERY_BROKER_URL = 'redis://127.0.0.1:6379'  # Redis URL
+CELERY_RESULT_BACKEND = 'redis://127.0.0.1:6379' # Опционально, для хранения результатов задач
 CELERY_ACCEPT_CONTENT = ['application/json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
