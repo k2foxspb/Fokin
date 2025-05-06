@@ -116,7 +116,7 @@ def get_chat_history(request, room_id):
     return JsonResponse({'messages': messages_list})
 
 
-@login_required
+@login_required(login_url='auth:login')
 def user_dialog_list(request):
     unread_message_count_subquery = Subquery(
         PrivateMessage.objects.filter(
