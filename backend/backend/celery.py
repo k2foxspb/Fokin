@@ -2,7 +2,7 @@ import os
 
 from celery import Celery
 from django.conf import settings
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'Fokin.backend.backend.settings')
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'backend.backend.settings')
 app = Celery('Fokin')
 app.config_from_object('django.conf:settings', namespace='CELERY')
 app.autodiscover_tasks()
