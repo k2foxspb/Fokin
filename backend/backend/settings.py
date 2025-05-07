@@ -51,7 +51,7 @@ INSTALLED_APPS = [
     'imagekit',
     'profileapp',
     'storages',
-    'celery'
+
 
 
 ]
