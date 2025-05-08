@@ -5,6 +5,7 @@ from django.core.mail import send_mail
 from celery import shared_task
 from django.utils import timezone
 
+from authapp.models import CustomUser
 from backend.settings import EMAIL_HOST_USER
 
 
@@ -34,10 +35,9 @@ def send_feedback_email_task_update(email, firs_name, last_name):
 
 @shared_task()
 def delete_unconfirmed_user(user_id):
-   User = get_user_model()
+   user = CustomUser.objects.get(pk=user_id)
    try:
-       user = User.objects.get(pk=user_id)
        if not user.is_active and user.date_joined < timezone.now() - timedelta(minutes=1):
            user.delete()
-   except User.DoesNotExist:
+   except user.DoesNotExist:
        pass # Пользователь уже удален или не найден
