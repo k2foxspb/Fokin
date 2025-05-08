@@ -41,5 +41,7 @@ def delete_unconfirmed_user(user_id):
    try:
        if not user.is_active:
            user.delete()
+       else:
+           pass
    except user.DoesNotExist:
        pass # Пользователь уже удален или не найден
