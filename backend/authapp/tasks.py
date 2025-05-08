@@ -36,8 +36,9 @@ def send_feedback_email_task_update(email, firs_name, last_name):
 
 @shared_task()
 def delete_unconfirmed_user(user_id):
-   user = CustomUser.objects.get(pk=user_id)
    sleep(900)
+   user = CustomUser.objects.get(pk=user_id)
+
    try:
        if not user.is_active:
            user.delete()
