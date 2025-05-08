@@ -14,7 +14,7 @@ from django.core.mail import send_mail
 from django.shortcuts import redirect
 from django.contrib.sites.models import Site
 from django.contrib.messages.views import SuccessMessageMixin
-
+from tasks import delete_unconfirmed_user
 
 class CustomLoginView(SuccessMessageMixin, LoginView):
     template_name = "login.html"
@@ -74,6 +74,7 @@ class RegisterView(CreateView):
             fail_silently=False,
 
         )
+        delete_unconfirmed_user.delay(user.pk)
         return redirect('authapp:email_confirmation_sent')
 
 
