@@ -32,7 +32,7 @@ def send_feedback_email_task_update(email, firs_name, last_name):
     )
 
 
-@shared_task
+@shared_task()
 def delete_unconfirmed_user(user_id):
    User = get_user_model()
    try:
