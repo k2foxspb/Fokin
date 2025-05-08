@@ -3,7 +3,7 @@ import os
 from django.contrib.auth import get_user_model
 from django.contrib.auth.forms import UserCreationForm, UsernameField, UserChangeForm
 from django.core.exceptions import ValidationError
-
+from .tasks import send_feedback_email_task_update
 
 class CustomUserCreationForm(UserCreationForm):
     def __init__(self, *args, **kwargs):
@@ -77,9 +77,9 @@ class CustomUserChangeForm(UserChangeForm):
                 raise ValidationError("Столько не живут &#128519;")
         return data
 
-    # def send_email(self):
-    #     """Sends an email when the feedback form has been submitted."""
-    #     send_feedback_email_task_update.delay(
-    #         self.cleaned_data["email"], self.cleaned_data["first_name"],
-    #         self.cleaned_data["last_name"]
-    #     )
+    def send_email(self):
+        """Sends an email when the feedback form has been submitted."""
+        send_feedback_email_task_update.delay(
+            self.cleaned_data["email"], self.cleaned_data["first_name"],
+            self.cleaned_data["last_name"]
+        )
