@@ -86,6 +86,10 @@ class ProfileEditView(UserPassesTestMixin, UpdateView):
     template_name = "customuser_form.html"
     success_url = reverse_lazy("main:main_category")
 
+    def test_func(self):
+        # Функция защиты личных данных
+        return True if self.request.user.pk == self.kwargs.get("pk") else False
+
     def form_valid(self, form):
         form.send_email()
         user = form.save(commit=False)
