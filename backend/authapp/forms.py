@@ -50,7 +50,7 @@ class CustomUserChangeForm(UserChangeForm):
         if password_field:
             if self.instance.pk:  # Проверяем, существует ли уже экземпляр
                 password_field.help_text = "Пароли хранятся в зашифрованном виде,\
-     поэтому нет возможности посмотреть пароль)"
+     поэтому нет возможности посмотреть пароль"
                 password_field.widget.attrs['class'] = 'password-form-control'
         for field_name in self.fields:
             if field_name != 'password':  # Исключаем поле пароля, для него класс уже задан

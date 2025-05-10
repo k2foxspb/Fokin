@@ -32,10 +32,10 @@ def photo_list(request):
     else:
         if request.user.is_authenticated:
             albums = PhotoAlbum.objects.filter(user=request.user)
-            context = {'albums': albums, 'user': request.user, 'is_authenticated': True}
+            context = {'albums': albums, 'user': request.user, 'is_authenticated': True, 'come_user': request.user.username,}
         else:
             albums = PhotoAlbum.objects.filter(hidden_flag=False)  # Только публичные и не скрытые
-            context = {'albums': albums, 'user': None, 'is_authenticated': False}
+            context = {'albums': albums, 'user': None, 'is_authenticated': False, 'come_user': request.user.username,}
 
     return render(request, 'photo.html', context)
 
@@ -47,7 +47,7 @@ def create_album(request):
             album = form.save(commit=False)
             album.user = request.user
             album.save()
-            return redirect('photos')  # или другой URL
+            return redirect('photo:photos')
     else:
         form = AlbumForm()
     return render(request, 'create_album.html', {'form': form})

@@ -1,4 +1,6 @@
 import logging
+from time import time
+from pathlib import Path
 
 from django.core.files.storage import default_storage
 from django.db import models
@@ -8,6 +10,12 @@ from imagekit.processors import ResizeToFill
 
 from authapp.models import CustomUser
 logger = logging.getLogger(__name__)
+
+def save_photos(instance, filename):
+
+    num = int(time() * 1000)
+    suf = Path(filename).suffix
+    return f"user_{instance.user.username}/{instance.album}/pic_{num}{suf}"
 
 
 class PhotoAlbum(models.Model):
@@ -23,7 +31,7 @@ class PhotoAlbum(models.Model):
 class Photo(models.Model):
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='photos_by_user')
     album = models.ForeignKey(PhotoAlbum, on_delete=models.CASCADE, related_name='photos')
-    image = models.FileField(upload_to='my_files/', storage=default_storage)
+    image = models.FileField(upload_to=save_photos, storage=default_storage)
     caption = models.CharField(max_length=255, blank=True)
     thumbnail = ImageSpecField(
         source='image',
