@@ -95,7 +95,7 @@ class ProfileEditView(UserPassesTestMixin, UpdateView):
         user = form.save(commit=False)
         user.is_active = True
         user.save()
-        return redirect('authapp:profile_detail', pk=user.pk)
+        return redirect('authapp:profile_edit', pk=user.pk)
 
 
 User = get_user_model()
