@@ -1,20 +1,21 @@
 from django.contrib import messages
 from django.contrib.auth import get_user_model, login
 from django.contrib.auth.mixins import UserPassesTestMixin
+from django.contrib.auth.tokens import default_token_generator
 from django.contrib.auth.views import LoginView, PasswordResetView, PasswordResetConfirmView, LogoutView
+from django.contrib.messages.views import SuccessMessageMixin
+from django.contrib.sites.models import Site
+from django.core.mail import send_mail
+from django.shortcuts import redirect
 from django.urls import reverse_lazy
+from django.utils.encoding import force_bytes
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.safestring import mark_safe
 from django.views.generic import CreateView, UpdateView, View, TemplateView
 
-from django.contrib.auth.tokens import default_token_generator
-from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from authapp import forms
-from django.utils.encoding import force_bytes
-from django.core.mail import send_mail
-from django.shortcuts import redirect
-from django.contrib.sites.models import Site
-from django.contrib.messages.views import SuccessMessageMixin
 from .tasks import delete_unconfirmed_user
+
 
 class CustomLoginView(SuccessMessageMixin, LoginView):
     template_name = "login.html"
@@ -58,7 +59,7 @@ class RegisterView(CreateView):
         return context
 
     def form_valid(self, form):
-        # form.send_email()
+        form.send_email()
         user = form.save(commit=False)
         user.is_active = False
         user.save()
@@ -79,32 +80,18 @@ class RegisterView(CreateView):
 
 
 class ProfileEditView(UserPassesTestMixin, UpdateView):
+
     model = get_user_model()
     form_class = forms.CustomUserChangeForm
     template_name = "customuser_form.html"
     success_url = reverse_lazy("main:main_category")
 
-    def test_func(self):
-        # Функция защиты личных данных
-        return True if self.request.user.pk == self.kwargs.get("pk") else False
-
     def form_valid(self, form):
+        form.send_email()
         user = form.save(commit=False)
         user.is_active = True
         user.save()
-        token = default_token_generator.make_token(user)
-        uid = urlsafe_base64_encode(force_bytes(user.pk))
-        activation_url = reverse_lazy('authapp:conf_email', kwargs={'uidb64': uid, 'token': token})
-        current_site = Site.objects.get_current().domain
-        send_mail(
-            'Подтвердите свой электронный адрес',
-            f'Пожалуйста перейдите по ссылке https://{current_site}{activation_url}',
-            'k2foxspb@mail.ru',
-            [user.email],
-            fail_silently=False,
-
-        )
-        return redirect('authapp:email_confirmation_sent')
+        return redirect('authapp:profile_detail', pk=user.pk)
 
 
 User = get_user_model()
