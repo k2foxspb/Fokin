@@ -69,12 +69,12 @@ class CustomUserChangeForm(UserChangeForm):
         )
         field_classes = {"email": UsernameField}
 
-    def clean_avatar(self):
-        arg_as_str = "avatar"
-        if arg_as_str in self.changed_data and self.instance.avatar:
-            if os.path.exists(self.instance.avatar.path):
-                os.remove(self.instance.avatar.path)
-        return self.cleaned_data.get(arg_as_str)
+    # def clean_avatar(self):
+    #     arg_as_str = "avatar"
+    #     if arg_as_str in self.changed_data and self.instance.avatar:
+    #         if os.path.exists(self.instance.avatar.path):
+    #             os.remove(self.instance.avatar.path)
+    #     return self.cleaned_data.get(arg_as_str)
 
     def clean_age(self):
         data = self.cleaned_data.get("age")
