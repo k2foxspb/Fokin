@@ -163,20 +163,8 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
                         'id': new_message.id
                     }
                 )
-                if new_message.sender != self.user:
-                    await self.channel_layer.group_send(
-                        f"notification_{self.user.id}",  # Уникальное имя группы для каждого пользователя
-                        {
-                            'type': 'new_message_notification',
-                            'room_name': self.room_name,
-                            'sender__username': new_message.sender.username,
-                            'unread_count': new_message.room.unread_count.count(),
-
-                        }
-                    )
             else:
                 logger.error("Failed to save message.")
-                # Можно отправить сообщение об ошибке клиенту
                 await self.send(text_data=json.dumps({'error': 'Failed to save message.'}))
 
         except (json.JSONDecodeError, KeyError, ValueError) as e:
@@ -187,25 +175,12 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
     async def chat_message(self, event):
         await self.send(text_data=json.dumps({
             'message': event['message'],
-            'sender__username': event['sender__username'],  # Используем event['sender']
+            'sender__username': event['sender__username'],
             'timestamp': event['timestamp'],
             'id': event['id']
         }))
-        self.set_message_read(event)
 
-    @sync_to_async
-    def set_message_read(self, event):
-        try:
-            message = PrivateMessage.objects.get(id=event['id'])
-            if message.sender != self.user:
-                message.read = True
-                message.save()
-                user_chat = UserChat.objects.get(user=self.user, chat_room=message.room)
-                user_chat.unread_count = max(0, user_chat.unread_count - 1)
-                user_chat.save()
-        except PrivateMessage.DoesNotExist:
-            logger.error(f'Message with id={event["id"]} not found')
-            pass
+
 
     @sync_to_async
     def save_message(self, user1_id, user2_id, message, timestamp, user):
