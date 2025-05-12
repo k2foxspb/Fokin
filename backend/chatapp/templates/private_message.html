@@ -75,7 +75,6 @@
         }
 
         async function addMessageToChatbox(messageData) {
-            console.log(messageData.sender)
             const messageDiv = document.createElement('div');
             const senderElement = document.createElement('strong');
             senderElement.textContent = messageData.sender__username + ':';

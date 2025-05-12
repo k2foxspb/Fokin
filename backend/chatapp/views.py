@@ -121,7 +121,7 @@ def user_dialog_list(request):
     unread_message_count_subquery = Subquery(
         PrivateMessage.objects.filter(
             room_id=OuterRef('chat_room__id'),
-            is_read=False,
+            read=False,
         ).exclude(sender_id=request.user.id).values('room_id').annotate(count=Count('id')).values('count')[:1],
         output_field=IntegerField()
     )

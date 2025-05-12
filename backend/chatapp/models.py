@@ -83,7 +83,7 @@ class PrivateMessage(models.Model):
     sender = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
     message = models.TextField()
     timestamp = models.DateTimeField(auto_now_add=True)
-    is_read = models.BooleanField(default=False)
+    read = models.BooleanField(default=False)
 
 class UserChat(models.Model):
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='chats')
