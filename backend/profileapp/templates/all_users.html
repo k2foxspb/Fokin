@@ -10,9 +10,8 @@
         {% for user in users %}
             {% if user.is_active %}
             <li class="user-list-item">
-
-                    <img src="{{ user.thumbnail.url }}" alt="Аватар {{ user.username }}" class="user-avatar">
-
+                    {% if user.thumbnail %}
+                    <img src="{{ user.thumbnail.url }}" alt="Аватар {{ user.username }}" class="user-avatar">{% endif %}
                 <a href="{% url 'profile:profile' username=user.username %}">{{ user.get_full_name }}</a>
             </li>
             {% endif %}
