@@ -1,10 +1,13 @@
 from datetime import datetime
 from uuid import uuid4
 
+from django.db.models.signals import pre_save
+from django.dispatch import receiver
 from pytils.translit import slugify
 
 from authapp.models import CustomUser
 from django.db import models
+
 
 def unique_slugify(instance, slug):
     """
@@ -37,7 +40,6 @@ class Room(models.Model):
         return self.message_set.filter(timestamp__month__gt=1).all()
 
     def __str__(self):
-
         return f'{self.name} ({self.get_online_count()} online)'
 
     def save(self, *args, **kwargs):
@@ -47,16 +49,16 @@ class Room(models.Model):
         if not self.slug:
             self.slug = unique_slugify(self, self.name)
         super().save(*args, **kwargs)
+
+
 class Message(models.Model):
     user = models.ForeignKey(to=CustomUser, on_delete=models.CASCADE)
     room = models.ForeignKey(to=Room, on_delete=models.CASCADE)
     content = models.CharField(max_length=512)
     timestamp = models.DateTimeField(auto_now_add=True)
 
-
     def get_time_msg(self):
         return self.timestamp.astimezone().strftime('%d.%m.%Y, %H:%M:%S')
-
 
     def __str__(self):
         return (f'{self.user.username}:'
@@ -64,19 +66,26 @@ class Message(models.Model):
                 f' {self.get_time_msg()}')
 
 
-
 class PrivateChatRoom(models.Model):
     user1 = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='private_chat_room1')
     user2 = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='private_chat_room2')
     created_at = models.DateTimeField(auto_now_add=True)
+    name = models.CharField(max_length=255, unique=True, blank=True)
 
     def __str__(self):
-        return f"Private chat between {self.user1} and {self.user2}"
+        return f"{self.user1.username} and {self.user2.username}"
 
     @property
     def room_name(self):
         # Generate a unique room name.  Order doesn't matter
         return f"private_chat_{min(self.user1.id, self.user2.id)}_{max(self.user1.id, self.user2.id)}"
+
+
+@receiver(pre_save, sender=PrivateChatRoom)
+def set_room_name(sender, instance, **kwargs):
+    if not instance.name:
+        instance.name = instance.room_name
+
 
 class PrivateMessage(models.Model):
     room = models.ForeignKey(PrivateChatRoom, on_delete=models.CASCADE, related_name='messages')
@@ -84,6 +93,10 @@ class PrivateMessage(models.Model):
     message = models.TextField()
     timestamp = models.DateTimeField(auto_now_add=True)
     read = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f'{self.room}: {self.message}'
+
 
 class UserChat(models.Model):
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='chats')
@@ -96,4 +109,3 @@ class UserChat(models.Model):
 
     def __str__(self):
         return f"Chat: {self.user} - {self.chat_room}"
-

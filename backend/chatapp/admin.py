@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from chatapp.models import Room, Message, PrivateChatRoom
+from chatapp.models import Room, Message, PrivateChatRoom, PrivateMessage
 
 
 @admin.register(Room)
@@ -15,9 +15,10 @@ class MessageAdmin(admin.ModelAdmin):
     fields = ['content']
     ordering = ['timestamp']
 
-@admin.register(PrivateChatRoom)
-class PrivateChatRoomAdmin(admin.ModelAdmin):
-    fields = ['user1']
+
+@admin.register(PrivateMessage)
+class PrivateMessageAdmin(admin.ModelAdmin):
+    fields = ['room', 'sender', 'message', 'read']
 
 
 

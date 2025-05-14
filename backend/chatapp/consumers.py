@@ -131,13 +131,24 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
         self.room_name = self.scope['url_route']['kwargs']['room_name']
         self.user = self.scope['user']
         logger.info(f"Connecting to room: {self.room_name}, user: {self.user}")
-
         if not self.user.is_authenticated:
             await self.close()
             return
 
         await self.channel_layer.group_add(self.room_name, self.channel_name)
+        await self.mark_messages_as_read(self.user, self.room_name)
+
         await self.accept()
+
+
+    @sync_to_async
+    def mark_messages_as_read(self, user, room_name):
+        room = PrivateChatRoom.objects.get(id=int(room_name))
+        print(user)
+        if room:
+            PrivateMessage.objects.filter(room_id=room.id, read=False).exclude(sender=user).update(read=True)
+
+
 
     async def disconnect(self, close_code):
         await self.channel_layer.group_discard(self.room_name, self.channel_name)

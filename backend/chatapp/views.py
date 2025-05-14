@@ -4,7 +4,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 
 from django.core.exceptions import ObjectDoesNotExist
-from django.db.models import Max, Count, Q, F, Subquery, OuterRef, IntegerField
+from django.db.models import Max, Count, Q, F, Subquery, OuterRef, IntegerField, Case, When, CharField
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.http import JsonResponse
@@ -118,6 +118,7 @@ def get_chat_history(request, room_id):
 
 @login_required(login_url='auth:login')
 def user_dialog_list(request):
+    # Подзапрос для подсчета непрочитанных сообщений
     unread_message_count_subquery = Subquery(
         PrivateMessage.objects.filter(
             room_id=OuterRef('chat_room__id'),
@@ -126,28 +127,28 @@ def user_dialog_list(request):
         output_field=IntegerField()
     )
 
-    user_chats = UserChat.objects.filter(
-        Q(chat_room__user1=request.user) | Q(chat_room__user2=request.user)  # Изменено условие фильтрации
-    ) \
-        .select_related('chat_room', 'last_message__sender') \
+    # Объединение результатов с помощью UNION
+    user_chats = UserChat.objects.filter(Q(chat_room__user1=request.user) | Q(chat_room__user2=request.user)) \
+        .values('chat_room__id') \
         .annotate(
-        room_id=F('chat_room__id'),
-        last_message_time=Max('chat_room__messages__timestamp'),
-        last_message_text=Max('chat_room__messages__message'),
-        unread_message_count=unread_message_count_subquery
-    ) \
+            other_user=Case(When(chat_room__user1=request.user, then='chat_room__user2'),
+                            When(chat_room__user2=request.user, then='chat_room__user1'),
+                            output_field=CharField()),
+            last_message_time=Max('chat_room__messages__timestamp'),
+            last_message_text=Max('chat_room__messages__message'),
+            unread_message_count=unread_message_count_subquery
+        ) \
         .order_by('-last_message_time')
 
+    # Преобразование результатов в удобный для шаблона формат
     context = {
         'dialogs': [{
-            'id': chat.room_id,
-            'other_user': chat.chat_room.user1 if chat.chat_room.user2 == request.user else chat.chat_room.user2,
-            'last_message': chat.last_message_text if chat.last_message_text else 'Нет сообщений',
-            'last_message_time': chat.last_message_time.strftime(
-                '%Y-%m-%d %H:%M') if chat.last_message_time else 'Нет сообщений',
-            'unread_count': chat.unread_message_count if chat.unread_message_count is not None else 0,
-            'other_user_username': (
-                chat.chat_room.user1 if chat.chat_room.user2 == request.user else chat.chat_room.user2).username,
+            'id': chat['chat_room__id'],
+            'other_user': CustomUser.objects.get(id=chat['other_user']),  # Получаем объект User
+            'last_message': chat['last_message_text'] if chat['last_message_text'] else 'Нет сообщений',
+            'last_message_time': chat['last_message_time'].strftime('%Y-%m-%d %H:%M') if chat['last_message_time'] else 'Нет сообщений',
+            'unread_count': chat['unread_message_count'] if chat['unread_message_count'] is not None else 0,
+            'other_user_username': CustomUser.objects.get(id=chat['other_user']).username,  # Получаем username
         } for chat in user_chats]
     }
 
