@@ -45,15 +45,18 @@
             {% if user.username == user_come.username %}
                 <a class="nav-link my-navbar" href="{% url 'auth:profile_edit' user.pk %}">редактировать
                     профиль</a>
-                <a class="nav-link my-navbar" href="{% url 'auth:logout' %}">Выход</a>
             {% endif %}
             {% if user.username %}
-                <p><a class="nav-link my-navbar"
+                <a class="nav-link my-navbar"
                       href="{% url 'photo:photos' %}?username={{ user.username }}">Альбомы</a>
-                </p>
+
+                <a class="nav-link my-navbar" href="#" onclick="initiateChat('{{ user.username }}')">Написать
+                сообщение </a>
             {% endif %}
-            <p><a class="nav-link my-navbar" href="#" onclick="initiateChat('{{ user.username }}')">Написать
-                сообщение </a></p>
+            {% if user.username == user_come.username %}
+                <p></p> <a class="nav-link my-navbar" href="{% url 'auth:logout' %}">Выход</a>
+            {% endif %}
+
         </div>
 
 

@@ -7,7 +7,7 @@
     <link rel="shortcut icon" type="image/x-icon" href="{% static 'img/logo/favicon.ico' %}"/>
     <link rel="stylesheet" href="{% static 'css/bootstrap.css' %}">
     <link rel="stylesheet" href="{% static 'css/my.css' %}">
-    <link rel="stylesheet" href="https://cdn.ckeditor.com/ckeditor5/45.0.0/ckeditor5.css" />
+    <link rel="stylesheet" href="https://cdn.ckeditor.com/ckeditor5/45.0.0/ckeditor5.css"/>
     {% block css %}{% endblock %}
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
           integrity="sha512-9usAa10IRO0HhonpyAIVpjrylPvoDwiPUiKdWk5t3PyolY1cOd4DSE0Ga+ri4AuTroPR5aQvXU9xC6qOPnzFeg=="
@@ -64,7 +64,8 @@
                             <li class="nav-item">
 
                                 <a class="nav-link my-navbar" href="{% url 'profile:profile' user.username %}">
-                                    <img style="border-radius: 20px;width: 20px;height: 20px" src="{{ request.user.thumbnail.url }}"
+                                    <img style="border-radius: 20px;width: 20px;height: 20px"
+                                         src="{{ request.user.thumbnail.url }}"
                                          alt="{{ request.user.username }}">
                                     Моя страница
                                 </a>
@@ -77,6 +78,10 @@
                             {% else %}
                         </li>
                     {% endif %}
+
+                    <li class="nav-item">
+                        <a class="nav-link my-navbar" href="{% url 'chat:user_dialogs' %}">Сообщения</a>
+                    </li>
 
                     <li class="nav-item">
                         <a class="nav-link my-navbar" href="{% url 'chat:chat-index' %}">Комнаты чатов</a>

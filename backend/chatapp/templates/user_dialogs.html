@@ -1,17 +1,29 @@
 {% extends 'base.html' %}
+{% load static %}
+{% block css %}
+    <link rel="stylesheet" href="{% static 'css/users.css' %}">
+{% endblock %}
 {% block content %}
-<h1>Ваши диалоги</h1>
-<ul>
-    {% for dialog in dialogs %}
-        <li>
-            <a href="{% url 'chat:private_chat' dialog.id %}">
+    <div class="container">
+        <h1 >Ваши диалоги</h1>
+    {% if dialogs %}
+        {% for dialog in dialogs %}
+
+            <a class="my-btn btn" href="{% url 'chat:private_chat' dialog.id %}">
+                <img class="user-avatar" src="{{ dialog.other_user.thumbnail.url }} "
+                     alt="{{ dialog.other_user }}"></img>
                 {{ dialog.other_user_username }}
                 ({{ dialog.unread_count }} непрочитанных)
+                <br>
+                <div>Последнее сообщение: {{ dialog.last_message }} ({{ dialog.last_message_time }})</div>
             </a>
-            <br>
-            Последнее сообщение: {{ dialog.last_message }} ({{ dialog.last_message_time }})
-        </li>
-    {% endfor %}
-</ul>
+            <br><br>
+
+
+        {% endfor %}
+    {% else %}
+        У вас пока нет диалогов с другими пользователями
+    {% endif %}
+    </div>
 
 {% endblock %}
