@@ -12,7 +12,7 @@ from pilkit.processors import ResizeToFill
 from django.core.files import File
 
 def users_avatars_path(instance, filename):
-    # file will be uploaded to
+    # the file will be uploaded to
     #   MEDIA_ROOT / user_<username> / avatars / <filename>
     num = int(time() * 1000)
     suf = Path(filename).suffix

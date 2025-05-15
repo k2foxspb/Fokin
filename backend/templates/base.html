@@ -1,4 +1,4 @@
-{% load static category_tags %}
+{% load static category_tags unread_messages_tags %}
 <!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -48,6 +48,7 @@
 {#</div>#}
 
 {% block navbar %}
+    {% unread_message_count as unread_messages_count %}
     <nav class="navbar navbar-expand-sm  ">
         <div class="container-lg">
             <a class="navbar-brand" href="{% url 'main:main_category' %}"><img style="width: 50px"
@@ -80,7 +81,15 @@
                     {% endif %}
 
                     <li class="nav-item">
-                        <a class="nav-link my-navbar" href="{% url 'chat:user_dialogs' %}">Сообщения</a>
+
+                        <a class="nav-link my-navbar" href="{% url 'chat:user_dialogs' %}">
+                      <span class="badge-container">
+                        <span class="">Сообщения</span>
+                          {% if unread_messages_count > 0 %}
+                              <span class="unread-count">{{ unread_messages_count }}</span>
+                          {% endif %}
+                      </span>
+                        </a>
                     </li>
 
                     <li class="nav-item">

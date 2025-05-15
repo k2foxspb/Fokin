@@ -157,9 +157,9 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
         try:
             text_data_json = json.loads(text_data)
             message = text_data_json['message']
-            timestamp = int(text_data_json['timestamp'])  # Проверка на число
-            user1_id = int(text_data_json['user1'])  # Проверка на число
-            user2_id = int(text_data_json['user2'])  # Проверка на число
+            timestamp = int(text_data_json['timestamp'])
+            user1_id = int(text_data_json['user1'])
+            user2_id = int(text_data_json['user2'])
 
             new_message = await self.save_message(user1_id, user2_id, message, timestamp, self.user)
 
