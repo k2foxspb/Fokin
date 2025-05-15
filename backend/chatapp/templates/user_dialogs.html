@@ -5,25 +5,35 @@
 {% endblock %}
 {% block content %}
     <div class="container">
-        <h1 >Ваши диалоги</h1>
-    {% if dialogs %}
-        {% for dialog in dialogs %}
+        <h1 class="text-center">Ваши диалоги</h1>
+        {% if dialogs %}
+            <div class="articles">
+            {% for dialog in dialogs %}
+                 <a class="chat-link my-navbar nav-link" href="{% url 'chat:private_chat' dialog.id %}">
+                <div class="chat-item ">
+                    <img class="user-avatar" src="{{ dialog.other_user.thumbnail.url }}" alt="{{ dialog.other_user }}">
 
-            <a class="my-btn btn" href="{% url 'chat:private_chat' dialog.id %}">
-                <img class="user-avatar" src="{{ dialog.other_user.thumbnail.url }} "
-                     alt="{{ dialog.other_user }}"></img>
-                {{ dialog.other_user_username }}
-                ({{ dialog.unread_count }} непрочитанных)
-                <br>
-                <div>Последнее сообщение: {{ dialog.last_message }} ({{ dialog.last_message_time }})</div>
-            </a>
-            <br><br>
+                        <div class="chat-info">
+                            <div class="chat-info-top">
+                                <span class="chat-username">{{ dialog.other_user_username }}</span>
+                                <span class="unread-count {% if dialog.unread_count == 0 %}hide{% endif %}">({{ dialog.unread_count }})</span>
+                            </div>
+                            <div class="chat-info-bottom">
+                                <div class="my-navbar nav-link">{{ dialog.last_message }}</div>
+                                <div class="timestamp">{{ dialog.last_message_time|timesince }} назад</div>
+                            </div>
+                        </div>
+
+                </div>
+                </a>
 
 
-        {% endfor %}
-    {% else %}
-        У вас пока нет диалогов с другими пользователями
-    {% endif %}
+
+            {% endfor %}
+        {% else %}
+            У вас пока нет диалогов с другими пользователями
+        {% endif %}
+        </div>
     </div>
 
 {% endblock %}

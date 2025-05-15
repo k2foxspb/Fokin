@@ -146,7 +146,7 @@ def user_dialog_list(request):
             'id': chat['chat_room__id'],
             'other_user': CustomUser.objects.get(id=chat['other_user']),  # Получаем объект User
             'last_message': chat['last_message_text'] if chat['last_message_text'] else 'Нет сообщений',
-            'last_message_time': chat['last_message_time'].strftime('%Y-%m-%d %H:%M') if chat['last_message_time'] else 'Нет сообщений',
+            'last_message_time': chat['last_message_time'] if chat['last_message_time'] else 'Нет сообщений',
             'unread_count': chat['unread_message_count'] if chat['unread_message_count'] is not None else 0,
             'other_user_username': CustomUser.objects.get(id=chat['other_user']).username,  # Получаем username
         } for chat in user_chats]
