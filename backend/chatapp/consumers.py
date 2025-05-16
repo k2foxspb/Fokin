@@ -89,7 +89,7 @@ class ChatConsumer(WebsocketConsumer):
     def receive(self, text_data=None, bytes_data=None):
         text_data_json = json.loads(text_data)
         message = text_data_json['message']
-        print(text_data_json)
+
 
         if not self.user.is_authenticated:
             return
@@ -144,7 +144,6 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
     @sync_to_async
     def mark_messages_as_read(self, user, room_name):
         room = PrivateChatRoom.objects.get(id=int(room_name))
-        print(user)
         if room:
             PrivateMessage.objects.filter(room_id=room.id, read=False).exclude(sender=user).update(read=True)
 
