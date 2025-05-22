@@ -12,7 +12,7 @@ from django.shortcuts import render, get_object_or_404
 from django.views.generic import ListView
 
 from authapp.models import CustomUser
-from chatapp.models import Room, PrivateChatRoom, UserChat, PrivateMessage
+from chatapp.models import Room, PrivateChatRoom, PrivateMessage
 
 
 class IndexView(ListView, LoginRequiredMixin):
@@ -79,29 +79,6 @@ def private_chat_view(request, room_id):
         return render(request, 'index.html', {'message': 'Room not found'})
 
 
-@login_required(login_url='auth:login')
-def user_chats(request):
-    user_chats = UserChat.objects.filter(user=request.user).select_related('chat_room').prefetch_related(
-        'last_message__sender')
-    chat_data = [{
-        'id': chat.chat_room.id,
-        'user2_id': chat.chat_room.user2.id if chat.chat_room.user1_id == request.user.id else chat.chat_room.user1.id,
-        'user2': chat.chat_room.user2.username if chat.chat_room.user1_id == request.user.id else chat.chat_room.user1.username,
-        'last_message': chat.last_message.message if chat.last_message else '',
-        'last_message_time': chat.last_message.timestamp if chat.last_message else '',
-        'unread_count': chat.unread_count,
-    } for chat in user_chats]
-    return JsonResponse(chat_data, safe=False)
-
-
-@receiver(post_save, sender=PrivateMessage)
-def update_unread_count(sender, instance, created, **kwargs):
-    if created:
-        user = instance.room.user1 if instance.room.user2 == instance.sender else instance.room.user2
-        user_chat, created = UserChat.objects.get_or_create(chat_room=instance.room, user=user)
-        user_chat.unread_count += 1
-        user_chat.last_message = instance
-        user_chat.save()
 
 
 @login_required(login_url='auth:login')
@@ -118,38 +95,46 @@ def get_chat_history(request, room_id):
 
 @login_required(login_url='auth:login')
 def user_dialog_list(request):
-    # Подзапрос для подсчета непрочитанных сообщений
-    unread_message_count_subquery = Subquery(
+    user = request.user
+
+    # Подзапрос для последнего времени сообщения
+    last_message_time_subquery = Subquery(
         PrivateMessage.objects.filter(
-            room_id=OuterRef('chat_room__id'),
-            read=False,
-        ).exclude(sender_id=request.user.id).values('room_id').annotate(count=Count('id')).values('count')[:1],
-        output_field=IntegerField()
+            room=OuterRef('room')
+        ).order_by('-timestamp')[:1].values('timestamp')
     )
 
-    # Объединение результатов с помощью UNION
-    user_chats = UserChat.objects.filter(Q(chat_room__user1=request.user) | Q(chat_room__user2=request.user)) \
-        .values('chat_room__id') \
-        .annotate(
-            other_user=Case(When(chat_room__user1=request.user, then='chat_room__user2'),
-                            When(chat_room__user2=request.user, then='chat_room__user1'),
-                            output_field=CharField()),
-            last_message_time=Max('chat_room__messages__timestamp'),
-            last_message_text=Max('chat_room__messages__message'),
-            unread_message_count=unread_message_count_subquery
-        ) \
-        .order_by('-last_message_time')
+    # Подзапрос для последнего сообщения
+    last_message_text_subquery = Subquery(
+        PrivateMessage.objects.filter(
+            room=OuterRef('room')
+        ).order_by('-timestamp')[:1].values('message')
+    )
 
-    # Преобразование результатов в удобный для шаблона формат
+
+    user_dialogs = PrivateMessage.objects.filter(
+        Q(sender=user) | Q(recipient=user)
+    ).values('room', 'sender', 'recipient').annotate(
+        other_user_id=Case(
+            When(sender=user, then=F('recipient_id')),
+            When(recipient=user, then=F('sender_id')),
+            output_field=IntegerField()
+        ),
+        last_message_time=last_message_time_subquery,
+        last_message=last_message_text_subquery
+    ).order_by('-last_message_time').values('other_user_id', 'room', 'last_message_time', 'last_message').distinct()
+
+
     context = {
-        'dialogs': [{
-            'id': chat['chat_room__id'],
-            'other_user': CustomUser.objects.get(id=chat['other_user']),  # Получаем объект User
-            'last_message': chat['last_message_text'] if chat['last_message_text'] else 'Нет сообщений',
-            'last_message_time': chat['last_message_time'] if chat['last_message_time'] else 'Нет сообщений',
-            'unread_count': chat['unread_message_count'] if chat['unread_message_count'] is not None else 0,
-            'other_user_username': CustomUser.objects.get(id=chat['other_user']).username,  # Получаем username
-        } for chat in user_chats]
+        'dialogs': [
+            {
+                'id': chat['room'],
+                'other_user': CustomUser.objects.get(id=chat['other_user_id']),
+                'last_message_time': chat['last_message_time'],
+                'last_message': chat['last_message'],
+                'other_user_username': CustomUser.objects.get(id=chat['other_user_id']).username
+            } for chat in user_dialogs
+        ]
     }
 
     return render(request, 'user_dialogs.html', context)

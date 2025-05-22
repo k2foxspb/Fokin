@@ -3,8 +3,10 @@
 {% endblock %}
 {% block content %}
     <div class="container">
-        <h1><a class="nav-link my-navbar" href="{% url 'profile:profile' recipient.username %}"><img style="border-radius: 20px; margin-bottom: 10px" src="{{ recipient.thumbnail.url }}" alt="{{ recipient.username }}'s avatar" width="32"
-                                                                                                     height="32" > {{ recipient.username }} </a></h1>
+        <h1><a class="nav-link my-navbar" href="{% url 'profile:profile' recipient.username %}"><img
+                style="border-radius: 20px; margin-bottom: 10px" src="{{ recipient.thumbnail.url }}"
+                alt="{{ recipient.username }}'s avatar" width="32"
+                height="32"> {{ recipient.username }} </a></h1>
         <div class="mydiv" id="chatbox"></div>
         <label for="messageInput"></label><input type="text" id="messageInput">
         <button id="sendMessageButton">Send</button>
@@ -41,21 +43,26 @@
         }
 
     </style>
+
+{% endblock %}
+{% block js %}
     <script>
+
+
         const username = '{{ request.user.username|escapejs }}';
         const roomName = '{{ room.id }}';
         const user1 = {{ user1_id }};
         const user2 = {{ user2_id }};
-        const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-        const websocket = new WebSocket(`${wsProtocol}://${window.location.host}/${wsProtocol}/private/${roomName}/`);
+
+        const websocketmessage = new WebSocket(`${wsProtocol}://${window.location.host}/${wsProtocol}/private/${roomName}/`);
         const chatbox = document.getElementById('chatbox');
         const messageInput = document.getElementById('messageInput');
         const sendMessageButton = document.getElementById('sendMessageButton');
         messageInput.focus()
-        websocket.onerror = function (error) {
+        websocketmessage.onerror = function (error) {
             console.error('WebSocket error:', error);
         };
-        websocket.onopen = async function (event) {
+        websocketmessage.onopen = async function (event) {
             console.log('WebSocket connection opened:', event);
             await loadChatHistory();
         };
@@ -91,7 +98,7 @@
             messageInput.focus()
         }
 
-        websocket.onmessage = function (event) {
+        websocketmessage.onmessage = function (event) {
             try {
                 const data = JSON.parse(event.data);
                 addMessageToChatbox(data);
@@ -106,7 +113,7 @@
             const message = messageInput.value;
             if (message.trim() !== '') {
                 const timestamp = Math.floor(Date.now() / 1000);
-                websocket.send(JSON.stringify({
+                websocketmessage.send(JSON.stringify({
                     message: message,
                     timestamp: timestamp,
                     user1: user1,

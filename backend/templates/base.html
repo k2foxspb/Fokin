@@ -54,7 +54,8 @@
             <a class="navbar-brand" href="{% url 'main:main_category' %}"><img style="width: 50px"
                                                                                src="{% static 'img/logo/logo_white.png' %}"
                                                                                alt="logo"></a>
-            <button class="navbar-toggler my-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
+            <button class="navbar-toggler my-toggler" type="button" data-bs-toggle="collapse"
+                    data-bs-target="#navbarNav"
                     aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
                 <span class=" navbar-toggler-icon "></span>
             </button>
@@ -85,9 +86,9 @@
                         <a class="nav-link my-navbar" href="{% url 'chat:user_dialogs' %}">
                       <span class="badge-container">
                         <span class="">Сообщения</span>
-                          {% if unread_messages_count > 0 %}
-                              <span class="unread-count">{{ unread_messages_count }}</span>
-                          {% endif %}
+
+                              <span id="unread-count" class="unread-count"></span>
+
                       </span>
                         </a>
                     </li>
@@ -114,6 +115,52 @@
 {% include 'yandex.html' %}
 <script src="{% static 'js/bootstrap.bundle.min.js' %}"></script>
 <script src="{% static 'js/jquery-3.6.0.min.js' %}"></script>
+<script>
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const notificationWebsocket = new WebSocket(`${wsProtocol}://${window.location.host}/ws/notification/`)
+    notificationWebsocket.onopen = async function (event) {
+        console.log('notificationWebsocket connection opened:', event);
+    };
+    notificationWebsocket.onerror = function (error) {
+        console.error('Notification WebSocket error:', error);
+    };
+    notificationWebsocket.onmessage = function (event) {
+        try {
+            const data = JSON.parse(event.data);
+            const unreadCountElement = document.getElementById('unread-count');
+            if (data.type === 'unread_count_update') {
+                showNotification(`У вас есть непрочитанные сообщения!`)
+                unreadCountElement.textContent = data.count;
+                console.log("Unread count updated:", data.count);
+            }
+        } catch (error) {
+            console.error('Error parsing Notification WebSocket message:', error, event.data);
+        }
+    };
+
+    function showNotification(message) {
+        const notification = document.createElement('div');
+        notification.className = 'notification';
+        notification.style.cssText = `
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background-color: #333;
+    color: #fff;
+    padding: 10px;
+    border-radius: 5px;
+  `;
+        notification.textContent = message;
+        document.body.appendChild(notification);
+
+        setTimeout(() => {
+            document.body.removeChild(notification);
+        }, 3000);
+    }
+
+
+</script>
+
 <script>
     $(document).ready(function () {
 

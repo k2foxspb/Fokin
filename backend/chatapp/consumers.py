@@ -1,17 +1,18 @@
 import json
-import logging
 from datetime import datetime
-from pprint import pprint
+import logging
 
 from asgiref.sync import async_to_sync, sync_to_async
 from channels.generic.websocket import WebsocketConsumer, AsyncWebsocketConsumer
+from channels.layers import get_channel_layer
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
 from django.db.models import Q
 
 from authapp.models import CustomUser
-from .models import Room, Message, PrivateChatRoom, PrivateMessage, UserChat
+from .models import Room, PrivateChatRoom, PrivateMessage
 from .telegram import send_message
+logger = logging.getLogger(__name__)
 
 
 class ChatConsumer(WebsocketConsumer):
@@ -90,7 +91,6 @@ class ChatConsumer(WebsocketConsumer):
         text_data_json = json.loads(text_data)
         message = text_data_json['message']
 
-
         if not self.user.is_authenticated:
             return
 
@@ -109,6 +109,7 @@ class ChatConsumer(WebsocketConsumer):
         #     f'room: {self.room}\n'
         #     f'msg: {message}'
         # )
+
     def chat_message(self, event):
         self.send(text_data=json.dumps(event))
 
@@ -118,12 +119,6 @@ class ChatConsumer(WebsocketConsumer):
     def user_leave(self, event):
         self.send(text_data=json.dumps(event))
 
-
-
-
-
-
-logger = logging.getLogger(__name__)
 
 
 class PrivateChatConsumer(AsyncWebsocketConsumer):
@@ -139,15 +134,20 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
         await self.mark_messages_as_read(self.user, self.room_name)
 
         await self.accept()
-
+        channel_layer = get_channel_layer()
+        await channel_layer.group_send(
+            f"user_{self.user.id}",
+            {
+                "type": "notification",
+                "user_id": self.user.id,
+            },
+        )
 
     @sync_to_async
     def mark_messages_as_read(self, user, room_name):
         room = PrivateChatRoom.objects.get(id=int(room_name))
         if room:
             PrivateMessage.objects.filter(room_id=room.id, read=False).exclude(sender=user).update(read=True)
-
-
 
     async def disconnect(self, close_code):
         await self.channel_layer.group_discard(self.room_name, self.channel_name)
@@ -161,7 +161,7 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
             user2_id = int(text_data_json['user2'])
 
             new_message = await self.save_message(user1_id, user2_id, message, timestamp, self.user)
-
+            recipient = user2_id if self.user.id != user2_id else user1_id
             if new_message:  # Проверка на None
                 await self.channel_layer.group_send(
                     self.room_name,
@@ -169,6 +169,7 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
                         'type': 'chat_message',
                         'message': message,
                         'sender__username': self.user.username,
+                        'recipient__id': recipient,
                         'timestamp': timestamp,
                         'id': new_message.id
                     }
@@ -189,8 +190,15 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
             'timestamp': event['timestamp'],
             'id': event['id']
         }))
+        channel_layer = get_channel_layer()
 
-
+        await channel_layer.group_send(
+            f"user_{event['recipient__id']}",
+            {
+                "type": "notification",
+                "user_id": event['recipient__id'],
+            },
+        )
 
     @sync_to_async
     def save_message(self, user1_id, user2_id, message, timestamp, user):
@@ -202,21 +210,57 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
                 room = PrivateChatRoom.objects.get(
                     Q(user1=user1, user2=user2) | Q(user1=user2, user2=user1)
                 )
-
-                new_message = PrivateMessage.objects.create(room=room, sender=user, message=message,
+                recipient = user2 if user != user2 else user1
+                new_message = PrivateMessage.objects.create(room=room, sender=user, recipient=recipient,
+                                                            message=message,
                                                             timestamp=datetime.fromtimestamp(timestamp))
 
-                recipient = user2 if user != user2 else user1  # определяем получателя
-                user_chat, created = UserChat.objects.get_or_create(user=recipient,
-                                                                    chat_room=room)  # обновляем данные получателя
-                user_chat.unread_count += 1
-                user_chat.last_message = new_message
-                user_chat.save()
+
                 return new_message
 
         except CustomUser.DoesNotExist:
-            logger.error(f"User with id {user1_id} or {user2_id} not found")
+            print(f"User with id {user1_id} or {user2_id} not found")
             return None
         except Exception as e:
             logger.exception(f"Error saving message from user {user}: {e}")
             return None
+
+
+class NotificationConsumer(AsyncWebsocketConsumer):
+    async def connect(self):
+        try:
+
+            self.user_id = self.scope['user'].id
+            await self.channel_layer.group_add(f"user_{self.user_id}", self.channel_name)
+            await self.accept()
+            unread_count = await self.get_unread_count(self.user_id)
+            await self.send_initial_notification(unread_count)
+        except Exception as e:
+            print(f'Error connecting to notification: {e}')
+
+    async def notification(self, event):
+        user_id = event['user_id']
+        try:
+            unread_count = await self.get_unread_count(user_id)
+            await self.send(text_data=json.dumps({'type': 'unread_count_update', 'count': unread_count}))
+        except Exception as e:
+            print(f"Error in NotificationConsumer.notification: {e}")
+
+    async def send_initial_notification(self, unread_count):
+        await self.send(text_data=json.dumps({
+            "type": "unread_count_update",
+            "count": unread_count
+        }))
+
+    @sync_to_async
+    def get_unread_count(self, user_id):
+        try:
+            user = CustomUser.objects.get(pk=user_id)
+            return PrivateMessage.objects.filter(recipient=user, read=False).count()
+        except CustomUser.DoesNotExist:
+            return 0
+        except Exception as e:
+            print(f"Error in get_unread_count_by_sender: {e}")
+            return 0
+
+
