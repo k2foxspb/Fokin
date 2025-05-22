@@ -97,16 +97,3 @@ class PrivateMessage(models.Model):
 
     def __str__(self):
         return f'{self.room}: {self.message}'
-
-
-class UserChat(models.Model):
-    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='chats')
-    chat_room = models.ForeignKey(PrivateChatRoom, on_delete=models.CASCADE)
-    last_message = models.OneToOneField(PrivateMessage, on_delete=models.SET_NULL, null=True, blank=True)
-    unread_count = models.IntegerField(default=0)
-
-    class Meta:
-        unique_together = [['user', 'chat_room']]
-
-    def __str__(self):
-        return f"Chat: {self.user} - {self.chat_room}"
