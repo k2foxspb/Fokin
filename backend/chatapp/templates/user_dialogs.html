@@ -2,6 +2,7 @@
 {% load static %}
 {% block css %}
     <link rel="stylesheet" href="{% static 'css/users.css' %}">
+
 {% endblock %}
 {% block content %}
     <div class="container">
@@ -23,7 +24,7 @@
                             </div>
                         </div>
                     </div>
-                    <span id="unread-count1" class="unread-count {% if dialog.unread_count == 0 %}hide{% endif %}">{{ dialog.unread_count }}</span>
+                    <span id="unread-count1" class="unread-count" ></span>
                 </div>
             </a>
         {% endfor %}

@@ -87,7 +87,7 @@
                       <span class="badge-container">
                         <span class="">Сообщения</span>
 
-                              <span id="unread-count" class="unread-count"></span>
+                              <span id="unread-count" class="unread-count1" style="display: none"></span>
 
                       </span>
                         </a>
@@ -125,38 +125,46 @@
         console.error('Notification WebSocket error:', error);
     };
     notificationWebsocket.onmessage = function (event) {
-        try {
-            const data = JSON.parse(event.data);
-            const unreadCountElement = document.getElementById('unread-count');
-            if (data.type === 'unread_count_update') {
-                showNotification(`У вас есть непрочитанные сообщения!`)
-                unreadCountElement.textContent = data.count;
-                console.log("Unread count updated:", data.count);
+    try {
+        const data = JSON.parse(event.data);
+        const unreadCountElement = document.getElementById('unread-count');
+        const unreadCountElement1 = document.getElementById('unread-count1');
+        if (data.type === 'unread_count_update') {
+            const unreadCount = data.count;
+            if (unreadCount > 0) {
+                unreadCountElement.textContent = unreadCount;
+                unreadCountElement.style.display = 'inline'; // Показываем элемент
+                unreadCountElement1.textContent = unreadCount;
+                unreadCountElement1.style.display = 'inline'; // Показываем элемент
+            } else {
+                unreadCountElement.style.display = 'none'; // Скрываем элемент
+                unreadCountElement1.style.display = 'none'; // Скрываем элемент
             }
-        } catch (error) {
-            console.error('Error parsing Notification WebSocket message:', error, event.data);
         }
-    };
-
-    function showNotification(message) {
-        const notification = document.createElement('div');
-        notification.className = 'notification';
-        notification.style.cssText = `
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    background-color: #333;
-    color: #fff;
-    padding: 10px;
-    border-radius: 5px;
-  `;
-        notification.textContent = message;
-        document.body.appendChild(notification);
-
-        setTimeout(() => {
-            document.body.removeChild(notification);
-        }, 3000);
+    } catch (error) {
+        console.error('Error parsing Notification WebSocket message:', error, event.data);
     }
+};
+
+  {#  function showNotification(message) {#}
+  {#      const notification = document.createElement('div');#}
+  {#      notification.className = 'notification';#}
+  {#      notification.style.cssText = `#}
+  {#  position: fixed;#}
+  {#  bottom: 20px;#}
+  {#  right: 20px;#}
+  {#  background-color: #333;#}
+  {#  color: #fff;#}
+  {#  padding: 10px;#}
+  {#  border-radius: 5px;#}
+  {#`;#}
+  {#      notification.textContent = message;#}
+  {#      document.body.appendChild(notification);#}
+  {##}
+  {#      setTimeout(() => {#}
+  {#          document.body.removeChild(notification);#}
+  {#      }, 3000);#}
+  {#  }#}
 
 
 </script>
