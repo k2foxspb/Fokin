@@ -134,12 +134,14 @@
             if (unreadCount > 0) {
                 unreadCountElement.textContent = unreadCount;
                 unreadCountElement.style.display = 'inline'; // Показываем элемент
+                if (unreadCountElement1){
                 unreadCountElement1.textContent = unreadCount;
-                unreadCountElement1.style.display = 'inline'; // Показываем элемент
+                unreadCountElement1.style.display = 'inline';} // Показываем элемент
             } else {
                 unreadCountElement.style.display = 'none'; // Скрываем элемент
+                if (unreadCountElement1){
                 unreadCountElement1.style.display = 'none'; // Скрываем элемент
-            }
+            }}
         }
     } catch (error) {
         console.error('Error parsing Notification WebSocket message:', error, event.data);
