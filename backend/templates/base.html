@@ -117,7 +117,7 @@
 <script src="{% static 'js/jquery-3.6.0.min.js' %}"></script>
 <script>
     const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    const notificationWebsocket = new WebSocket(`${wsProtocol}://${window.location.host}/ws/notification/`)
+    const notificationWebsocket = new WebSocket(`${wsProtocol}://${window.location.host}/${wsProtocol}/notification/`)
     notificationWebsocket.onopen = async function (event) {
         console.log('notificationWebsocket connection opened:', event);
     };
