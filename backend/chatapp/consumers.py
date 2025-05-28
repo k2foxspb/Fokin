@@ -3,11 +3,12 @@ from datetime import datetime
 import logging
 
 from asgiref.sync import async_to_sync, sync_to_async
+from channels.db import database_sync_to_async
 from channels.generic.websocket import WebsocketConsumer, AsyncWebsocketConsumer
 from channels.layers import get_channel_layer
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Q, Count
 
 from authapp.models import CustomUser
 from .models import Room, PrivateChatRoom, PrivateMessage
@@ -229,38 +230,68 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
 class NotificationConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         try:
-
             self.user_id = self.scope['user'].id
             await self.channel_layer.group_add(f"user_{self.user_id}", self.channel_name)
             await self.accept()
-            unread_count = await self.get_unread_count(self.user_id)
-            await self.send_initial_notification(unread_count)
+            unread_sender_count = await self.get_unique_senders_count(self.user_id)
+            messages_by_sender = await self.get_messages_by_sender(self.user_id)
+            await self.send_initial_notification(unread_sender_count, messages_by_sender)
         except Exception as e:
             print(f'Error connecting to notification: {e}')
+            await self.close() # Закрываем соединение при ошибке
+
+
+    async def disconnect(self, close_code):
+        try:
+            await self.channel_layer.group_discard(f"user_{self.user_id}", self.channel_name)
+        except Exception as e:
+            print(f'Error disconnecting from notification: {e}')
+
+    async def receive(self, text_data):
+        # Этот метод не используется в данном примере, но может быть полезен для других задач
+        pass
+
 
     async def notification(self, event):
         user_id = event['user_id']
         try:
-            unread_count = await self.get_unread_count(user_id)
-            await self.send(text_data=json.dumps({'type': 'unread_count_update', 'count': unread_count}))
+            messages_by_sender = await self.get_messages_by_sender(user_id)
+            await self.send(text_data=json.dumps({'type': 'messages_by_sender_update', 'messages': messages_by_sender}))
         except Exception as e:
             print(f"Error in NotificationConsumer.notification: {e}")
 
-    async def send_initial_notification(self, unread_count):
-        await self.send(text_data=json.dumps({
-            "type": "unread_count_update",
-            "count": unread_count
-        }))
 
-    @sync_to_async
-    def get_unread_count(self, user_id):
+    @database_sync_to_async
+    def get_unique_senders_count(self, user_id):
         try:
             user = CustomUser.objects.get(pk=user_id)
-            return PrivateMessage.objects.filter(recipient=user, read=False).count()
+            unread_messages = PrivateMessage.objects.filter(recipient=user, read=False)
+            unique_senders = set(unread_messages.values_list('sender_id', flat=True))
+            return len(unique_senders)
         except CustomUser.DoesNotExist:
             return 0
         except Exception as e:
-            print(f"Error in get_unread_count_by_sender: {e}")
+            print(f"Error in get_unique_senders_count: {e}")
             return 0
 
+
+    @database_sync_to_async
+    def get_messages_by_sender(self, user_id):
+        try:
+            user = CustomUser.objects.get(pk=user_id)
+            messages = PrivateMessage.objects.filter(recipient=user, read=False).values('sender_id').annotate(count=Count('sender_id'))
+            return [{'sender_id': msg['sender_id'], 'count': msg['count']} for msg in messages]
+        except CustomUser.DoesNotExist:
+            return []
+        except Exception as e:
+            print(f"Error in get_messages_by_sender: {e}")
+            return []
+
+
+    async def send_initial_notification(self, unread_sender_count, messages_by_sender):
+        await self.send(text_data=json.dumps({
+            "type": "initial_notification",
+            "unique_sender_count": unread_sender_count,
+            "messages": messages_by_sender
+        }))
 

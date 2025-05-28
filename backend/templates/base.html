@@ -88,7 +88,7 @@
                       <span class="badge-container">
                         <span class="">Сообщения</span>
 
-                              <span id="unread-count" class="unread-count1" style="display: none"></span>
+                              <span id="unread-counttt" class="unread-count1" style="display: none"></span>
 
                       </span>
                         </a>
@@ -125,49 +125,86 @@
     notificationWebsocket.onerror = function (error) {
         console.error('Notification WebSocket error:', error);
     };
-    notificationWebsocket.onmessage = function (event) {
-    try {
-        const data = JSON.parse(event.data);
-        const unreadCountElement = document.getElementById('unread-count');
-        const unreadCountElement1 = document.getElementById('unread-count1');
-        if (data.type === 'unread_count_update') {
-            const unreadCount = data.count;
-            if (unreadCount > 0) {
-                unreadCountElement.textContent = unreadCount;
-                unreadCountElement.style.display = 'inline'; // Показываем элемент
-                if (unreadCountElement1){
-                unreadCountElement1.textContent = unreadCount;
-                unreadCountElement1.style.display = 'inline';} // Показываем элемент
-            } else {
-                unreadCountElement.style.display = 'none'; // Скрываем элемент
-                if (unreadCountElement1){
-                unreadCountElement1.style.display = 'none'; // Скрываем элемент
-            }}
-        }
-    } catch (error) {
-        console.error('Error parsing Notification WebSocket message:', error, event.data);
-    }
-};
+    notificationWebsocket.onmessage = function (e) {
+        const data = JSON.parse(e.data);
+        console.log( data.unique_sender_count, data.messages, data.type)
+        if (data.type === 'initial_notification') {
 
-  {#  function showNotification(message) {#}
-  {#      const notification = document.createElement('div');#}
-  {#      notification.className = 'notification';#}
-  {#      notification.style.cssText = `#}
-  {#  position: fixed;#}
-  {#  bottom: 20px;#}
-  {#  right: 20px;#}
-  {#  background-color: #333;#}
-  {#  color: #fff;#}
-  {#  padding: 10px;#}
-  {#  border-radius: 5px;#}
-  {#`;#}
-  {#      notification.textContent = message;#}
-  {#      document.body.appendChild(notification);#}
-  {##}
-  {#      setTimeout(() => {#}
-  {#          document.body.removeChild(notification);#}
-  {#      }, 3000);#}
-  {#  }#}
+            updateInitialCounts(data.unique_sender_count, data.messages);
+        } else if (data.type === 'messages_by_sender_update') {
+
+            updateCounts(data.messages);
+
+        }
+    };
+
+    function updateInitialCounts(uniqueSenderCount, messages) {
+        // Обновляем общий счётчик непрочитанных сообщений
+        const unreadCountElement = document.getElementById("unread-counttt");
+        if (unreadCountElement) {
+            unreadCountElement.textContent = uniqueSenderCount;
+            unreadCountElement.style.display = uniqueSenderCount > 0 ? 'inline' : 'none';
+        }
+
+        // Обновляем счётчики для каждого отправителя
+        messages.forEach(message => {
+            updateSenderCount(message.sender_id, message.count);
+        });
+    }
+
+    function updateCounts(messages) {
+        messages.forEach(message => {
+            updateSenderCount(message.sender_id, message.count);
+        });
+        // Обновляем общий счётчик непрочитанных сообщений после обновления отдельных счётчиков.
+        updateUnreadCount();
+    }
+
+
+    function updateSenderCount(senderId, count) {
+        const senderCountElement = document.getElementById(`sender-${senderId}-count`);
+        if (senderCountElement) {
+            senderCountElement.textContent = count;
+            senderCountElement.style.display = count > 0 ? 'inline' : 'none';
+        }
+    }
+
+
+    function updateUnreadCount() {
+        let totalUnread = 0;
+        const senderCountElements = document.querySelectorAll('[id^="sender-"]'); //Выбираем все элементы, чьи ID начинаются с "sender-"
+        senderCountElements.forEach(element => {
+            const count = parseInt(element.textContent, 10) || 0; //Парсим текст в число, 0 если парсинг не удался.
+            totalUnread += count;
+        });
+
+        const unreadCountElement = document.getElementById("unread-count");
+        if (unreadCountElement) {
+            unreadCountElement.textContent = totalUnread;
+            unreadCountElement.style.display = totalUnread > 0 ? 'inline' : 'none';
+        }
+
+    }
+
+    {#  function showNotification(message) {#}
+    {#      const notification = document.createElement('div');#}
+    {#      notification.className = 'notification';#}
+    {#      notification.style.cssText = `#}
+    {#  position: fixed;#}
+    {#  bottom: 20px;#}
+    {#  right: 20px;#}
+    {#  background-color: #333;#}
+    {#  color: #fff;#}
+    {#  padding: 10px;#}
+    {#  border-radius: 5px;#}
+    {#`;#}
+    {#      notification.textContent = message;#}
+    {#      document.body.appendChild(notification);#}
+    {##}
+    {#      setTimeout(() => {#}
+    {#          document.body.removeChild(notification);#}
+    {#      }, 3000);#}
+    {#  }#}
 
 
 </script>
