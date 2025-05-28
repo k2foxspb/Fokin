@@ -134,7 +134,7 @@
         } else if (data.type === 'messages_by_sender_update') {
 
             updateCounts(data.messages);
-
+            updateInitialCounts(data.unique_sender_count, data.messages);
         }
     };
 

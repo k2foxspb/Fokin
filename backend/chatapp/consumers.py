@@ -256,7 +256,9 @@ class NotificationConsumer(AsyncWebsocketConsumer):
         user_id = event['user_id']
         try:
             messages_by_sender = await self.get_messages_by_sender(user_id)
-            await self.send(text_data=json.dumps({'type': 'messages_by_sender_update', 'messages': messages_by_sender}))
+            unread_sender_count = await self.get_unique_senders_count(self.user_id)
+            await self.send(text_data=json.dumps({'type': 'messages_by_sender_update', 'messages': messages_by_sender,
+                                                  "unique_sender_count": unread_sender_count,}))
         except Exception as e:
             print(f"Error in NotificationConsumer.notification: {e}")
 
