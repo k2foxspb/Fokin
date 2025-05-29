@@ -31,16 +31,11 @@
         }
 
         .timestamp {
-            font-size: smaller;
-            color: gray;
+            font-size: xx-small;
+            color: #aeadad;
         }
 
 
-        #chat-list div {
-            margin-bottom: 10px;
-            padding: 5px;
-            border: 1px solid #eee;
-        }
 
     </style>
 
@@ -75,6 +70,7 @@
                 }
                 const data = await response.json();
                 data.messages.forEach(addMessageToChatbox);
+                console.log('load history', data.messages);
             } catch (error) {
                 console.error('Error loading chat history:', error);
                 // Можно добавить обработку ошибки, например, показать пользователю сообщение об ошибке
@@ -83,14 +79,11 @@
 
         async function addMessageToChatbox(messageData) {
             const messageDiv = document.createElement('div');
-            const senderElement = document.createElement('strong');
-            senderElement.textContent = messageData.sender__username + ':';
-            messageDiv.appendChild(senderElement);
             const messageText = document.createTextNode(messageData.message);
             messageDiv.appendChild(messageText);
             const timestampSpan = document.createElement('span');
             timestampSpan.classList.add('timestamp');
-            timestampSpan.textContent = `(${new Date(messageData.timestamp * 1000).toLocaleString()})`;
+            timestampSpan.textContent = ` ${new Date(messageData.timestamp * 1000).toLocaleString()}`;
             messageDiv.appendChild(timestampSpan);
             messageDiv.classList.add(messageData.sender__username === username ? 'my-message' : 'other-message');
             chatbox.appendChild(messageDiv);

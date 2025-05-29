@@ -13,7 +13,7 @@ class RoomAdmin(admin.ModelAdmin):
 class MessageAdmin(admin.ModelAdmin):
     search_fields = ['content']
     fields = ['content']
-    ordering = ['timestamp']
+
 
 
 @admin.register(PrivateMessage)

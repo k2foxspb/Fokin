@@ -11,7 +11,7 @@ from django.db import transaction
 from django.db.models import Q, Count
 
 from authapp.models import CustomUser
-from .models import Room, PrivateChatRoom, PrivateMessage
+from .models import Room, PrivateChatRoom, PrivateMessage, Message
 from .telegram import send_message
 logger = logging.getLogger(__name__)
 
@@ -101,10 +101,10 @@ class ChatConsumer(WebsocketConsumer):
                 'type': 'chat_message',
                 'message': message,
                 'user': self.user.username,
-                'timestamp': datetime.now().isoformat()
+                'timestamp': datetime.now().astimezone().strftime('%d.%m.%Y, %H:%M:%S'),
             }
         )
-
+        Message.objects.create(user=self.user, room=self.room, content=message)
         # send_message(
         #     f'name: {self.user}\n'
         #     f'room: {self.room}\n'

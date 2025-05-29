@@ -156,8 +156,7 @@
         messages.forEach(message => {
             updateSenderCount(message.sender_id, message.count);
         });
-        // Обновляем общий счётчик непрочитанных сообщений после обновления отдельных счётчиков.
-        updateUnreadCount();
+
     }
 
 
@@ -170,21 +169,7 @@
     }
 
 
-    function updateUnreadCount() {
-        let totalUnread = 0;
-        const senderCountElements = document.querySelectorAll('[id^="sender-"]'); //Выбираем все элементы, чьи ID начинаются с "sender-"
-        senderCountElements.forEach(element => {
-            const count = parseInt(element.textContent, 10) || 0; //Парсим текст в число, 0 если парсинг не удался.
-            totalUnread += count;
-        });
 
-        const unreadCountElement = document.getElementById("unread-count");
-        if (unreadCountElement) {
-            unreadCountElement.textContent = totalUnread;
-            unreadCountElement.style.display = totalUnread > 0 ? 'inline' : 'none';
-        }
-
-    }
 
     {#  function showNotification(message) {#}
     {#      const notification = document.createElement('div');#}
