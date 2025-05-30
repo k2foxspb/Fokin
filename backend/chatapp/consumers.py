@@ -281,8 +281,10 @@ class NotificationConsumer(AsyncWebsocketConsumer):
     def get_messages_by_sender(self, user_id):
         try:
             user = CustomUser.objects.get(pk=user_id)
+            us_dict = {'user': f'{user.first_name} {user.last_name}'}
             messages = PrivateMessage.objects.filter(recipient=user, read=False).values('sender_id').annotate(count=Count('sender_id'))
-            return [{'sender_id': msg['sender_id'], 'count': msg['count']} for msg in messages]
+            return us_dict, [{'sender_id': msg['sender_id'], 'count': msg['count']} for msg in messages]
+
         except CustomUser.DoesNotExist:
             return []
         except Exception as e:
@@ -295,5 +297,6 @@ class NotificationConsumer(AsyncWebsocketConsumer):
             "type": "initial_notification",
             "unique_sender_count": unread_sender_count,
             "messages": messages_by_sender
+
         }))
 
