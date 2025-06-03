@@ -73,8 +73,6 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "backend.wsgi.application"
 ASGI_APPLICATION = 'backend.asgi.application'
-# CORS_ORIGIN_ALLOW_ALL = True
-# CORS_ALLOW_CREDENTIALS = True
 CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
@@ -115,11 +113,11 @@ USE_TZ = True
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 STATICFILES_DIRS = [
-    BASE_DIR / "static",
+    BASE_DIR / "static/",
 ]
 
-STATIC_ROOT = os.path.join(BASE_DIR, "staticfiles/")
-MEDIA_ROOT = os.path.join(BASE_DIR, "media")
+STATIC_ROOT = os.path.join(BASE_DIR, "staticfiles")
+MEDIA_ROOT = os.path.join(BASE_DIR, "media/")
 MEDIA_URL = "/media/"
 
 CRISPY_TEMPLATE_PACK = "bootstrap5"
