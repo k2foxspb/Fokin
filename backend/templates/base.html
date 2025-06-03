@@ -126,7 +126,15 @@
 
             updateInitialCounts(data.unique_sender_count, data.messages[1]);
         } else if (data.type === 'messages_by_sender_update') {
-            showNotification(`Новое сообщение от ${data.messages[0].user}`)
+
+            count = 0
+            console.log(data.messages[1].forEach(message => {
+                count += message.count
+            }));
+            if (count > 0)
+            {
+                showNotification(`Новое сообщение от ${data.messages[0].user}`)
+            }
             updateCounts(data.messages[1]);
             updateInitialCounts(data.unique_sender_count, data.messages[1]);
         }
@@ -172,7 +180,7 @@
       position: fixed;
       bottom: 20px;
       right: 20px;
-      background-color: #333;
+      background-color: #670000;
       color: #fff;
       padding: 10px;
       border-radius: 5px;
