@@ -2,7 +2,6 @@ import os
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.forms import UserCreationForm, UsernameField, UserChangeForm
-from django.core.exceptions import ValidationError
 from .tasks import send_feedback_email_task_update, send_feedback_email_task
 
 
@@ -76,14 +75,7 @@ class CustomUserChangeForm(UserChangeForm):
     #             os.remove(self.instance.avatar.path)
     #     return self.cleaned_data.get(arg_as_str)
 
-    def clean_age(self):
-        data = self.cleaned_data.get("age")
-        if data:
-            if data < 18:
-                raise ValidationError("нужно немного повзрослеть))")
-            elif data > 90:
-                raise ValidationError("Столько не живут &#128519;")
-        return data
+
 
     def send_email(self):
         """Sends an email when the feedback form has been submitted."""
