@@ -1,4 +1,5 @@
 .form-control {
+    text-align: center;
     width: 100%;
     color: #bd0101
 }
@@ -7,11 +8,17 @@
 }
 
 .form-control:focus {
-  border-color: #fd081d;
-  outline: none;
-  box-shadow: 0 0 0 2px #930303;
+    border-color: #fd081d;
+    outline: none;
+    box-shadow: 0 0 0 2px #930303;
     color: #ff0000
 }
 .password-form-control {
     display: none;
+}
+
+.search-form {
+    display: flex;
+    align-items: center;
+    gap: 10px;
 }

@@ -17,20 +17,19 @@ def profile_view(request, username):
 
 def all_users_view(request):
     users = CustomUser.objects.all()
-    paginator = Paginator(users, 10) # 10 пользователей на странице
+    q = request.GET.get('q')
+    if q:
+        users = users.filter(username__icontains=q)  # Case-insensitive search
 
+    paginator = Paginator(users, 10)  # Show 10 users per page
     page_number = request.GET.get('page')
     try:
-        users_page = paginator.page(page_number)
+        users = paginator.page(page_number)
     except PageNotAnInteger:
-        users_page = paginator.page(1)
+        # If page is not an integer, deliver first page.
+        users = paginator.page(1)
     except EmptyPage:
-        users_page = paginator.page(paginator.num_pages)
+        # If page is out of range (e.g., 9999), deliver last page of results.
+        users = paginator.page(paginator.num_pages)
 
-    context = {
-        'users': users_page,
-        'paginator': paginator,
-    }
-    print(CustomUser.objects.all())
-    return render(request, 'all_users.html', context)
-
+    return render(request, 'all_users.html', {'users': users})

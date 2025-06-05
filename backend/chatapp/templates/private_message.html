@@ -34,21 +34,15 @@
             font-size: xx-small;
             color: #aeadad;
         }
-
-
-
     </style>
 
 {% endblock %}
 {% block js %}
     <script>
-
-
         const username = '{{ request.user.username|escapejs }}';
         const roomName = '{{ room.id }}';
         const user1 = {{ user1_id }};
         const user2 = {{ user2_id }};
-
         const websocketmessage = new WebSocket(`${wsProtocol}://${window.location.host}/${wsProtocol}/private/${roomName}/`);
         const chatbox = document.getElementById('chatbox');
         const messageInput = document.getElementById('messageInput');
@@ -58,7 +52,6 @@
             console.error('WebSocket error:', error);
         };
         websocketmessage.onopen = async function (event) {
-            console.log('WebSocket connection opened:', event);
             await loadChatHistory();
         };
 
@@ -70,7 +63,6 @@
                 }
                 const data = await response.json();
                 data.messages.forEach(addMessageToChatbox);
-                console.log('load history', data.messages);
             } catch (error) {
                 console.error('Error loading chat history:', error);
                 // Можно добавить обработку ошибки, например, показать пользователю сообщение об ошибке
@@ -95,7 +87,6 @@
             try {
                 const data = JSON.parse(event.data);
                 addMessageToChatbox(data);
-                console.log(data)
             } catch (error) {
                 console.error('Error parsing WebSocket message:', error, event.data);
             }

@@ -1,4 +1,5 @@
 import json
+import time
 from datetime import datetime
 import logging
 
@@ -13,6 +14,7 @@ from django.db.models import Q, Count
 from authapp.models import CustomUser
 from .models import Room, PrivateChatRoom, PrivateMessage, Message
 from .telegram import send_message
+
 logger = logging.getLogger(__name__)
 
 
@@ -121,7 +123,6 @@ class ChatConsumer(WebsocketConsumer):
         self.send(text_data=json.dumps(event))
 
 
-
 class PrivateChatConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         self.room_name = self.scope['url_route']['kwargs']['room_name']
@@ -216,7 +217,6 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
                                                             message=message,
                                                             timestamp=datetime.fromtimestamp(timestamp))
 
-
                 return new_message
 
         except CustomUser.DoesNotExist:
@@ -231,6 +231,10 @@ class NotificationConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         try:
             self.user_id = self.scope['user'].id
+            if not self.user_id:
+                await self.close()
+                return
+            await self.send_user_online(self.user_id)
             await self.channel_layer.group_add(f"user_{self.user_id}", self.channel_name)
             await self.accept()
             unread_sender_count = await self.get_unique_senders_count(self.user_id)
@@ -238,12 +242,24 @@ class NotificationConsumer(AsyncWebsocketConsumer):
             await self.send_initial_notification(unread_sender_count, messages_by_sender)
         except Exception as e:
             print(f'Error connecting to notification: {e}')
-            await self.close() # Закрываем соединение при ошибке
+            await self.close()  # Закрываем соединение при ошибке
 
+    @database_sync_to_async
+    def send_user_online(self, user_id):
+        user = CustomUser.objects.get(pk=user_id)
+        user.is_online = 'online'
+        user.save()
+
+    @database_sync_to_async
+    def send_user_offline(self, user_id):
+        user = CustomUser.objects.get(pk=user_id)
+        user.is_online = 'offline'
+        user.save()
 
     async def disconnect(self, close_code):
         try:
             await self.channel_layer.group_discard(f"user_{self.user_id}", self.channel_name)
+            await self.send_user_offline(self.user_id)
         except Exception as e:
             print(f'Error disconnecting from notification: {e}')
 
@@ -251,17 +267,15 @@ class NotificationConsumer(AsyncWebsocketConsumer):
         # Этот метод не используется в данном примере, но может быть полезен для других задач
         pass
 
-
     async def notification(self, event):
         user_id = event['user_id']
         try:
             messages_by_sender = await self.get_messages_by_sender(user_id)
             unread_sender_count = await self.get_unique_senders_count(self.user_id)
             await self.send(text_data=json.dumps({'type': 'messages_by_sender_update', 'messages': messages_by_sender,
-                                                  "unique_sender_count": unread_sender_count,}))
+                                                  "unique_sender_count": unread_sender_count, }))
         except Exception as e:
             print(f"Error in NotificationConsumer.notification: {e}")
-
 
     @database_sync_to_async
     def get_unique_senders_count(self, user_id):
@@ -276,13 +290,13 @@ class NotificationConsumer(AsyncWebsocketConsumer):
             print(f"Error in get_unique_senders_count: {e}")
             return 0
 
-
     @database_sync_to_async
     def get_messages_by_sender(self, user_id):
         try:
             user = CustomUser.objects.get(pk=user_id)
             us_dict = {'user': f'{user.first_name} {user.last_name}'}
-            messages = PrivateMessage.objects.filter(recipient=user, read=False).values('sender_id').annotate(count=Count('sender_id'))
+            messages = PrivateMessage.objects.filter(recipient=user, read=False).values('sender_id').annotate(
+                count=Count('sender_id'))
             return us_dict, [{'sender_id': msg['sender_id'], 'count': msg['count']} for msg in messages]
 
         except CustomUser.DoesNotExist:
@@ -291,7 +305,6 @@ class NotificationConsumer(AsyncWebsocketConsumer):
             print(f"Error in get_messages_by_sender: {e}")
             return []
 
-
     async def send_initial_notification(self, unread_sender_count, messages_by_sender):
         await self.send(text_data=json.dumps({
             "type": "initial_notification",
@@ -299,4 +312,3 @@ class NotificationConsumer(AsyncWebsocketConsumer):
             "messages": messages_by_sender
 
         }))
-

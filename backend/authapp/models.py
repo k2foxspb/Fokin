@@ -23,6 +23,10 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     GENDER_CHOICES = [
         ('male', 'Мужчина'),
         ('female', 'Женщина'), ]
+    STATUS = [
+        ('online', 'в сети'),
+        ('offline', 'не в сети'),
+    ]
     username_validator = ASCIIUsernameValidator()
 
     username = models.CharField(
@@ -66,7 +70,11 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         help_text="Определяет, следует ли считать этого пользователя активным. \
             Снимите этот флажок вместо удаления учетных записей.",
     )
+    is_online = models.CharField(
+        max_length=20, choices=STATUS, default='offline'
+    )
     date_joined = models.DateTimeField("Дата регистрации", auto_now_add=True)
+    last_joined = models.DateTimeField("<UNK> <UNK>", auto_now=True)
     objects = UserManager()
     USERNAME_FIELD = "email"
     EMAIL_FIELD = "email"

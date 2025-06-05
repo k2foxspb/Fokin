@@ -1,6 +1,5 @@
 from django import template
-from authapp.models import CustomUser
-from django.db.models import  Q
+from django.db.models import Q
 from chatapp.models import PrivateMessage
 
 register = template.Library()

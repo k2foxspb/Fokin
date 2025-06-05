@@ -13,9 +13,9 @@
 
 
     {% if user %}
-        <h1 style="text-align: center">Профиль {{ user.username }}</h1>
+        <h1 style="text-align: center">{{ user.username }}</h1>
         <div class="container" style="display: flex; align-items: center;">
-            <div>
+            <div style="text-align: center">
                 {% if user.thumbnail %}
                     <img src="{{ user.thumbnail.url }}" alt="Аватар {{ user.username }}" width="100" height="100"
                          style="border-radius: 50%; object-fit: cover;">
@@ -28,6 +28,17 @@
                              height="100" style="border-radius: 50%; object-fit: cover;">
                     {% endif %}
                 {% endif %}
+            {% if user.is_online == 'online' %}
+                <div style="font-size: small; color: #ff1010">{{ user.is_online }}</div>
+            {% else %}
+                <div style="font-size: small; color: #ff1010">
+                    {% if user.gender == 'male' %}
+                        был в сети {{ user.last_joined }}
+                    {% else %}
+                        была в сети {{ user.last_joined }}
+                    {% endif %}
+                </div>
+            {% endif %}
             </div>
             <div style="margin-left: 20px;">
                 {% if user_come.is_staff and user.username == user_come.username %}
