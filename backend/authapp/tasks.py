@@ -20,8 +20,13 @@ def send_feedback_email_task(email, firs_name, last_name):
 @shared_task()
 def send_feedback_email_task_update(email, firs_name, last_name):
     """Sends an email when the feedback form has been submitted."""
-    x = 1+1
-    return x
+    send_mail(
+        "Your Feedback",
+        f"\t{firs_name} {last_name}\n\nВы изменили учётную запись!",
+        EMAIL_HOST_USER,
+        [email],
+        fail_silently=False,
+    )
 
 
 @shared_task()
