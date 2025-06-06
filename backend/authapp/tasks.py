@@ -5,7 +5,7 @@ from authapp.models import CustomUser
 from backend.settings import EMAIL_HOST_USER
 
 
-@shared_task()
+#@shared_task()
 def send_feedback_email_task(email, firs_name, last_name):
     """Sends an email when the feedback form has been submitted."""
     send_mail(
