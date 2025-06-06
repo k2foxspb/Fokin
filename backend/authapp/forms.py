@@ -78,7 +78,7 @@ class CustomUserChangeForm(UserChangeForm):
 
     def send_email(self):
         """Sends an email when the feedback form has been submitted."""
-        send_feedback_email_task_update(
+        send_feedback_email_task_update.delay(
             self.cleaned_data["email"], self.cleaned_data["first_name"],
             self.cleaned_data["last_name"]
         )
