@@ -12,8 +12,8 @@ ALLOWED_HOSTS = env.list("ALLOWED_HOSTS")
 ROOT_URLCONF = "backend.urls"
 
 
-CELERY_BROKER_URL = 'redis://127.0.0.1:6379'  # Redis URL
-CELERY_RESULT_BACKEND = 'redis://127.0.0.1:6379' # Опционально, для хранения результатов задач
+CELERY_BROKER_URL = 'redis://127.0.0.1:6379/0'  # Redis URL
+CELERY_RESULT_BACKEND = 'redis://127.0.0.1:6379/0' # Опционально, для хранения результатов задач
 CELERY_ACCEPT_CONTENT = ['application/json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
@@ -131,7 +131,7 @@ AUTHENTICATION_BACKENDS = ["authapp.backend.UserModelBackend"]
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 EMAIL_HOST = "smtp.mail.ru"
 EMAIL_HOST_USER = "k2foxspb@mail.ru"
-EMAIL_HOST_PASSWORD = 'I0qt5QKAhwGhe8BsqpOn'
+EMAIL_HOST_PASSWORD = env('EMAIL_HOST')
 print(EMAIL_HOST_PASSWORD)
 EMAIL_PORT = 465
 EMAIL_USE_SSL = True
