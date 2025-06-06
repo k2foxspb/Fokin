@@ -20,7 +20,8 @@ def send_feedback_email_task(email, firs_name, last_name):
 @shared_task()
 def send_feedback_email_task_update(email, firs_name, last_name):
     """Sends an email when the feedback form has been submitted."""
-    print('hello')
+    x = 1+1
+    return x
 
 
 @shared_task()
