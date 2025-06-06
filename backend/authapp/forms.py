@@ -1,12 +1,23 @@
+from datetime import date, timedelta
 
+from django import forms
 from django.contrib.auth import get_user_model
 from django.contrib.auth.forms import UserCreationForm, UsernameField, UserChangeForm
+from django.core.validators import MaxValueValidator
+
 from .tasks import send_feedback_email_task_update, send_feedback_email_task
 
 
 class CustomUserCreationForm(UserCreationForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        age = self.fields.get('age')
+        age.widget = forms.DateInput(attrs={'type': 'date'})
+        age.widget.attrs['class'] = 'form-control'
+        age.widget.attrs['class'] = 'calendar'
+        validators = [
+            MaxValueValidator(date.today() - timedelta(days=1)),  # Нельзя выбрать дату будущего
+        ]
         password_field = self.fields.get('password')
         if password_field:
             if self.instance.pk:  # Проверяем, существует ли уже экземпляр
@@ -16,6 +27,9 @@ class CustomUserCreationForm(UserCreationForm):
         for field_name in self.fields:
             if field_name != 'password':  # Исключаем поле пароля, для него класс уже задан
                 self.fields[field_name].widget.attrs['class'] = '.form-control'
+
+
+
 
     def send_email(self):
         """Sends an email when the feedback form has been submitted."""
@@ -44,6 +58,9 @@ class CustomUserChangeForm(UserChangeForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        age = self.fields.get('age')
+        age.widget = forms.DateInput(attrs={'type': 'date'})
+        age.widget.attrs['class'] = 'calendar'
         password_field = self.fields.get('password')
         if password_field:
             if self.instance.pk:  # Проверяем, существует ли уже экземпляр
@@ -53,6 +70,8 @@ class CustomUserChangeForm(UserChangeForm):
         for field_name in self.fields:
             if field_name != 'password':  # Исключаем поле пароля, для него класс уже задан
                 self.fields[field_name].widget.attrs['class'] = 'form-control'
+
+
 
     class Meta:
         model = get_user_model()
@@ -73,8 +92,6 @@ class CustomUserChangeForm(UserChangeForm):
     #         if os.path.exists(self.instance.avatar.path):
     #             os.remove(self.instance.avatar.path)
     #     return self.cleaned_data.get(arg_as_str)
-
-
 
     def send_email(self):
         """Sends an email when the feedback form has been submitted."""

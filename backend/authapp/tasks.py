@@ -1,6 +1,5 @@
 from time import sleep
 from django.core.mail import send_mail
-from celery import shared_task
 from authapp.models import CustomUser
 from backend.celery import app
 from backend.settings import EMAIL_HOST_USER
