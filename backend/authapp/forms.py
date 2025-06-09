@@ -48,7 +48,7 @@ class CustomUserCreationForm(UserCreationForm):
             "first_name",
             "last_name",
             "gender",
-            "birthday",
+            # "birthday",
             "avatar",
         )
         field_classes = {"email": UsernameField}
@@ -81,7 +81,7 @@ class CustomUserChangeForm(UserChangeForm):
             "first_name",
             "last_name",
             "gender",
-            "birthday",
+            # "birthday",
             "avatar",
         )
         field_classes = {"email": UsernameField}
