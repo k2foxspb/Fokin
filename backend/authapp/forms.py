@@ -11,10 +11,10 @@ from .tasks import send_feedback_email_task_update, send_feedback_email_task
 class CustomUserCreationForm(UserCreationForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        age = self.fields.get('age')
-        age.widget = forms.DateInput(attrs={'type': 'date'})
-        age.widget.attrs['class'] = 'form-control'
-        age.widget.attrs['class'] = 'calendar'
+        birthday = self.fields.get('birthday')
+        birthday.widget = forms.DateInput(attrs={'type': 'date'})
+        birthday.widget.attrs['class'] = 'form-control'
+        birthday.widget.attrs['class'] = 'calendar'
         validators = [
             MaxValueValidator(date.today() - timedelta(days=1)),  # Нельзя выбрать дату будущего
         ]
@@ -48,7 +48,7 @@ class CustomUserCreationForm(UserCreationForm):
             "first_name",
             "last_name",
             "gender",
-            "age",
+            "birthday",
             "avatar",
         )
         field_classes = {"email": UsernameField}
@@ -58,9 +58,9 @@ class CustomUserChangeForm(UserChangeForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        age = self.fields.get('age')
-        age.widget = forms.DateInput(attrs={'type': 'date'})
-        age.widget.attrs['class'] = 'calendar'
+        birthday = self.fields.get('birthday')
+        birthday.widget = forms.DateInput(attrs={'type': 'date'})
+        birthday.widget.attrs['class'] = 'calendar'
         password_field = self.fields.get('password')
         if password_field:
             if self.instance.pk:  # Проверяем, существует ли уже экземпляр
@@ -81,7 +81,7 @@ class CustomUserChangeForm(UserChangeForm):
             "first_name",
             "last_name",
             "gender",
-            "age",
+            "birthday",
             "avatar",
         )
         field_classes = {"email": UsernameField}

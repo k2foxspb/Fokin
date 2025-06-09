@@ -39,8 +39,8 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     )
     first_name = models.CharField("Имя", max_length=150, blank=True)
     last_name = models.CharField("Фамилия", max_length=150, blank=True)
-    age = models.PositiveIntegerField("Возраст", blank=True, null=True)
     gender = models.CharField(max_length=20, choices=GENDER_CHOICES, default='male')
+    birthday = models.DateField("День рождения", blank=True, null=True)
     avatar = models.ImageField(
         "Ваше фото", upload_to=users_avatars_path, blank=True, null=True
     )
