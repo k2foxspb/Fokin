@@ -1,3 +1,5 @@
+from datetime import date
+
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import render, get_object_or_404
 from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
@@ -8,10 +10,13 @@ def profile_view(request, username):
     user = get_object_or_404(CustomUser, username=username)
     is_authenticated = request.user.is_authenticated
     user_come = request.user
+    today = date.today()
+    age = today.year - user.birthday.year
     context = {
         'user': user,
         'is_authenticated': is_authenticated,
         'user_come': user_come,
+        'age': age,
     }
     return render(request, 'profile.html', context)
 
