@@ -11,7 +11,10 @@ def profile_view(request, username):
     is_authenticated = request.user.is_authenticated
     user_come = request.user
     today = date.today()
-    age = today.year - user.birthday.year
+    if user.birthday:
+        age = today.year - user.birthday.year
+    else:
+        age = 'нет'
     context = {
         'user': user,
         'is_authenticated': is_authenticated,

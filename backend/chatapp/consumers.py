@@ -247,13 +247,13 @@ class NotificationConsumer(AsyncWebsocketConsumer):
 
     @database_sync_to_async
     def send_user_online(self, user_id):
-        user = CustomUser.objects.select_for_update().get(pk=user_id)
+        user = CustomUser.objects.get(pk=user_id)
         user.is_online = 'online'
         user.save()
 
     @database_sync_to_async
     def send_user_offline(self, user_id):
-        user = CustomUser.objects.select_for_update().get(pk=user_id)
+        user = CustomUser.objects.get(pk=user_id)
         user.is_online = 'offline'
         user.save()
 
