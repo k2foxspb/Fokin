@@ -2,7 +2,6 @@ import os
 from pathlib import Path
 import environ
 
-
 env = environ.Env(DEBUG=(bool, False))
 BASE_DIR = Path(__file__).resolve().parent.parent
 env.read_env(os.path.join(BASE_DIR, ".env"))
@@ -11,13 +10,12 @@ DEBUG = env('DEBUG')
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS")
 ROOT_URLCONF = "backend.urls"
 
-
 CELERY_BROKER_URL = 'redis://127.0.0.1:6379'  # Redis URL
-CELERY_RESULT_BACKEND = 'redis://127.0.0.1:6379' # Опционально, для хранения результатов задач
+CELERY_RESULT_BACKEND = 'redis://127.0.0.1:6379'  # Опционально, для хранения результатов задач
 CELERY_ACCEPT_CONTENT = ['application/json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
-CELERY_TIMEZONE = 'Europe/Moscow' # Укажите ваш часовой пояс
+CELERY_TIMEZONE = 'Europe/Moscow'  # Укажите ваш часовой пояс
 
 INSTALLED_APPS = [
     "daphne",
@@ -53,8 +51,6 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-
-
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
@@ -81,7 +77,6 @@ CHANNEL_LAYERS = {
         },
     },
 }
-
 
 DATABASES = {
     "default": env.db(),
@@ -167,110 +162,72 @@ customColorPalette = [
 ]
 
 CKEDITOR_5_UPLOAD_FILE_TYPES = ['jpeg', 'jpg', 'png']
-# CKEDITOR_5_FILE_STORAGE = "blog.storage.CustomStorage"
+CKEDITOR_5_FILE_STORAGE = "backend.ckeditor5.CustomStorage"
 CKEDITOR_5_ALLOW_ALL_FILE_TYPES = True  # загрузить любые файлы
 CKEDITOR_5_CONFIGS = {
-    'extends': {
+    'default': {
         'toolbar': {
-            'items': [
-                'undo', 'redo', '|', 'selectAll', 'findAndReplace', '|', 'heading', '|', 'fontSize', 'fontColor',
-                'fontBackgroundColor', '|', 'bold', 'italic', 'underline', 'strikethrough', 'subscript', 'superscript',
-                'highlight', '|', 'link', 'insertImage', 'mediaEmbed', 'fileUpload', 'insertTable', '|',
-                'blockQuote', 'specialCharacters', 'horizontalLine', '|', 'alignment', 'bulletedList', 'numberedList',
-                'outdent', 'indent', 'removeFormat'
-            ],
-            'shouldNotGroupWhenFull': True
+            'items': ['heading', '|', 'bold', 'italic', 'link',
+                      'bulletedList', 'numberedList', 'blockQuote', 'imageUpload', ],
+        }
+
+    },
+    'extends': {
+        'blockToolbar': [
+            'paragraph', 'heading1', 'heading2', 'heading3',
+            '|',
+            'bulletedList', 'numberedList',
+            '|',
+            'blockQuote',
+        ],
+        'toolbar': {
+            'items': ['heading', '|', 'outdent', 'indent', '|', 'bold', 'italic', 'link', 'underline', 'strikethrough',
+                      'code', 'subscript', 'superscript', 'highlight', '|', 'codeBlock', 'sourceEditing', 'insertImage',
+                      'bulletedList', 'numberedList', 'todoList', '|', 'blockQuote', 'imageUpload', '|',
+                      'fontSize', 'fontFamily', 'fontColor', 'fontBackgroundColor', 'mediaEmbed', 'removeFormat',
+                      'insertTable',
+                      ],
+            'shouldNotGroupWhenFull': 'true'
         },
-        'language': 'ru',
-        'fontSize': {
-            'options': [10, 12, 14, 'default', 18, 20, 22],
-            'supportAllValues': True
+        'image': {
+            'toolbar': ['imageTextAlternative', '|', 'imageStyle:alignLeft',
+                        'imageStyle:alignRight', 'imageStyle:alignCenter', 'imageStyle:side', '|'],
+            'styles': [
+                'full',
+                'side',
+                'alignLeft',
+                'alignRight',
+                'alignCenter',
+            ]
+
+        },
+        'table': {
+            'contentToolbar': ['tableColumn', 'tableRow', 'mergeTableCells',
+                               'tableProperties', 'tableCellProperties'],
+            'tableProperties': {
+                'borderColors': customColorPalette,
+                'backgroundColors': customColorPalette
+            },
+            'tableCellProperties': {
+                'borderColors': customColorPalette,
+                'backgroundColors': customColorPalette
+            }
         },
         'heading': {
             'options': [
-                {
-                    'model': 'paragraph',
-                    'title': 'Paragraph',
-                    'class': 'ck-heading_paragraph'
-                },
-                {
-                    'model': 'heading1',
-                    'view': 'h1',
-                    'title': 'Heading 1',
-                    'class': 'ck-heading_heading1'
-                },
-                {
-                    'model': 'heading2',
-                    'view': 'h2',
-                    'title': 'Heading 2',
-                    'class': 'ck-heading_heading2'
-                },
-                {
-                    'model': 'heading3',
-                    'view': 'h3',
-                    'title': 'Heading 3',
-                    'class': 'ck-heading_heading3'
-                },
-                {
-                    'model': 'heading4',
-                    'view': 'h4',
-                    'title': 'Heading 4',
-                    'class': 'ck-heading_heading4'
-                },
-                {
-                    'model': 'heading5',
-                    'view': 'h5',
-                    'title': 'Heading 5',
-                    'class': 'ck-heading_heading5'
-                },
-                {
-                    'model': 'heading6',
-                    'view': 'h6',
-                    'title': 'Heading 6',
-                    'class': 'ck-heading_heading6'
-                }
+                {'model': 'paragraph', 'title': 'Paragraph', 'class': 'ck-heading_paragraph'},
+                {'model': 'heading1', 'view': 'h1', 'title': 'Heading 1', 'class': 'ck-heading_heading1'},
+                {'model': 'heading2', 'view': 'h2', 'title': 'Heading 2', 'class': 'ck-heading_heading2'},
+                {'model': 'heading3', 'view': 'h3', 'title': 'Heading 3', 'class': 'ck-heading_heading3'}
             ]
-        },
-        'htmlSupport': {
-            'allow': [
-                {
-                    'name': '/^.*$/',
-                    'styles': True,
-                    'attributes': True,
-                    'classes': True
-                }
-            ]
-        },
-        'image': {
-            'toolbar': [
-                'toggleImageCaption', 'imageTextAlternative', '|', 'imageStyle:inline', 'imageStyle:wrapText',
-                'imageStyle:breakText', '|', 'resizeImage'
-            ]
-        },
-        'link': {
-            'addTargetToExternalLinks': True,
-            'defaultProtocol': 'https://',
-            'decorators': {
-                'toggleDownloadable': {
-                    'mode': 'manual',
-                    'label': 'Downloadable',
-                    'attributes': {
-                        'download': 'file'
-                    }
-                }
-            }
-        },
-        'list': {
-            'properties': {
-                'styles': True,
-                'startIndex': True,
-                'reversed': True
-            }
-        },
-        'placeholder': 'Type something',
-        'table': {
-            'contentToolbar': ['tableColumn', 'tableRow', 'mergeTableCells', 'tableProperties', 'tableCellProperties']
-        },
+        }
+    },
+    'list': {
+        'properties': {
+            'styles': 'true',
+            'startIndex': 'true',
+            'reversed': 'true',
+        }
     }
 }
 
