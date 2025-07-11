@@ -37,11 +37,15 @@ INSTALLED_APPS = [
     'imagekit',
     'profileapp',
     'storages',
-    'celery'
+    'celery',
+    'rest_framework',
+    'rest_framework.authtoken',
+    'corsheaders',
 
 ]
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -50,6 +54,20 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.TokenAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ],
+}
+CORS_ALLOW_ALL_ORIGINS = True
+
+
+CORS_ALLOW_CREDENTIALS = True
 
 TEMPLATES = [
     {
@@ -160,18 +178,11 @@ customColorPalette = [
         'label': 'Blue'
     },
 ]
-
+CKEDITOR_5_USER_LANGUAGE = True
 CKEDITOR_5_UPLOAD_FILE_TYPES = ['jpeg', 'jpg', 'png']
 CKEDITOR_5_FILE_STORAGE = "backend.ckeditor5.CustomStorage"
 CKEDITOR_5_ALLOW_ALL_FILE_TYPES = True  # загрузить любые файлы
 CKEDITOR_5_CONFIGS = {
-    'default': {
-        'toolbar': {
-            'items': ['heading', '|', 'bold', 'italic', 'link',
-                      'bulletedList', 'numberedList', 'blockQuote', 'imageUpload', ],
-        }
-
-    },
     'extends': {
         'blockToolbar': [
             'paragraph', 'heading1', 'heading2', 'heading3',
@@ -189,6 +200,7 @@ CKEDITOR_5_CONFIGS = {
                       ],
             'shouldNotGroupWhenFull': 'true'
         },
+        'language': ['ru', 'en'],
         'image': {
             'toolbar': ['imageTextAlternative', '|', 'imageStyle:alignLeft',
                         'imageStyle:alignRight', 'imageStyle:alignCenter', 'imageStyle:side', '|'],

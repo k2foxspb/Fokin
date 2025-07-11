@@ -128,7 +128,21 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         self.room_name = self.scope['url_route']['kwargs']['room_name']
         self.user = self.scope['user']
-        logger.info(f"Connecting to room: {self.room_name}, user: {self.user}")
+        # Добавляем debug информацию
+        logger.info(f"=== WEBSOCKET CONNECTION DEBUG ===")
+        logger.info(f"Room name: {self.room_name}")
+        logger.info(f"User: {self.user}")
+        logger.info(f"User authenticated: {self.user.is_authenticated}")
+        logger.info(f"User type: {type(self.user)}")
+
+        # Проверяем query string
+        query_string = self.scope.get('query_string', b'').decode()
+        logger.info(f"Query string: {query_string}")
+
+        # Проверяем headers
+        headers = dict(self.scope.get('headers', []))
+        logger.info(f"Headers: {headers}")
+
         if not self.user.is_authenticated:
             await self.close()
             return
@@ -165,17 +179,27 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
 
             new_message = await self.save_message(user1_id, user2_id, message, timestamp, self.user)
             recipient = user2_id if self.user.id != user2_id else user1_id
-            if new_message:  # Проверка на None
+
+            if new_message:
+                # Отправляем данные в WebSocket
+                message_data = {
+                    'type': 'chat_message',
+                    'message': message,
+                    'sender__username': self.user.username,  # Используем email вместо username
+                    'sender_id': self.user.id,  # Добавляем sender_id для надежности
+                    'recipient__id': recipient,
+                    'timestamp': timestamp,
+                    'id': new_message.id
+                }
+
+                print(f"=== SENDING TO WEBSOCKET ===")
+                print(f"message_data: {message_data}")
+                print(f"self.user.email: {self.user.email}")
+                print(f"self.user.username: {self.user.username}")
+
                 await self.channel_layer.group_send(
                     self.room_name,
-                    {
-                        'type': 'chat_message',
-                        'message': message,
-                        'sender__username': self.user.username,
-                        'recipient__id': recipient,
-                        'timestamp': timestamp,
-                        'id': new_message.id
-                    }
+                    message_data
                 )
             else:
                 logger.error("Failed to save message.")
@@ -187,14 +211,23 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
             logger.exception(f"Error in receive from user {self.user}: {e}")
 
     async def chat_message(self, event):
-        await self.send(text_data=json.dumps({
+        print(f"=== CHAT_MESSAGE DEBUG ===")
+        print(f"event: {event}")
+
+        message_data = {
             'message': event['message'],
             'sender__username': event['sender__username'],
+            'sender_id': event.get('sender_id'),  # Добавляем sender_id
             'timestamp': event['timestamp'],
             'id': event['id']
-        }))
-        channel_layer = get_channel_layer()
+        }
 
+        print(f"Sending to client: {message_data}")
+
+        await self.send(text_data=json.dumps(message_data))
+
+        # Отправляем уведомление получателю
+        channel_layer = get_channel_layer()
         await channel_layer.group_send(
             f"user_{event['recipient__id']}",
             {
@@ -205,26 +238,87 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
 
     @sync_to_async
     def save_message(self, user1_id, user2_id, message, timestamp, user):
+        print(f"=== SAVE MESSAGE DEBUG ===")
+        print(f"user1_id: {user1_id}, user2_id: {user2_id}")
+        print(f"self.room_name: {self.room_name}")
+        print(f"user: {user}")
+
         try:
             with transaction.atomic():
                 user1 = CustomUser.objects.get(pk=user1_id)
                 user2 = CustomUser.objects.get(pk=user2_id)
 
-                room = PrivateChatRoom.objects.get(
-                    Q(user1=user1, user2=user2) | Q(user1=user2, user2=user1)
+                # Безопасно получаем room_id из URL
+                try:
+                    room_id = int(self.room_name)
+                    print(f"Parsed room_id: {room_id}")
+                except ValueError:
+                    logger.error(f"Invalid room_name format: {self.room_name}")
+                    # Если room_name не число, попробуем найти или создать комнату по пользователям
+                    room = self.get_or_create_room_by_users(user1, user2)
+                    if not room:
+                        return None
+                    room_id = room.id
+
+                try:
+                    # Пытаемся получить существующую комнату по ID
+                    room = PrivateChatRoom.objects.get(id=room_id)
+                    print(f"Found room: {room.id}, user1: {room.user1.id}, user2: {room.user2.id}")
+
+                    # Проверяем, что пользователи действительно принадлежат этой комнате
+                    if not ((room.user1 == user1 and room.user2 == user2) or
+                            (room.user1 == user2 and room.user2 == user1)):
+                        logger.error(f"Users {user1_id} and {user2_id} don't belong to room {room_id}")
+                        return None
+
+                except PrivateChatRoom.DoesNotExist:
+                    logger.error(f"Chat room with id {room_id} not found")
+                    # Попробуем создать комнату, если её нет
+                    room = self.get_or_create_room_by_users(user1, user2)
+                    if not room:
+                        return None
+
+                # Определяем получателя
+                recipient = user2 if user.id == user1_id else user1
+                print(f"Recipient determined: {recipient.id}")
+
+                # Создаем новое сообщение
+                new_message = PrivateMessage.objects.create(
+                    room=room,
+                    sender=user,
+                    recipient=recipient,
+                    message=message,
+                    timestamp=datetime.fromtimestamp(timestamp)
                 )
-                recipient = user2 if user != user2 else user1
-                new_message = PrivateMessage.objects.create(room=room, sender=user, recipient=recipient,
-                                                            message=message,
-                                                            timestamp=datetime.fromtimestamp(timestamp))
+
+                logger.info(f"Message saved: room={room.id}, sender={user.id}, recipient={recipient.id}")
+                print(f"Message created with ID: {new_message.id}")
 
                 return new_message
 
-        except CustomUser.DoesNotExist:
-            print(f"User with id {user1_id} or {user2_id} not found")
+        except CustomUser.DoesNotExist as e:
+            logger.error(f"User not found: user1_id={user1_id}, user2_id={user2_id}")
             return None
         except Exception as e:
-            logger.exception(f"Error saving message from user {user}: {e}")
+            logger.exception(f"Error saving message: {str(e)}")
+            return None
+
+    def get_or_create_room_by_users(self, user1, user2):
+        """Находит или создает комнату для двух пользователей"""
+        try:
+            # Ищем существующую комнату
+            room = PrivateChatRoom.objects.filter(
+                Q(user1=user1, user2=user2) | Q(user1=user2, user2=user1)
+            ).first()
+
+            if not room:
+                # Создаем новую комнату
+                room = PrivateChatRoom.objects.create(user1=user1, user2=user2)
+                logger.info(f"Created new room: {room.id}")
+
+            return room
+        except Exception as e:
+            logger.error(f"Error getting/creating room: {str(e)}")
             return None
 
 

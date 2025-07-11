@@ -87,7 +87,7 @@ def get_chat_history(request, room_id):
     if request.user != room.user1 and request.user != room.user2:
         return JsonResponse({'error': 'Unauthorized access'}, status=403)
 
-    messages = PrivateMessage.objects.filter(room=room).order_by('timestamp').values('sender__username', 'message',
+    messages = PrivateMessage.objects.filter(room=room).order_by('timestamp').values('sender__username','sender_id', 'message',
                                                                                      'timestamp')
     messages_list = [{**m, 'timestamp': int(m['timestamp'].timestamp())} for m in list(messages)]
     return JsonResponse({'messages': messages_list})
