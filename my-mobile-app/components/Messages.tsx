@@ -1,164 +1,110 @@
 import React, { useEffect, useState } from 'react';
-import { View, TextInput, TouchableOpacity, FlatList, Text, StyleSheet } from 'react-native';
-import { useWebSocket } from '@/hooks/useWebSocket';
+import { View, Text, StyleSheet, Animated, Pressable } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useNotifications } from '../contexts/NotificationContext';
 
-interface Message {
-  id: number;
-  message: string;
-  sender__username: string;
-  timestamp: number;
-}
-
-interface MessagesProps {
-  roomId: string;
-  user1Id: number;
-  user2Id: number;
-}
-
-export const Messages: React.FC<MessagesProps> = ({ roomId, user1Id, user2Id }) => {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [newMessage, setNewMessage] = useState('');
-
-  const { connect, disconnect, sendMessage, isConnected } = useWebSocket(
-    `/chat/ws/private/${roomId}/`,
-    {
-      onOpen: () => {
-        console.log('Чат подключен');
-      },
-      onMessage: (event) => {
-        const data = JSON.parse(event.data);
-        if (!data.error) {
-          setMessages((prev) => [...prev, data]);
-        } else {
-          console.error('Ошибка сообщения:', data.error);
-        }
-      },
-      onClose: () => {
-        console.log('Чат отключен');
-      },
-      onError: (error) => {
-        console.error('Ошибка чата:', error);
-      },
-    }
-  );
+export const NotificationToast: React.FC = () => {
+  const { messages, unreadCount } = useNotifications();
+  const [visible, setVisible] = useState(false);
+  const [currentMessage, setCurrentMessage] = useState('');
+  const [fadeAnim] = useState(new Animated.Value(0));
+  const [slideAnim] = useState(new Animated.Value(50));
 
   useEffect(() => {
-    connect();
-    return () => {
-      disconnect();
-    };
-  }, [connect, disconnect]);
-
-  const handleSendMessage = () => {
-    if (newMessage.trim() && isConnected()) {
-      console.log(`Sending message with user1Id: ${user1Id}, user2Id: ${user2Id}`);
-      sendMessage({
-        message: newMessage.trim(),
-        timestamp: Math.floor(Date.now() / 1000),
-        user1: user1Id,
-        user2: user2Id,
-      });
-      setNewMessage('');
+    if (messages.length > 0 && unreadCount > 0) {
+      // Показываем уведомление при получении новых сообщений
+      const totalMessages = messages.reduce((sum, msg) => sum + msg.count, 0);
+      setCurrentMessage(`У вас ${totalMessages} непрочитанных сообщений`);
+      showToast();
     }
+  }, [messages, unreadCount]);
+
+  const showToast = () => {
+    setVisible(true);
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+    ]).start();
+
+    // Автоматически скрываем через 3 секунды
+    setTimeout(() => {
+      hideToast();
+    }, 3000);
   };
 
-  const renderMessage = ({ item }: { item: Message }) => (
-    <View
-      style={styles.messageContainer}
-    >
-      <Text style={styles.username}>{item.sender__username}</Text>
-      <Text style={styles.messageText}>{item.message}</Text>
-      <Text style={styles.timestamp}>
-        {new Date(item.timestamp * 1000).toLocaleTimeString()}
-      </Text>
-    </View>
-  );
+  const hideToast = () => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 50,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      setVisible(false);
+    });
+  };
+
+  if (!visible) return null;
 
   return (
-    <View style={styles.container}>
-      <FlatList
-        data={messages}
-        renderItem={renderMessage}
-        keyExtractor={(item) => item.id.toString()}
-        style={styles.messagesList}
-      />
-      <View style={styles.inputContainer}>
-        <TextInput
-          style={styles.input}
-          value={newMessage}
-          onChangeText={setNewMessage}
-          placeholder="Введите сообщение..."
-          placeholderTextColor="#666"
-        />
-        <TouchableOpacity
-          style={styles.sendButton}
-          onPress={handleSendMessage}
-        >
-          <Text style={styles.sendButtonText}>Отправить</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
+    <Animated.View
+      style={[
+        styles.container,
+        {
+          opacity: fadeAnim,
+          transform: [{ translateY: slideAnim }],
+        },
+      ]}
+    >
+      <Pressable style={styles.toast} onPress={hideToast}>
+        <MaterialCommunityIcons name="message-text" size={24} color="#fff" />
+        <Text style={styles.message}>{currentMessage}</Text>
+        <MaterialCommunityIcons name="close" size={20} color="#fff" />
+      </Pressable>
+    </Animated.View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-    backgroundColor: '#fff',
+    position: 'absolute',
+    top: 60,
+    left: 20,
+    right: 20,
+    zIndex: 1000,
   },
-  messagesList: {
-    flex: 1,
-    padding: 10,
-  },
-  messageContainer: {
-    padding: 10,
-    marginVertical: 5,
-    backgroundColor: '#f0f0f0',
+  toast: {
+    backgroundColor: '#670000',
     borderRadius: 8,
-    maxWidth: '80%',
-  },
-  username: {
-    fontWeight: 'bold',
-    fontSize: 14,
-    marginBottom: 4,
-    color: '#333',
-  },
-  messageText: {
-    fontSize: 16,
-    color: '#000',
-  },
-  timestamp: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 4,
-    alignSelf: 'flex-end',
-  },
-  inputContainer: {
+    padding: 15,
     flexDirection: 'row',
-    padding: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#eee',
-    backgroundColor: '#fff',
+    alignItems: 'center',
+    gap: 10,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
   },
-  input: {
-    flex: 1,
-    marginRight: 10,
-    padding: 10,
-    backgroundColor: '#f8f8f8',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    color: '#000',
-  },
-  sendButton: {
-    backgroundColor: '#007AFF',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 20,
-    justifyContent: 'center',
-  },
-  sendButtonText: {
+  message: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 14,
+    flex: 1,
   },
 });

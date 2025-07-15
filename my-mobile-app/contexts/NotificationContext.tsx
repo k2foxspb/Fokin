@@ -1,9 +1,11 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { useWebSocket } from '../hooks/useWebSocket';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface NotificationContextType {
   unreadCount: number;
   messages: MessageType[];
+  senderCounts: Map<number, number>;
   connect: () => void;
   disconnect: () => void;
 }
@@ -22,6 +24,7 @@ interface NotificationData {
 const NotificationContext = createContext<NotificationContextType>({
   unreadCount: 0,
   messages: [],
+  senderCounts: new Map(),
   connect: () => {},
   disconnect: () => {},
 });
@@ -29,6 +32,17 @@ const NotificationContext = createContext<NotificationContextType>({
 export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [unreadCount, setUnreadCount] = useState<number>(0);
   const [messages, setMessages] = useState<MessageType[]>([]);
+  const [senderCounts, setSenderCounts] = useState<Map<number, number>>(new Map());
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+
+  // Проверяем аутентификацию при инициализации
+  useEffect(() => {
+    const checkAuth = async () => {
+      const token = await AsyncStorage.getItem('userToken');
+      setIsAuthenticated(!!token);
+    };
+    checkAuth();
+  }, []);
 
   const handleMessage = (event: WebSocketMessageEvent) => {
     try {
@@ -39,7 +53,15 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         setUnreadCount(data.unique_sender_count);
         // Извлекаем массив сообщений из структуры [dict, messages[]]
         if (Array.isArray(data.messages) && data.messages.length === 2) {
-          setMessages(data.messages[1]);
+          const messageArray = data.messages[1];
+          setMessages(messageArray);
+
+          // Создаем Map для быстрого поиска количества сообщений по sender_id
+          const newSenderCounts = new Map<number, number>();
+          messageArray.forEach(message => {
+            newSenderCounts.set(message.sender_id, message.count);
+          });
+          setSenderCounts(newSenderCounts);
         }
       }
     } catch (error) {
@@ -56,22 +78,27 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       console.log('Notification WebSocket closed');
       setUnreadCount(0);
       setMessages([]);
+      setSenderCounts(new Map());
     },
-    onError: (error) => {
+    onError: (error: any) => {
       console.error('Notification WebSocket error:', error);
     },
   });
 
   useEffect(() => {
-    connect();
+    // Подключаемся только если пользователь аутентифицирован
+    if (isAuthenticated) {
+      connect();
+    }
     return () => {
       disconnect();
     };
-  }, []);
+  }, [isAuthenticated]);
 
   const value = {
     unreadCount,
     messages,
+    senderCounts,
     connect,
     disconnect,
   };

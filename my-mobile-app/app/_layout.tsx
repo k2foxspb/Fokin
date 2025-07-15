@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { useSegments, useRouter } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { NotificationProvider } from '../contexts/NotificationContext';
+import { NotificationToast } from '../components/Messages';
 
 export default function RootLayout() {
   const segments = useSegments();
@@ -29,8 +30,7 @@ export default function RootLayout() {
   return (
     <NotificationProvider>
       <Stack screenOptions={{ headerShown: false }} />
+      <NotificationToast />
     </NotificationProvider>
   );
-
-
 }

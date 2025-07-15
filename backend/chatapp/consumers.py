@@ -128,20 +128,6 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         self.room_name = self.scope['url_route']['kwargs']['room_name']
         self.user = self.scope['user']
-        # Добавляем debug информацию
-        logger.info(f"=== WEBSOCKET CONNECTION DEBUG ===")
-        logger.info(f"Room name: {self.room_name}")
-        logger.info(f"User: {self.user}")
-        logger.info(f"User authenticated: {self.user.is_authenticated}")
-        logger.info(f"User type: {type(self.user)}")
-
-        # Проверяем query string
-        query_string = self.scope.get('query_string', b'').decode()
-        logger.info(f"Query string: {query_string}")
-
-        # Проверяем headers
-        headers = dict(self.scope.get('headers', []))
-        logger.info(f"Headers: {headers}")
 
         if not self.user.is_authenticated:
             await self.close()
@@ -192,11 +178,6 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
                     'id': new_message.id
                 }
 
-                print(f"=== SENDING TO WEBSOCKET ===")
-                print(f"message_data: {message_data}")
-                print(f"self.user.email: {self.user.email}")
-                print(f"self.user.username: {self.user.username}")
-
                 await self.channel_layer.group_send(
                     self.room_name,
                     message_data
@@ -238,11 +219,6 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
 
     @sync_to_async
     def save_message(self, user1_id, user2_id, message, timestamp, user):
-        print(f"=== SAVE MESSAGE DEBUG ===")
-        print(f"user1_id: {user1_id}, user2_id: {user2_id}")
-        print(f"self.room_name: {self.room_name}")
-        print(f"user: {user}")
-
         try:
             with transaction.atomic():
                 user1 = CustomUser.objects.get(pk=user1_id)

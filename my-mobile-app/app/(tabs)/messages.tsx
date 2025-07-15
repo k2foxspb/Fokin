@@ -1,9 +1,11 @@
+
 import React, { useState, useEffect } from 'react';
 import { View, FlatList, StyleSheet, Pressable, Text, Image, ActivityIndicator, RefreshControl } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import axios from 'axios';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useNotifications } from '../../contexts/NotificationContext';
 
 interface User {
   id: number;
@@ -15,12 +17,13 @@ interface ChatPreview {
   id: number;
   other_user: User;
   last_message: string;
-  last_message_time: string;
+  last_message_time: string | number;
   unread_count: number;
 }
 
 export default function MessagesScreen() {
   const router = useRouter();
+  const { senderCounts } = useNotifications();
   const [chats, setChats] = useState<ChatPreview[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -34,7 +37,8 @@ export default function MessagesScreen() {
     setError(null);
 
     try {
-      const token = await AsyncStorage.getItem('token');
+      // Используем тот же ключ, что и в _layout.tsx
+      const token = await AsyncStorage.getItem('userToken');
       console.log('Token retrieved:', token ? 'Token exists' : 'No token');
 
       if (!token) {
@@ -61,7 +65,8 @@ export default function MessagesScreen() {
       console.log('Error occurred:', error);
       if (axios.isAxiosError(error)) {
         if (error.response?.status === 401) {
-          await AsyncStorage.removeItem('token');
+          // Удаляем тот же ключ
+          await AsyncStorage.removeItem('userToken');
           router.replace('/login');
           return;
         }
@@ -86,22 +91,67 @@ export default function MessagesScreen() {
     fetchChats();
   }, []);
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const yesterday = new Date(now);
-    yesterday.setDate(yesterday.getDate() - 1);
+  // Получаем количество непрочитанных сообщений из WebSocket данных
+  const getUnreadCount = (userId: number) => {
+    return senderCounts.get(userId) || 0;
+  };
 
-    if (date.toDateString() === now.toDateString()) {
-      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    } else if (date.toDateString() === yesterday.toDateString()) {
-      return 'Вчера';
-    } else {
-      return date.toLocaleDateString('ru-RU', {
-        day: '2-digit',
-        month: '2-digit',
-        year: '2-digit'
-      });
+  const formatDate = (timestamp: string | number) => {
+    try {
+      if (!timestamp) {
+        return '';
+      }
+
+      // Преобразуем timestamp в число
+      let timestampNum: number;
+      if (typeof timestamp === 'string') {
+        timestampNum = parseInt(timestamp, 10);
+      } else {
+        timestampNum = timestamp;
+      }
+
+      // Проверяем, что timestamp валидный
+      if (isNaN(timestampNum) || timestampNum <= 0) {
+        console.warn('Invalid timestamp:', timestamp);
+        return 'Неверная дата';
+      }
+
+      // Создаем дату из timestamp (умножаем на 1000, так как JS работает с миллисекундами)
+      const date = new Date(timestampNum * 1000);
+
+      // Проверяем, что дата валидная
+      if (isNaN(date.getTime())) {
+        console.warn('Invalid date from timestamp:', timestamp);
+        return 'Неверная дата';
+      }
+
+      const now = new Date();
+      const yesterday = new Date(now);
+      yesterday.setDate(yesterday.getDate() - 1);
+
+      // Сравниваем даты по дням
+      const dateDay = date.toDateString();
+      const nowDay = now.toDateString();
+      const yesterdayDay = yesterday.toDateString();
+
+      if (dateDay === nowDay) {
+        return date.toLocaleTimeString('ru-RU', {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false
+        });
+      } else if (dateDay === yesterdayDay) {
+        return 'Вчера';
+      } else {
+        return date.toLocaleDateString('ru-RU', {
+          day: '2-digit',
+          month: '2-digit',
+          year: '2-digit'
+        });
+      }
+    } catch (error) {
+      console.error('Error formatting timestamp:', error, 'Original value:', timestamp);
+      return 'Неверная дата';
     }
   };
 
@@ -140,13 +190,14 @@ export default function MessagesScreen() {
           </Pressable>
         </View>
       ) : (
-        <>
-          <Text style={styles.debugText}>
-            Чатов: {chats.length}, Загрузка: {isLoading ? 'да' : 'нет'}
-          </Text>
-          <FlatList
-            data={chats}
-            renderItem={({ item }) => (
+        <FlatList
+          data={chats}
+          renderItem={({ item }) => {
+            // Используем данные из WebSocket для отображения актуального количества непрочитанных сообщений
+            const wsUnreadCount = getUnreadCount(item.other_user.id);
+            const displayUnreadCount = wsUnreadCount > 0 ? wsUnreadCount : item.unread_count;
+
+            return (
               <Pressable
                 style={({ pressed }) => [
                   styles.chatItem,
@@ -187,32 +238,32 @@ export default function MessagesScreen() {
                     {item.last_message}
                   </Text>
                 </View>
-                {item.unread_count > 0 && (
+                {displayUnreadCount > 0 && (
                   <View style={styles.badge}>
                     <Text style={styles.badgeText}>
-                      {item.unread_count > 99 ? '99+' : item.unread_count}
+                      {displayUnreadCount > 99 ? '99+' : displayUnreadCount}
                     </Text>
                   </View>
                 )}
               </Pressable>
-            )}
-            keyExtractor={item => item.id.toString()}
-            refreshControl={
-              <RefreshControl
-                refreshing={isRefreshing}
-                onRefresh={onRefresh}
-                colors={['#007AFF']}
-                tintColor="#007AFF"
-              />
-            }
-            ListEmptyComponent={() => (
-              <View style={styles.emptyContainer}>
-                <MaterialCommunityIcons name="chat-outline" size={50} color="#666" />
-                <Text style={styles.emptyText}>У вас пока нет чатов</Text>
-              </View>
-            )}
-          />
-        </>
+            );
+          }}
+          keyExtractor={item => item.id.toString()}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={onRefresh}
+              colors={['#007AFF']}
+              tintColor="#007AFF"
+            />
+          }
+          ListEmptyComponent={() => (
+            <View style={styles.emptyContainer}>
+              <MaterialCommunityIcons name="chat-outline" size={50} color="#666" />
+              <Text style={styles.emptyText}>У вас пока нет чатов</Text>
+            </View>
+          )}
+        />
       )}
     </View>
   );
@@ -318,11 +369,6 @@ const styles = StyleSheet.create({
   },
   retryButtonText: {
     color: '#fff',
-  },
-  debugText: {
-    padding: 10,
-    backgroundColor: '#f0f0f0',
-    color: '#333',
   },
   loadingText: {
     marginTop: 10,
