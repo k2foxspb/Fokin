@@ -117,4 +117,4 @@ export const useWebSocket = (url, options = {}) => {
         isConnected: isConnectedState,
         reconnect
     };
-};
+} ;

@@ -67,6 +67,12 @@ export default function Profile() {
     }
   };
 
+  const handleViewAlbums = () => {
+    if (profile) {
+      router.push(`/albums/${profile.username}`);
+    }
+  };
+
     if (!profile) {
         return (
             <View style={styles.loadingContainer}>
@@ -117,6 +123,14 @@ export default function Profile() {
                 >
                     <Ionicons name="create-outline" size={20} color="#007AFF"/>
                     <Text style={styles.actionButtonText}>Редактировать профиль</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                    style={styles.actionButton}
+                    onPress={handleViewAlbums}
+                >
+                    <Ionicons name="images-outline" size={20} color="#007AFF"/>
+                    <Text style={styles.actionButtonText}>Мои альбомы</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity

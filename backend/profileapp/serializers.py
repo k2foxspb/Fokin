@@ -14,3 +14,10 @@ class UserProfileSerializer(serializers.ModelSerializer):
             today = date.today()
             return today.year - obj.birthday.year
         return None
+
+
+class UserListSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CustomUser
+        fields = ['id', 'username', 'first_name', 'last_name', 'avatar', 'is_online']
+        read_only_fields = ['id', 'username', 'avatar', 'is_online']

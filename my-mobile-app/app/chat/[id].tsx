@@ -126,8 +126,6 @@ export default function ChatScreen() {
                 }
             },
             onClose: () => {
-                console.log('=== WebSocket DISCONNECTED ===');
-                console.log('Room ID:', roomId);
                 setIsConnected(false);
             },
             onError: (error) => {

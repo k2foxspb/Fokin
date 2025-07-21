@@ -5,7 +5,7 @@ from django.shortcuts import get_object_or_404
 from authapp.models import CustomUser
 from chatapp.models import Message, PrivateMessage
 from chatapp.serializers import MessageSerializer
-from .serializers import UserProfileSerializer
+from .serializers import UserProfileSerializer, UserListSerializer
 
 
 class UserProfileAPIView(generics.RetrieveAPIView):
@@ -24,6 +24,18 @@ class CurrentUserProfileAPIView(generics.RetrieveUpdateAPIView):
     def get_object(self):
         return self.request.user
 
+
+class UserListAPIView(generics.ListAPIView):
+    serializer_class = UserListSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        queryset = CustomUser.objects.all()
+        search_query = self.request.query_params.get('search', None)
+        if search_query:
+            queryset = queryset.filter(username__icontains=search_query)
+        return queryset
+
 class ChatHistoryView(generics.ListAPIView):
     permission_classes = [IsAuthenticated]
     serializer_class = MessageSerializer
@@ -38,4 +50,3 @@ class ChatHistoryView(generics.ListAPIView):
         return Response({
             'messages': serializer.data
         })
-
