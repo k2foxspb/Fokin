@@ -1,5 +1,7 @@
 import { useState, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { API_CONFIG } from '../config/api';
+
 
 export const useWebSocket = (url, options = {}) => {
     const [isConnected, setIsConnected] = useState(false);
@@ -21,11 +23,11 @@ export const useWebSocket = (url, options = {}) => {
             if (token) {
                 // Добавляем токен в query string
                 const separator = url.includes('?') ? '&' : '?';
-                wsUrl = `ws://127.0.0.1:8000${url}${separator}token=${token}`;
+                wsUrl = `${API_CONFIG.WS_URL}${url}${separator}token=${token}`;
                 console.log('Connecting with token to:', wsUrl);
             } else {
                 // Подключаемся без токена (для веб-приложения)
-                wsUrl = `ws://127.0.0.1:8000${url}`;
+                wsUrl = `${API_CONFIG.WS_URL}${url}`;
                 console.log('Connecting without token to:', wsUrl);
             }
 
