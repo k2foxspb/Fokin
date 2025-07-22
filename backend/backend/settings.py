@@ -65,31 +65,31 @@ REST_FRAMEWORK = {
     ],
 }
 # CORS configuration for production
-if DEBUG:
-    # Development: Allow all origins
-    CORS_ALLOW_ALL_ORIGINS = True
-else:
-    # Production: Only allow specific origins
-    CORS_ALLOWED_ORIGINS = [
-        "https://fokin.fun",
-        "http://fokin.fun",  # In case HTTP is needed
-    ]
-    CORS_ALLOW_ALL_ORIGINS = False
-
+# if DEBUG:
+#     # Development: Allow all origins
+#     CORS_ALLOW_ALL_ORIGINS = True
+# else:
+#     # Production: Only allow specific origins
+#     CORS_ALLOWED_ORIGINS = [
+#         "https://fokin.fun",
+#         "http://fokin.fun",  # In case HTTP is needed
+#     ]
+#     CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
 
 # Additional CORS settings for mobile app
-CORS_ALLOW_HEADERS = [
-    'accept',
-    'accept-encoding',
-    'authorization',
-    'content-type',
-    'dnt',
-    'origin',
-    'user-agent',
-    'x-csrftoken',
-    'x-requested-with',
-]
+# CORS_ALLOW_HEADERS = [
+#     'accept',
+#     'accept-encoding',
+#     'authorization',
+#     'content-type',
+#     'dnt',
+#     'origin',
+#     'user-agent',
+#     'x-csrftoken',
+#     'x-requested-with',
+# ]
 
 TEMPLATES = [
     {
