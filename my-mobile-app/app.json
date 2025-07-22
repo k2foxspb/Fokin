@@ -12,12 +12,14 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "com.yourcompany.mymobileapp",
+      "versionCode": 1,
+
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.k2foxspb.mymobileapp"
     },
     "web": {
       "bundler": "metro",
