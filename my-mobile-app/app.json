@@ -16,7 +16,8 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "package": "com.k2foxspb.mymobileapp"
     },
     "web": {
       "bundler": "metro",
@@ -41,8 +42,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "4217658a-2e6d-4557-a37e-39277dd6efd8"
+        "projectId": "3244fb38-c511-4857-a6e1-5d65cd7faa63"
       }
-    }
+    },
+    "owner": "k2foxspb"
   }
 }
