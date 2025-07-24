@@ -9,6 +9,7 @@ urlpatterns = [
     path('<slug:username>/', views.profile_view, name='profile'),
     path('api/users/', UserListAPIView.as_view(), name='api_users_list'),
     path('api/profile/me/', CurrentUserProfileAPIView.as_view(), name='api_profile_me'),
+    path('api/current-user/', CurrentUserProfileAPIView.as_view(), name='api_current_user'),
     path('api/profile/<str:username>/', UserProfileAPIView.as_view(), name='api_profile_user'),
 
     path('api/chat_history/<int:room_id>/', ChatHistoryView.as_view(), name='chat_history'),

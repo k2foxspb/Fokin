@@ -13,6 +13,7 @@ import {router} from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import {Ionicons} from '@expo/vector-icons';
+import ProfileEditModal from '../../components/ProfileEditModal';
 
 interface UserProfile {
     id: number;
@@ -27,6 +28,7 @@ interface UserProfile {
 export default function Profile() {
     const [profile, setProfile] = useState<UserProfile | null>(null);
     const [refreshing, setRefreshing] = useState(false);
+    const [editModalVisible, setEditModalVisible] = useState(false);
 
     const fetchProfile = async () => {
         try {
@@ -58,20 +60,20 @@ export default function Profile() {
     }, []);
 
     const handleLogout = async () => {
-    try {
-      await AsyncStorage.removeItem('userToken');
-      delete axios.defaults.headers.common['Authorization'];
-      router.replace('/login');
-    } catch (error) {
-      Alert.alert('Ошибка', 'Не удалось выйти из системы');
-    }
-  };
+        try {
+            await AsyncStorage.removeItem('userToken');
+            delete axios.defaults.headers.common['Authorization'];
+            router.replace('/login');
+        } catch (error) {
+            Alert.alert('Ошибка', 'Не удалось выйти из системы');
+        }
+    };
 
-  const handleViewAlbums = () => {
-    if (profile) {
-      router.push(`/albums/${profile.username}`);
-    }
-  };
+    const handleViewAlbums = () => {
+        if (profile) {
+            router.push(`/albums/${profile.username}`);
+        }
+    };
 
     if (!profile) {
         return (
@@ -82,68 +84,80 @@ export default function Profile() {
     }
 
     return (
-        <ScrollView
-            style={styles.container}
-            refreshControl={
-                <RefreshControl refreshing={refreshing} onRefresh={onRefresh}/>
-            }
-        >
-            <View style={styles.header}>
-                <Image
-                    source={
-                        profile.gender === 'male'
-                            ? require('../../assets/avatar/male.png')
-                            : require('../../assets/avatar/female.png')
-                    }
-                    style={styles.avatar}
-                />
-                <Text style={styles.name}>
-                    {profile.first_name} {profile.last_name}
-                </Text>
-                <Text style={styles.username}>@{profile.username}</Text>
-            </View>
-
-            <View style={styles.infoSection}>
-                <View style={styles.infoRow}>
-                    <Ionicons name="mail-outline" size={20} color="#666"/>
-                    <Text style={styles.infoText}>{profile.email}</Text>
-                </View>
-                {profile.bio && (
-                    <View style={styles.infoRow}>
-                        <Ionicons name="information-circle-outline" size={20} color="#666"/>
-                        <Text style={styles.infoText}>{profile.bio}</Text>
-                    </View>
-                )}
-            </View>
-
-            <View style={styles.actionsSection}>
-                <TouchableOpacity
-                    style={styles.actionButton}
-                    onPress={() => router.push('/(tabs)/profile/edit')}
-                >
-                    <Ionicons name="create-outline" size={20} color="#007AFF"/>
-                    <Text style={styles.actionButtonText}>Редактировать профиль</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                    style={styles.actionButton}
-                    onPress={handleViewAlbums}
-                >
-                    <Ionicons name="images-outline" size={20} color="#007AFF"/>
-                    <Text style={styles.actionButtonText}>Мои альбомы</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                    style={[styles.actionButton, styles.logoutButton]}
-                    onPress={handleLogout}
-                >
-                    <Ionicons name="log-out-outline" size={20} color="#FF3B30"/>
-                    <Text style={[styles.actionButtonText, styles.logoutText]}>
-                        Выйти из аккаунта
+        <>
+            <ScrollView
+                style={styles.container}
+                refreshControl={
+                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh}/>
+                }
+            >
+                <View style={styles.header}>
+                    <Image
+                        source={
+                            profile.avatar
+                                ? {uri: profile.avatar}
+                                : require('../../assets/avatar/male.png')
+                        }
+                        style={styles.avatar}
+                    />
+                    <Text style={styles.name}>
+                        {profile.first_name} {profile.last_name}
                     </Text>
-                </TouchableOpacity>
-            </View>
-        </ScrollView>
+                    <Text style={styles.username}>@{profile.username}</Text>
+                </View>
+
+                <View style={styles.infoSection}>
+                    <View style={styles.infoRow}>
+                        <Ionicons name="mail-outline" size={20} color="#666"/>
+                        <Text style={styles.infoText}>{profile.email}</Text>
+                    </View>
+                    {profile.bio && (
+                        <View style={styles.infoRow}>
+                            <Ionicons name="information-circle-outline" size={20} color="#666"/>
+                            <Text style={styles.infoText}>{profile.bio}</Text>
+                        </View>
+                    )}
+                </View>
+
+                <View style={styles.actionsSection}>
+                    <TouchableOpacity
+                        style={styles.actionButton}
+                        onPress={() => setEditModalVisible(true)}
+                    >
+                        <Ionicons name="create-outline" size={20} color="#007AFF"/>
+                        <Text style={styles.actionButtonText}>Редактировать профиль</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        style={styles.actionButton}
+                        onPress={handleViewAlbums}
+                    >
+                        <Ionicons name="images-outline" size={20} color="#007AFF"/>
+                        <Text style={styles.actionButtonText}>Мои альбомы</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        style={[styles.actionButton, styles.logoutButton]}
+                        onPress={handleLogout}
+                    >
+                        <Ionicons name="log-out-outline" size={20} color="#FF3B30"/>
+                        <Text style={[styles.actionButtonText, styles.logoutText]}>
+                            Выйти из аккаунта
+                        </Text>
+                    </TouchableOpacity>
+                </View>
+            </ScrollView>
+
+            <ProfileEditModal
+                visible={editModalVisible}
+                profile={profile}
+                onClose={() => setEditModalVisible(false)}
+                onProfileUpdated={() => {
+                    fetchProfile();
+                    setEditModalVisible(false);
+                }}
+            />
+        </>
     );
 }
 

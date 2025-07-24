@@ -15,6 +15,8 @@ import { router, useLocalSearchParams } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { Ionicons } from '@expo/vector-icons';
+import AlbumCreateModal from '../../components/AlbumCreateModal';
+import AlbumEditModal from '../../components/AlbumEditModal';
 
 const { width } = Dimensions.get('window');
 const albumWidth = (width - 48) / 2; // 2 columns with margins
@@ -41,6 +43,27 @@ export default function UserAlbums() {
   const [albums, setAlbums] = useState<Album[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [currentUser, setCurrentUser] = useState<string | null>(null);
+  const [createModalVisible, setCreateModalVisible] = useState(false);
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [selectedAlbum, setSelectedAlbum] = useState<Album | null>(null);
+
+  const getCurrentUser = async () => {
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      if (!token) return;
+
+      const response = await axios.get(
+        'http://localhost:8000/profile/api/current-user/',
+        {
+          headers: { Authorization: `Token ${token}` }
+        }
+      );
+      setCurrentUser(response.data.username);
+    } catch (error) {
+      console.log('Error fetching current user:', error);
+    }
+  };
 
   const fetchAlbums = async () => {
     try {
@@ -74,6 +97,7 @@ export default function UserAlbums() {
 
   useEffect(() => {
     if (username) {
+      getCurrentUser();
       fetchAlbums();
     }
   }, [username]);
@@ -82,10 +106,28 @@ export default function UserAlbums() {
     router.push(`/album/${albumId}`);
   };
 
+  const handleAlbumLongPress = (album: Album) => {
+    // Only allow editing own albums
+    if (currentUser === username) {
+      setSelectedAlbum(album);
+      setEditModalVisible(true);
+    }
+  };
+
+  const handleAlbumUpdated = () => {
+    fetchAlbums();
+  };
+
+  const handleAlbumDeleted = () => {
+    fetchAlbums();
+    router.back(); // Go back if we're viewing the deleted album's owner
+  };
+
   const renderAlbum = ({ item }: { item: Album }) => (
     <TouchableOpacity
       style={styles.albumItem}
       onPress={() => handleAlbumPress(item.id)}
+      onLongPress={() => handleAlbumLongPress(item)}
     >
       <View style={styles.albumCover}>
         {item.cover_photo ? (
@@ -99,18 +141,18 @@ export default function UserAlbums() {
             <Ionicons name="images-outline" size={40} color="#ccc" />
           </View>
         )}
-        
+
         {item.hidden_flag && (
           <View style={styles.hiddenBadge}>
             <Ionicons name="eye-off" size={16} color="white" />
           </View>
         )}
-        
+
         <View style={styles.photoCount}>
           <Text style={styles.photoCountText}>{item.photos_count}</Text>
         </View>
       </View>
-      
+
       <View style={styles.albumInfo}>
         <Text style={styles.albumTitle} numberOfLines={2}>
           {item.title}
@@ -137,7 +179,7 @@ export default function UserAlbums() {
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={24} color="#007AFF" />
         </TouchableOpacity>
-        
+
         <Ionicons name="images-outline" size={64} color="#ccc" />
         <Text style={styles.emptyText}>У пользователя нет альбомов</Text>
         <TouchableOpacity style={styles.refreshButton} onPress={fetchAlbums}>
@@ -154,8 +196,17 @@ export default function UserAlbums() {
           <Ionicons name="arrow-back" size={24} color="#007AFF" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Альбомы @{username}</Text>
+        {currentUser === username && (
+          <TouchableOpacity
+            style={styles.createButton}
+            onPress={() => setCreateModalVisible(true)}
+          >
+            <Ionicons name="add" size={24} color="#007AFF" />
+          </TouchableOpacity>
+        )}
+
       </View>
-      
+
       <FlatList
         data={albums}
         renderItem={renderAlbum}
@@ -167,6 +218,25 @@ export default function UserAlbums() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContainer}
         columnWrapperStyle={styles.row}
+      />
+
+      <AlbumCreateModal
+        visible={createModalVisible}
+        onClose={() => setCreateModalVisible(false)}
+        onAlbumCreated={() => {
+          fetchAlbums();
+        }}
+      />
+
+      <AlbumEditModal
+        visible={editModalVisible}
+        album={selectedAlbum}
+        onClose={() => {
+          setEditModalVisible(false);
+          setSelectedAlbum(null);
+        }}
+        onAlbumUpdated={handleAlbumUpdated}
+        onAlbumDeleted={handleAlbumDeleted}
       />
     </View>
   );
@@ -197,6 +267,11 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     color: '#333',
+    flex: 1,
+  },
+  createButton: {
+    marginLeft: 16,
+    padding: 4,
   },
   loadingContainer: {
     flex: 1,

@@ -41,6 +41,17 @@ class Photo(models.Model):
     )
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
+    def clean(self):
+        """Validate that the photo has an image file"""
+        from django.core.exceptions import ValidationError
+        if not self.image or not self.image.name:
+            raise ValidationError("Photo must have an image file")
+
+    def save(self, *args, **kwargs):
+        """Override save to ensure validation"""
+        self.full_clean()
+        super().save(*args, **kwargs)
+
     def get_next_photo(self):
         try:
             next_photo = self.album.photos.filter(id__gt=self.id, image__isnull=False).order_by(

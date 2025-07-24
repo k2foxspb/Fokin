@@ -90,15 +90,20 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
 
     def save(self, *args, **kwargs):
         if not self.avatar and self.gender:  # Проверяем, есть ли пол и аватар
+            # Use BASE_DIR to get the correct path to static files
+            base_dir = Path(settings.BASE_DIR)
             if self.gender == 'male':
-                default_avatar_path = os.path.join(settings.STATIC_ROOT, 'img/avatar/male.png')
-                print(default_avatar_path)
+                default_avatar_path = base_dir / 'static' / 'img' / 'avatar' / 'male.png'
             else:
-                default_avatar_path =os.path.join(settings.STATIC_ROOT, 'img', 'avatar', 'female.png')
+                default_avatar_path = base_dir / 'static' / 'img' / 'avatar' / 'female.png'
 
             try:
-                with open(default_avatar_path, 'rb') as f:
-                    self.avatar.save('default_avatar.jpg', File(f), save=False)  # сохраняем аватарку
-            except FileNotFoundError:
-                print("Файл дефолтного аватара не найден!")
+                if default_avatar_path.exists():
+                    with open(default_avatar_path, 'rb') as f:
+                        filename = f'default_avatar_{self.gender}.png'
+                        self.avatar.save(filename, File(f), save=False)
+                else:
+                    print(f"Файл дефолтного аватара не найден: {default_avatar_path}")
+            except Exception as e:
+                print(f"Ошибка при установке дефолтного аватара: {e}")
         super().save(*args, **kwargs)  # вызов родительского метода save()

@@ -15,6 +15,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { Ionicons } from '@expo/vector-icons';
 import { API_CONFIG } from '../config';
+import ProfileEditModal from '../../components/ProfileEditModal';
 
 interface UserProfile {
   id: number;
@@ -35,6 +36,25 @@ export default function UserDetail() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [currentUser, setCurrentUser] = useState<string | null>(null);
+  const [editModalVisible, setEditModalVisible] = useState(false);
+
+  const getCurrentUser = async () => {
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      if (!token) return;
+
+      const response = await axios.get(
+        `${API_CONFIG.BASE_URL}/profile/api/current-user/`,
+        {
+          headers: { Authorization: `Token ${token}` }
+        }
+      );
+      setCurrentUser(response.data.username);
+    } catch (error) {
+      console.log('Error fetching current user:', error);
+    }
+  };
 
   const fetchUserProfile = async () => {
     try {
@@ -68,6 +88,7 @@ export default function UserDetail() {
 
   useEffect(() => {
     if (username) {
+      getCurrentUser();
       fetchUserProfile();
     }
   }, [username]);
@@ -136,80 +157,101 @@ export default function UserDetail() {
   }
 
   return (
-    <ScrollView
-      style={styles.container}
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-      }
-    >
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backIcon} onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color="#007AFF" />
-        </TouchableOpacity>
+    <>
+      <ScrollView
+        style={styles.container}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+      >
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backIcon} onPress={() => router.back()}>
+            <Ionicons name="arrow-back" size={24} color="#007AFF" />
+          </TouchableOpacity>
 
-        <View style={styles.avatarContainer}>
-          <Image
-            source={
-              profile.avatar_url
-                ? { uri: profile.avatar_url }
-                : profile.gender === 'male'
-                ? require('../../assets/avatar/male.png')
-                : require('../../assets/avatar/female.png')
-            }
-            style={styles.avatar}
-          />
-          <View style={[
-            styles.onlineIndicator,
-            { backgroundColor: profile.is_online === 'online' ? '#4CAF50' : '#9E9E9E' }
-          ]} />
-        </View>
+          <View style={styles.avatarContainer}>
+            <Image
+              source={
+                profile.avatar_url
+                  ? { uri: profile.avatar_url }
+                  : profile.gender === 'male'
+                  ? require('../../assets/avatar/male.png')
+                  : require('../../assets/avatar/female.png')
+              }
+              style={styles.avatar}
+            />
+            <View style={[
+              styles.onlineIndicator,
+              { backgroundColor: profile.is_online === 'online' ? '#4CAF50' : '#9E9E9E' }
+            ]} />
+          </View>
 
-        <Text style={styles.name}>
-          {profile.first_name} {profile.last_name}
-        </Text>
-        <Text style={styles.username}>@{profile.username}</Text>
-        <Text style={[
-          styles.onlineStatus,
-          { color: profile.is_online === 'online' ? '#4CAF50' : '#9E9E9E' }
-        ]}>
-          {profile.is_online === 'online' ? 'в сети' : 'не в сети'}
-        </Text>
-      </View>
-
-      <View style={styles.infoSection}>
-        <View style={styles.infoRow}>
-          <Ionicons name="mail-outline" size={20} color="#666" />
-          <Text style={styles.infoText}>{profile.email}</Text>
-        </View>
-
-        <View style={styles.infoRow}>
-          <Ionicons name="person-outline" size={20} color="#666" />
-          <Text style={styles.infoText}>
-            {profile.gender === 'male' ? 'Мужчина' : 'Женщина'}
+          <Text style={styles.name}>
+            {profile.first_name} {profile.last_name}
+          </Text>
+          <Text style={styles.username}>@{profile.username}</Text>
+          <Text style={[
+            styles.onlineStatus,
+            { color: profile.is_online === 'online' ? '#4CAF50' : '#9E9E9E' }
+          ]}>
+            {profile.is_online === 'online' ? 'в сети' : 'не в сети'}
           </Text>
         </View>
 
-        <View style={styles.infoRow}>
-          <Ionicons name="calendar-outline" size={20} color="#666" />
-          <Text style={styles.infoText}>
-            {formatBirthday(profile.birthday)}
-            {profile.age && ` (${profile.age} лет)`}
-          </Text>
+        <View style={styles.infoSection}>
+          <View style={styles.infoRow}>
+            <Ionicons name="mail-outline" size={20} color="#666" />
+            <Text style={styles.infoText}>{profile.email}</Text>
+          </View>
+
+          <View style={styles.infoRow}>
+            <Ionicons name="person-outline" size={20} color="#666" />
+            <Text style={styles.infoText}>
+              {profile.gender === 'male' ? 'Мужчина' : 'Женщина'}
+            </Text>
+          </View>
+
+          <View style={styles.infoRow}>
+            <Ionicons name="calendar-outline" size={20} color="#666" />
+            <Text style={styles.infoText}>
+              {formatBirthday(profile.birthday)}
+              {profile.age && ` (${profile.age} лет)`}
+            </Text>
+          </View>
         </View>
-      </View>
 
-      <View style={styles.actionSection}>
-        <TouchableOpacity style={styles.albumsButton} onPress={handleViewAlbums}>
-          <Ionicons name="images-outline" size={20} color="#007AFF" />
-          <Text style={styles.albumsButtonText}>Фотоальбомы</Text>
-        </TouchableOpacity>
+        <View style={styles.actionSection}>
+          <TouchableOpacity style={styles.albumsButton} onPress={handleViewAlbums}>
+            <Ionicons name="images-outline" size={20} color="#007AFF" />
+            <Text style={styles.albumsButtonText}>Фотоальбомы</Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity style={styles.messageButton} onPress={handleSendMessage}>
-          <Ionicons name="chatbubble-outline" size={20} color="white" />
-          <Text style={styles.messageButtonText}>Написать сообщение</Text>
-        </TouchableOpacity>
-      </View>
-    </ScrollView>
+          {currentUser === username ? (
+            <TouchableOpacity 
+              style={styles.editButton} 
+              onPress={() => setEditModalVisible(true)}
+            >
+              <Ionicons name="create-outline" size={20} color="white" />
+              <Text style={styles.editButtonText}>Редактировать профиль</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity style={styles.messageButton} onPress={handleSendMessage}>
+              <Ionicons name="chatbubble-outline" size={20} color="white" />
+              <Text style={styles.messageButtonText}>Написать сообщение</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </ScrollView>
+      
+      <ProfileEditModal
+        visible={editModalVisible}
+        profile={profile}
+        onClose={() => setEditModalVisible(false)}
+        onProfileUpdated={() => {
+          fetchUserProfile();
+        }}
+      />
+    </>
   );
 }
 
@@ -344,6 +386,20 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   messageButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  editButton: {
+    backgroundColor: '#34C759',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    borderRadius: 12,
+  },
+  editButtonText: {
     color: 'white',
     fontSize: 16,
     fontWeight: '600',
