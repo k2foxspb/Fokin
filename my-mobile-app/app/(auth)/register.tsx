@@ -13,8 +13,7 @@ import axios, { AxiosError } from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from "expo-router";
 import { Link } from "expo-router";
-
-const API_URL = 'http://localhost:8000';
+import { API_CONFIG } from '../config';
 
 interface RegisterResponse {
   token: string;
@@ -65,7 +64,7 @@ export default function Register() {
 
     setLoading(true);
     try {
-      const response = await axios.post<RegisterResponse>(`${API_URL}/authentication/api/register/`, {
+      const response = await axios.post<RegisterResponse>(`${API_CONFIG.BASE_URL}/authentication/api/register/`, {
         username: username.trim(),
         email: email.trim(),
         password,

@@ -6,6 +6,7 @@ import axios from 'axios';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNotifications } from '../../contexts/NotificationContext';
+import { API_CONFIG } from '../config';
 
 interface User {
   id: number;
@@ -49,7 +50,7 @@ export default function MessagesScreen() {
 
       console.log('Making API request...');
       const response = await axios.get<ChatPreview[]>(
-        'http://127.0.0.1:8000/chat/api/chats/list_preview/',
+        `${API_CONFIG.BASE_URL}/chat/api/chats/list_preview/`,
         {
           headers: {
             'Authorization': `Token ${token}`,
@@ -214,7 +215,7 @@ export default function MessagesScreen() {
                 <View style={styles.avatarContainer}>
                   {item.other_user.avatar ? (
                     <Image
-                      source={{ uri: `http://127.0.0.1:8000${item.other_user.avatar}` }}
+                      source={{ uri: `${API_CONFIG.BASE_URL}${item.other_user.avatar}` }}
                       style={styles.avatar}
                     />
                   ) : (

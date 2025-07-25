@@ -19,6 +19,7 @@ import axios from 'axios';
 import { Ionicons } from '@expo/vector-icons';
 import PhotoUploadModal from '../../components/PhotoUploadModal';
 import AlbumEditModal from '../../components/AlbumEditModal';
+import { API_CONFIG } from '../config';
 
 const { width, height } = Dimensions.get('window');
 const photoSize = (width - 48) / 3; // 3 columns with margins
@@ -112,7 +113,7 @@ export default function AlbumDetail() {
       if (!token) return;
 
       const response = await axios.get(
-        'http://localhost:8000/profile/api/current-user/',
+        `${API_CONFIG.BASE_URL}/profile/api/current-user/`,
         {
           headers: { Authorization: `Token ${token}` }
         }
@@ -134,7 +135,7 @@ export default function AlbumDetail() {
 
       console.log('Fetching album with ID:', id);
       const response = await axios.get(
-        `http://localhost:8000/photo/api/album/${id}/`,
+        `${API_CONFIG.BASE_URL}/photo/api/album/${id}/`,
         {
           headers: { Authorization: `Token ${token}` }
         }
@@ -177,10 +178,10 @@ export default function AlbumDetail() {
         return;
       }
 
-      console.log('🔗 Sending DELETE request to:', `http://localhost:8000/photo/api/photo/${selectedPhoto.id}/`);
+      console.log('🔗 Sending DELETE request to:', `${API_CONFIG.BASE_URL}photo/${selectedPhoto.id}/`);
 
       const response = await axios.delete(
-        `http://localhost:8000/photo/api/photo/${selectedPhoto.id}/`,
+        `${API_CONFIG.BASE_URL}/photo/api/photo/${selectedPhoto.id}/`,
         {
           headers: {
             Authorization: `Token ${token}`,

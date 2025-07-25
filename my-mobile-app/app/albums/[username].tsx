@@ -17,6 +17,7 @@ import axios from 'axios';
 import { Ionicons } from '@expo/vector-icons';
 import AlbumCreateModal from '../../components/AlbumCreateModal';
 import AlbumEditModal from '../../components/AlbumEditModal';
+import {API_CONFIG} from "@/app/config";
 
 const { width } = Dimensions.get('window');
 const albumWidth = (width - 48) / 2; // 2 columns with margins
@@ -54,7 +55,7 @@ export default function UserAlbums() {
       if (!token) return;
 
       const response = await axios.get(
-        'http://localhost:8000/profile/api/current-user/',
+        `${API_CONFIG.BASE_URL}/profile/api/current-user/`,
         {
           headers: { Authorization: `Token ${token}` }
         }
@@ -74,7 +75,7 @@ export default function UserAlbums() {
       }
 
       const response = await axios.get(
-        `http://localhost:8000/photo/api/user/${username}/albums/`,
+        `${API_CONFIG.BASE_URL}/photo/api/user/${username}/albums/`,
         {
           headers: { Authorization: `Token ${token}` }
         }

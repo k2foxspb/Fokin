@@ -13,6 +13,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { Ionicons } from '@expo/vector-icons';
+import {API_CONFIG} from "@/app/config";
 
 interface AlbumCreateModalProps {
   visible: boolean;
@@ -40,7 +41,7 @@ export default function AlbumCreateModal({ visible, onClose, onAlbumCreated }: A
       }
 
       await axios.post(
-        'http://localhost:8000/photo/api/albums/create/',
+        `${API_CONFIG.BASE_URL}/photo/api/albums/create/`,
         {
           title: title.trim(),
           hidden_flag: isHidden

@@ -14,6 +14,7 @@ import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { Ionicons } from '@expo/vector-icons';
+import {API_CONFIG} from "@/app/config";
 
 interface Category {
   id: number;
@@ -44,7 +45,7 @@ export default function Feed() {
         return;
       }
 
-      const response = await axios.get('http://localhost:8000/api/articles/', {
+      const response = await axios.get(`${API_CONFIG.BASE_URL}/api/articles/`, {
         headers: { Authorization: `Token ${token}` }
       });
 

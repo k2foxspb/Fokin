@@ -14,6 +14,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import {Ionicons} from '@expo/vector-icons';
 import ProfileEditModal from '../../components/ProfileEditModal';
+import {API_CONFIG} from "@/app/config";
 
 interface UserProfile {
     id: number;
@@ -38,7 +39,7 @@ export default function Profile() {
                 return;
             }
 
-            const response = await axios.get('http://localhost:8000/profile/api/profile/me/', {
+            const response = await axios.get(`${API_CONFIG.BASE_URL}/profile/api/profile/me/`, {
                 headers: {Authorization: `Token ${token}`}
             });
 

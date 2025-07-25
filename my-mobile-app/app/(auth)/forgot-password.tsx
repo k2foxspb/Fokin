@@ -11,8 +11,7 @@ import {
 } from 'react-native';
 import axios, { AxiosError } from 'axios';
 import { Link } from "expo-router";
-
-const API_URL = 'http://localhost:8000';
+import { API_CONFIG } from '../config';
 
 export default function ForgotPassword() {
   const [email, setEmail] = useState('');
@@ -37,7 +36,7 @@ export default function ForgotPassword() {
 
     setLoading(true);
     try {
-      await axios.post(`${API_URL}/authentication/api/password-reset/`, {
+      await axios.post(`${API_CONFIG.BASE_URL}/authentication/api/password-reset/`, {
         email: email.trim(),
       });
 

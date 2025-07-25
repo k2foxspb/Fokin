@@ -13,9 +13,7 @@ import axios, { AxiosError } from 'axios'; // Добавляем AxiosError
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from "expo-router";
 import { Link } from "expo-router";
-
-const API_URL = 'http://localhost:8000'; // для Android эмулятора
-// const API_URL = 'http://localhost:8000'; // для iOS симулятора
+import { API_CONFIG } from '@/app/config';
 
 interface LoginResponse {
   token: string;
@@ -39,7 +37,7 @@ export default function Login() { // Убираем параметр navigation,
 
     setLoading(true);
     try {
-      const response = await axios.post<LoginResponse>(`${API_URL}/authentication/api/login/`, {
+      const response = await axios.post<LoginResponse>(`${API_CONFIG.BASE_URL}/authentication/api/login/`, {
         username: username.trim(),
         password,
       });

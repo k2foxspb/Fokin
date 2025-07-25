@@ -86,7 +86,7 @@ def test_api_connectivity():
     
     try:
         # Test local development server first
-        response = requests.get('http://localhost:8000/api/', timeout=5)
+        response = requests.get('${API_CONFIG.BASE_URL}api/', timeout=5)
         print(f"✓ Local API accessible: {response.status_code}")
     except requests.exceptions.RequestException:
         print("ℹ Local API not accessible (server may not be running)")

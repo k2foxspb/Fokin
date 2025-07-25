@@ -13,10 +13,11 @@ import {
     ActivityIndicator,
 } from 'react-native';
 import {Stack, useLocalSearchParams, useRouter} from 'expo-router';
-import {useWebSocket} from '../../hooks/useWebSocket';
+import {useWebSocket} from '@/hooks/useWebSocket';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {MaterialIcons} from '@expo/vector-icons';
+import { API_CONFIG } from '../config';
 
 interface Message {
     id: number;
@@ -227,10 +228,10 @@ export default function ChatScreen() {
             const token = await getToken();
             if (!token) return null;
 
-            console.log('Fetching current user from:', 'http://127.0.0.1:8000/profile/api/profile/me/');
+            console.log('Fetching current user from:', `${API_CONFIG.BASE_URL}/profile/api/profile/me/`);
 
             const response = await axios.get(
-                'http://127.0.0.1:8000/profile/api/profile/me/',
+                `${API_CONFIG.BASE_URL}/profile/api/profile/me/`,
                 {
                     headers: {'Authorization': `Token ${token}`}
                 }
@@ -272,7 +273,7 @@ export default function ChatScreen() {
             if (!token) return null;
 
             const response = await axios.get(
-                `http://127.0.0.1:8000/chat/api/room/${roomId}/info/`,
+                `${API_CONFIG.BASE_URL}/chat/api/room/${roomId}/info/`,
                 {
                     headers: {'Authorization': `Token ${token}`}
                 }
@@ -305,7 +306,7 @@ export default function ChatScreen() {
             if (!token) return;
 
             const response = await axios.get(
-                `http://127.0.0.1:8000/profile/api/chat_history/${roomId}/`,
+                `${API_CONFIG.BASE_URL}/profile/api/chat_history/${roomId}/`,
                 {
                     headers: {
                         'Authorization': `Token ${token}`,

@@ -15,6 +15,7 @@ import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { Ionicons } from '@expo/vector-icons';
+import {API_CONFIG} from "@/app/config";
 
 interface User {
   id: number;
@@ -39,7 +40,7 @@ export default function UsersScreen() {
         return;
       }
 
-      let url = 'http://localhost:8000/profile/api/users/';
+      let url = `${API_CONFIG.BASE_URL}profile/api/users/`;
       if (search) {
         url += `?search=${encodeURIComponent(search)}`;
       }

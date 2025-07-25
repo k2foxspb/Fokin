@@ -14,6 +14,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { Ionicons } from '@expo/vector-icons';
+import {API_CONFIG} from "@/app/config";
 
 interface Album {
   id: number;
@@ -120,7 +121,7 @@ export default function AlbumEditModal({
       }
 
       await axios.put(
-        `http://localhost:8000/photo/api/album/${album.id}/`,
+        `${API_CONFIG.BASE_URL}/photo/api/album/${album.id}/`,
         {
           title: title.trim(),
           hidden_flag: hiddenFlag
@@ -162,7 +163,7 @@ export default function AlbumEditModal({
       console.log('🔗 Sending DELETE request for album:', album.id);
 
       await axios.delete(
-        `http://localhost:8000/photo/api/album/${album.id}/`,
+        `${API_CONFIG.BASE_URL}/photo/api/album/${album.id}/`,
         {
           headers: { Authorization: `Token ${token}` }
         }
