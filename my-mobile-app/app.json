@@ -1,26 +1,26 @@
 {
   "expo": {
     "name": "Fokin",
-    "slug": "fokin-app",
+    "slug": "fokinfun",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/logo_white 192.png",
-    "scheme": "fokin",
+    "scheme": "mymobileapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.fokin.app"
+      "bundleIdentifier": "com.yourcompany.fokin"
     },
     "android": {
-      "package": "com.fokin.app",
+      "package": "com.yourcompany.mymobileapp",
       "versionCode": 1,
 
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true,
+      "edgeToEdgeEnabled": true
     },
     "web": {
       "bundler": "metro",
@@ -48,6 +48,6 @@
         "projectId": "7a408a11-ebbd-48ac-8f31-e0eb0f1bf1d7"
       }
     },
-    "owner": "k2foxspb",
+    "owner": "k2foxspb"
   }
 }
