@@ -68,8 +68,8 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       console.error('Error processing notification:', error);
     }
   };
-
-  const { connect, disconnect } = useWebSocket('/ws/notification/', {
+  const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  const { connect, disconnect } = useWebSocket(`/${wsProtocol}/notification/`, {
     onOpen: () => {
       console.log('Notification WebSocket connected');
     },
