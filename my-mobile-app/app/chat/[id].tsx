@@ -1,3 +1,4 @@
+
 import React, {useState, useEffect, useRef} from 'react';
 import {
     View,
@@ -20,7 +21,7 @@ import {MaterialIcons} from '@expo/vector-icons';
 interface Message {
     id: number;
     message: string;
-    timestamp: number;
+    timestamp: number | string;
     sender__username: string;
     sender_id?: number;
 }
@@ -30,6 +31,65 @@ interface User {
     username: string;
     avatar?: string;
 }
+
+// Функция для безопасного форматирования времени
+const formatTimestamp = (timestamp: number | string | undefined): string => {
+    if (!timestamp) {
+        console.warn('Empty timestamp provided');
+        return '--:--';
+    }
+
+    try {
+        let date: Date;
+
+        if (typeof timestamp === 'string') {
+            // Если это строка, пробуем несколько форматов
+            if (timestamp.includes('.') && timestamp.includes(',')) {
+                // Формат "25.07.2025, 15:30:00" из Django
+                const cleanTimestamp = timestamp.replace(',', '');
+                const parts = cleanTimestamp.split(' ');
+                if (parts.length >= 2) {
+                    const datePart = parts[0].split('.').reverse().join('-'); // DD.MM.YYYY -> YYYY-MM-DD
+                    const timePart = parts[1];
+                    date = new Date(`${datePart}T${timePart}`);
+                } else {
+                    date = new Date(timestamp);
+                }
+            } else if (timestamp.includes('-') && timestamp.includes('T')) {
+                // ISO формат
+                date = new Date(timestamp);
+            } else {
+                // Пробуем парсить как число
+                const numTimestamp = parseFloat(timestamp);
+                if (!isNaN(numTimestamp)) {
+                    date = new Date(numTimestamp < 1e10 ? numTimestamp * 1000 : numTimestamp);
+                } else {
+                    date = new Date(timestamp);
+                }
+            }
+        } else if (typeof timestamp === 'number') {
+            // Если timestamp в секундах (меньше 1e10), умножаем на 1000
+            date = new Date(timestamp < 1e10 ? timestamp * 1000 : timestamp);
+        } else {
+            console.warn('Unknown timestamp format:', timestamp);
+            return '--:--';
+        }
+
+        // Проверяем валидность даты
+        if (isNaN(date.getTime())) {
+            console.warn('Invalid date from timestamp:', timestamp);
+            return '--:--';
+        }
+
+        return date.toLocaleTimeString('ru-RU', {
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    } catch (error) {
+        console.error('Error formatting timestamp:', timestamp, error);
+        return '--:--';
+    }
+};
 
 export default function ChatScreen() {
     const {id: roomId} = useLocalSearchParams();
@@ -55,6 +115,7 @@ export default function ChatScreen() {
                 id: msg.id,
                 sender__username: msg.sender__username,
                 sender_id: msg.sender_id,
+                timestamp: msg.timestamp,
                 isMyMessage: msg.sender_id === currentUserId
             });
         });
@@ -69,7 +130,7 @@ export default function ChatScreen() {
                 console.log('Room ID:', roomId);
                 setIsConnected(true);
             },
-            onMessage: (event) => {
+            onMessage: (event: any) => {
                 console.log('=== WebSocket MESSAGE RECEIVED ===');
                 console.log('Raw data:', event.data);
 
@@ -128,7 +189,7 @@ export default function ChatScreen() {
             onClose: () => {
                 setIsConnected(false);
             },
-            onError: (error) => {
+            onError: (error: any) => {
                 console.error('=== WebSocket ERROR ===');
                 console.error('Error:', error);
                 setIsConnected(false);
@@ -254,8 +315,16 @@ export default function ChatScreen() {
             );
 
             if (response.data && response.data.messages) {
-                setMessages(response.data.messages);
-                console.log('Chat history loaded:', response.data.messages.length, 'messages');
+                console.log('Raw messages from API:', response.data.messages);
+
+                // Обрабатываем каждое сообщение для корректного формата timestamp
+                const processedMessages = response.data.messages.map((msg: any) => ({
+                    ...msg,
+                    timestamp: msg.timestamp // Оставляем как есть, форматирование в UI
+                }));
+
+                setMessages(processedMessages);
+                console.log('Chat history loaded:', processedMessages.length, 'messages');
 
                 // Скроллим вниз после загрузки истории
                 setTimeout(() => {
@@ -396,58 +465,54 @@ export default function ChatScreen() {
         </View>
     );
 
-    // Рендер сообщения - исправленная логика
+    // Рендер сообщения - исправленная логика с безопасным форматированием времени
     const renderMessage = ({item}: {item: Message}) => {
-    // Определяем, является ли это моим сообщением
-    let isMyMessage = false;
+        // Определяем, является ли это моим сообщением
+        let isMyMessage = false;
 
-    if (item.sender_id !== undefined && currentUserId !== null) {
-        isMyMessage = item.sender_id === currentUserId;
-    } else if (item.sender__username && currentUsername) {
-        isMyMessage = item.sender__username === currentUsername;
-    }
+        if (item.sender_id !== undefined && currentUserId !== null) {
+            isMyMessage = item.sender_id === currentUserId;
+        } else if (item.sender__username && currentUsername) {
+            isMyMessage = item.sender__username === currentUsername;
+        }
 
-    console.log('Rendering message:', {
-        messageId: item.id,
-        senderUsername: item.sender__username,
-        senderId: item.sender_id,
-        currentUserId: currentUserId,
-        currentUsername: currentUsername,
-        isMyMessage: isMyMessage
-    });
+        console.log('Rendering message:', {
+            messageId: item.id,
+            senderUsername: item.sender__username,
+            senderId: item.sender_id,
+            currentUserId: currentUserId,
+            currentUsername: currentUsername,
+            isMyMessage: isMyMessage,
+            timestamp: item.timestamp,
+            formattedTime: formatTimestamp(item.timestamp)
+        });
 
-    return (
-        <View style={[
-            styles.messageContainer,
-            isMyMessage ? styles.myMessage : styles.otherMessage
-        ]}>
-            {/* Показываем имя отправителя ТОЛЬКО для чужих сообщений */}
-            {!isMyMessage && (
-                <Text style={styles.senderName}>{item.sender__username}</Text>
-            )}
-
-            <Text style={[
-                styles.messageText,
-                isMyMessage ? styles.myMessageText : styles.otherMessageText
+        return (
+            <View style={[
+                styles.messageContainer,
+                isMyMessage ? styles.myMessage : styles.otherMessage
             ]}>
-                {item.message}
-            </Text>
+                {/* Показываем имя отправителя ТОЛЬКО для чужих сообщений */}
+                {!isMyMessage && (
+                    <Text style={styles.senderName}>{item.sender__username}</Text>
+                )}
 
-            <Text style={[
-                styles.timestamp,
-                isMyMessage ? styles.myTimestamp : styles.otherTimestamp
-            ]}>
-                {new Date(item.timestamp * 1000).toLocaleTimeString('ru-RU', {
-                    hour: '2-digit',
-                    minute: '2-digit'
-                })}
-            </Text>
-        </View>
-    );
-};
+                <Text style={[
+                    styles.messageText,
+                    isMyMessage ? styles.myMessageText : styles.otherMessageText
+                ]}>
+                    {item.message}
+                </Text>
 
-
-
+                <Text style={[
+                    styles.timestamp,
+                    isMyMessage ? styles.myTimestamp : styles.otherTimestamp
+                ]}>
+                    {formatTimestamp(item.timestamp)}
+                </Text>
+            </View>
+        );
+    };
 
     if (isLoading) {
         return (

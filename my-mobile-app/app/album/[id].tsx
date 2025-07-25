@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -42,6 +43,56 @@ interface Album {
   };
 }
 
+// Кастомное модальное окно подтверждения удаления
+const DeleteConfirmModal = ({
+  visible,
+  onCancel,
+  onConfirm,
+  loading
+}: {
+  visible: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+  loading: boolean;
+}) => (
+  <Modal
+    visible={visible}
+    transparent={true}
+    animationType="fade"
+    onRequestClose={onCancel}
+  >
+    <View style={styles.deleteModalContainer}>
+      <View style={styles.deleteModalContent}>
+        <Ionicons name="warning" size={48} color="#ff3b30" style={styles.deleteModalIcon} />
+        <Text style={styles.deleteModalTitle}>Удалить фотографию?</Text>
+        <Text style={styles.deleteModalMessage}>Это действие нельзя отменить</Text>
+
+        <View style={styles.deleteModalButtons}>
+          <TouchableOpacity
+            style={[styles.deleteModalButton, styles.cancelButton]}
+            onPress={onCancel}
+            disabled={loading}
+          >
+            <Text style={styles.cancelButtonText}>Отмена</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.deleteModalButton, styles.confirmButton]}
+            onPress={onConfirm}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator size="small" color="white" />
+            ) : (
+              <Text style={styles.confirmButtonText}>Удалить</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+  </Modal>
+);
+
 export default function AlbumDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [album, setAlbum] = useState<Album | null>(null);
@@ -53,6 +104,7 @@ export default function AlbumDetail() {
   const [uploadModalVisible, setUploadModalVisible] = useState(false);
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [deletingPhoto, setDeletingPhoto] = useState(false);
+  const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
 
   const getCurrentUser = async () => {
     try {
@@ -111,89 +163,90 @@ export default function AlbumDetail() {
     }
   };
 
-  const deletePhoto = async (photoId: number) => {
-  console.log('🔴 deletePhoto called with photoId:', photoId);
+  const deletePhoto = async () => {
+    if (!selectedPhoto) return;
 
-  Alert.alert(
-    'Удалить фотографию?',
-    'Это действие нельзя отменить',
-    [
-      {
-        text: 'Отмена',
-        style: 'cancel',
-        onPress: () => console.log('❌ Delete cancelled')
-      },
-      {
-        text: 'Удалить',
-        style: 'destructive',
-        onPress: async () => {
-          console.log('✅ User confirmed deletion, starting delete process...');
-          setDeletingPhoto(true);
+    console.log('🔴 Starting delete process for photo:', selectedPhoto.id);
+    setDeletingPhoto(true);
 
-          try {
-            const token = await AsyncStorage.getItem('userToken');
-            if (!token) {
-              console.log('❌ No token found');
-              Alert.alert('Ошибка', 'Необходимо войти в систему');
-              return;
-            }
-
-            console.log('🔗 Sending DELETE request to:', `http://localhost:8000/photo/api/photo/${photoId}/`);
-            console.log('🔑 With token:', token.substring(0, 10) + '...');
-
-            const response = await axios.delete(
-              `http://localhost:8000/photo/api/photo/${photoId}/`,
-              {
-                headers: {
-                  Authorization: `Token ${token}`,
-                  'Content-Type': 'application/json'
-                },
-                timeout: 10000
-              }
-            );
-
-            console.log('✅ Delete response status:', response.status);
-            console.log('📝 Delete response data:', response.data);
-
-            Alert.alert('Успех', 'Фотография удалена');
-            closeModal();
-
-            // Обновляем альбом
-            console.log('🔄 Refreshing album...');
-            await fetchAlbum();
-
-          } catch (error: any) {
-            console.error('❌ Error deleting photo:', error);
-
-            if (error.response) {
-              console.error('📝 Error response status:', error.response.status);
-              console.error('📝 Error response data:', error.response.data);
-              console.error('📝 Error response headers:', error.response.headers);
-
-              if (error.response.status === 403) {
-                Alert.alert('Ошибка', 'У вас нет прав для удаления этой фотографии');
-              } else if (error.response.status === 404) {
-                Alert.alert('Ошибка', 'Фотография не найдена');
-              } else {
-                Alert.alert('Ошибка', `Не удалось удалить фотографию (${error.response.status})`);
-              }
-            } else if (error.request) {
-              console.error('📝 No response received:', error.request);
-              Alert.alert('Ошибка', 'Сервер не отвечает');
-            } else {
-              console.error('📝 Request setup error:', error.message);
-              Alert.alert('Ошибка', 'Ошибка при отправке запроса');
-            }
-          } finally {
-            setDeletingPhoto(false);
-          }
-        }
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      if (!token) {
+        console.log('❌ No token found');
+        Alert.alert('Ошибка', 'Необходимо войти в систему');
+        return;
       }
-    ],
-    { cancelable: false }
-  );
-};
 
+      console.log('🔗 Sending DELETE request to:', `http://localhost:8000/photo/api/photo/${selectedPhoto.id}/`);
+
+      const response = await axios.delete(
+        `http://localhost:8000/photo/api/photo/${selectedPhoto.id}/`,
+        {
+          headers: {
+            Authorization: `Token ${token}`,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          timeout: 15000
+        }
+      );
+
+      console.log('✅ Delete response status:', response.status);
+      Alert.alert('Успех', 'Фотография удалена');
+
+      // Закрываем все модальные окна
+      setDeleteConfirmVisible(false);
+      closeModal();
+
+      // Обновляем альбом
+      await fetchAlbum();
+
+    } catch (error: any) {
+      console.error('❌ Error deleting photo:', error);
+
+      let errorMessage = 'Не удалось удалить фотографию';
+
+      if (error.response) {
+        switch (error.response.status) {
+          case 403:
+            errorMessage = 'У вас нет прав для удаления этой фотографии';
+            break;
+          case 404:
+            errorMessage = 'Фотография не найдена';
+            await fetchAlbum();
+            break;
+          case 500:
+            errorMessage = 'Внутренняя ошибка сервера';
+            break;
+          default:
+            errorMessage = `Ошибка сервера (${error.response.status})`;
+        }
+      } else if (error.request) {
+        errorMessage = 'Сервер не отвечает. Проверьте подключение к интернету';
+      } else {
+        errorMessage = `Ошибка: ${error.message}`;
+      }
+
+      Alert.alert('Ошибка', errorMessage);
+    } finally {
+      setDeletingPhoto(false);
+    }
+  };
+
+  const handleDeletePress = () => {
+    console.log('🗑️ Delete button pressed');
+    setDeleteConfirmVisible(true);
+  };
+
+  const handleDeleteConfirm = () => {
+    console.log('✅ Delete confirmed');
+    deletePhoto();
+  };
+
+  const handleDeleteCancel = () => {
+    console.log('❌ Delete cancelled');
+    setDeleteConfirmVisible(false);
+  };
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -218,6 +271,7 @@ export default function AlbumDetail() {
     console.log('Closing modal');
     setModalVisible(false);
     setSelectedPhoto(null);
+    setDeleteConfirmVisible(false);
   };
 
   const handleAlbumUpdated = () => {
@@ -344,93 +398,91 @@ export default function AlbumDetail() {
         />
       )}
 
-      {/* Photo Modal - полностью переработанное */}
+      {/* Photo Modal - исправленная версия */}
       <Modal
-  visible={modalVisible}
-  transparent={true}
-  animationType="fade"
-  onRequestClose={closeModal}
-  statusBarTranslucent={true}
->
-  <View style={styles.modalContainer}>
-    {/* Кнопки вверху - вне TouchableOpacity */}
-    <View style={styles.modalHeader}>
-      <TouchableOpacity
-        style={styles.modalButton}
-        onPress={() => {
-          console.log('🔴 Close button tapped');
-          closeModal();
-        }}
-        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        visible={modalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={closeModal}
+        statusBarTranslucent={true}
       >
-        <Ionicons name="close" size={24} color="white" />
-        <Text style={styles.buttonText}>Закрыть</Text>
-      </TouchableOpacity>
+        <View style={styles.modalContainer}>
+          {/* Кнопки вверху */}
+          <View style={styles.modalHeader}>
+            {/* Кнопка удаления слева - показываем только владельцу */}
+            {isOwner && selectedPhoto && (
+              <TouchableOpacity
+                style={[styles.modalButton, styles.deleteButton]}
+                onPress={handleDeletePress}
+                disabled={deletingPhoto}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="trash" size={24} color="#ff3b30" />
+                <Text style={[styles.buttonText, { color: '#ffffff' }]}>Удалить</Text>
+              </TouchableOpacity>
+            )}
 
-      <TouchableOpacity
-        style={[styles.modalButton, styles.deleteButton]}
-        onPress={(e) => {
-          e.stopPropagation(); // Останавливаем всплытие события
-          console.log('🗑️ Delete button tapped for photo:', selectedPhoto?.id);
-          if (selectedPhoto && !deletingPhoto) {
-            deletePhoto(selectedPhoto.id);
-          }
-        }}
-        disabled={deletingPhoto}
-        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-      >
-        {deletingPhoto ? (
-          <ActivityIndicator size="small" color="white" />
-        ) : (
-          <>
-            <Ionicons name="trash" size={24} color="#ff3b30" />
-            <Text style={[styles.buttonText, { color: '#ff3b30' }]}>Удалить</Text>
-          </>
-        )}
-      </TouchableOpacity>
-    </View>
+            {/* Кнопка закрытия справа */}
+            <TouchableOpacity
+              style={[
+                styles.modalButton,
+                !isOwner && styles.modalButtonCentered
+              ]}
+              onPress={closeModal}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="close" size={24} color="white" />
+              <Text style={styles.buttonText}>Закрыть</Text>
+            </TouchableOpacity>
+          </View>
 
-    {/* Фон для закрытия модального окна */}
-    <TouchableOpacity
-      style={styles.modalBackground}
-      onPress={closeModal}
-      activeOpacity={1}
-    >
-      {/* Контент - НЕ TouchableOpacity! */}
-      <View style={styles.modalContent}>
-        {/* Изображение */}
-        <View style={styles.imageContainer}>
-          {selectedPhoto && (
-            <Image
-              source={{ uri: selectedPhoto.image_url }}
-              style={styles.fullImage}
-              resizeMode="contain"
-            />
-          )}
+          {/* Фон для закрытия модального окна */}
+          <TouchableOpacity
+            style={styles.modalBackground}
+            onPress={closeModal}
+            activeOpacity={1}
+          >
+            {/* Контент */}
+            <View style={styles.modalContent}>
+              {/* Изображение */}
+              <View style={styles.imageContainer}>
+                {selectedPhoto && (
+                  <Image
+                    source={{ uri: selectedPhoto.image_url }}
+                    style={styles.fullImage}
+                    resizeMode="contain"
+                  />
+                )}
+              </View>
+
+              {/* Информация */}
+              {selectedPhoto?.caption && (
+                <Text style={styles.caption}>{selectedPhoto.caption}</Text>
+              )}
+
+              {selectedPhoto && (
+                <Text style={styles.photoDate}>
+                  {new Date(selectedPhoto.uploaded_at).toLocaleDateString('ru-RU', {
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  })}
+                </Text>
+              )}
+            </View>
+          </TouchableOpacity>
         </View>
+      </Modal>
 
-        {/* Информация */}
-        {selectedPhoto?.caption && (
-          <Text style={styles.caption}>{selectedPhoto.caption}</Text>
-        )}
-
-        {selectedPhoto && (
-          <Text style={styles.photoDate}>
-            {new Date(selectedPhoto.uploaded_at).toLocaleDateString('ru-RU', {
-              day: '2-digit',
-              month: '2-digit',
-              year: 'numeric',
-              hour: '2-digit',
-              minute: '2-digit'
-            })}
-          </Text>
-        )}
-      </View>
-    </TouchableOpacity>
-  </View>
-</Modal>
-
-
+      {/* Кастомное модальное окно подтверждения удаления */}
+      <DeleteConfirmModal
+        visible={deleteConfirmVisible}
+        onCancel={handleDeleteCancel}
+        onConfirm={handleDeleteConfirm}
+        loading={deletingPhoto}
+      />
 
       <PhotoUploadModal
         visible={uploadModalVisible}
@@ -560,91 +612,157 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-  // Новые стили для модального окна
+  // Стили для модального окна просмотра фото
   modalContainer: {
-  flex: 1,
-  backgroundColor: 'rgba(0, 0, 0, 0.95)',
-},
-modalHeader: {
-  flexDirection: 'row',
-  justifyContent: 'space-between',
-  width: '100%',
-  paddingHorizontal: 20,
-  paddingVertical: 15,
-  paddingTop: 60, // Увеличиваем отступ сверху
-  position: 'absolute',
-  top: 0,
-  zIndex: 10, // Увеличиваем z-index
-},
-modalBackground: {
-  flex: 1,
-  justifyContent: 'center',
-  alignItems: 'center',
-},
-modalContent: {
-  width: '90%',
-  height: '70%',
-  justifyContent: 'center',
-  alignItems: 'center',
-  marginTop: 40, // Добавляем отступ для кнопок
-},
-modalButton: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  backgroundColor: 'rgba(0, 0, 0, 0.8)',
-  paddingHorizontal: 20,
-  paddingVertical: 12,
-  borderRadius: 25,
-  minWidth: 120,
-  justifyContent: 'center',
-  elevation: 5, // Для Android
-  shadowColor: '#000', // Для iOS
-  shadowOffset: { width: 0, height: 2 },
-  shadowOpacity: 0.3,
-  shadowRadius: 4,
-},
-deleteButton: {
-  backgroundColor: 'rgba(255, 59, 48, 0.9)',
-  borderWidth: 2,
-  borderColor: '#ff3b30',
-},
-buttonText: {
-  color: 'white',
-  marginLeft: 8,
-  fontSize: 15,
-  fontWeight: '600',
-},
-imageContainer: {
-  flex: 1,
-  justifyContent: 'center',
-  alignItems: 'center',
-  width: '100%',
-},
-fullImage: {
-  width: '100%',
-  height: '100%',
-  borderRadius: 12,
-},
-caption: {
-  color: 'white',
-  fontSize: 16,
-  textAlign: 'center',
-  marginTop: 20,
-  paddingHorizontal: 20,
-  backgroundColor: 'rgba(0, 0, 0, 0.6)',
-  paddingVertical: 10,
-  borderRadius: 8,
-},
-photoDate: {
-  color: 'rgba(255, 255, 255, 0.8)',
-  fontSize: 13,
-  textAlign: 'center',
-  marginTop: 8,
-  backgroundColor: 'rgba(0, 0, 0, 0.4)',
-  paddingHorizontal: 12,
-  paddingVertical: 6,
-  borderRadius: 12,
-},
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.95)',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    paddingTop: 60,
+    position: 'absolute',
+    top: 0,
+    zIndex: 10,
+  },
+  modalBackground: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    width: '90%',
+    height: '70%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 40,
+  },
+  modalButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 25,
+    minWidth: 120,
+    justifyContent: 'center',
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+  },
+  modalButtonCentered: {
+    marginLeft: 'auto',
+  },
+  deleteButton: {
 
+    borderWidth: 2,
 
+  },
+  buttonText: {
+    color: 'white',
+    marginLeft: 8,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  imageContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: '100%',
+  },
+  fullImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 12,
+  },
+  caption: {
+    color: 'white',
+    fontSize: 16,
+    textAlign: 'center',
+    marginTop: 20,
+    paddingHorizontal: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  photoDate: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 13,
+    textAlign: 'center',
+    marginTop: 8,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  // Стили для модального окна подтверждения удаления
+  deleteModalContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  deleteModalContent: {
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+    maxWidth: 320,
+    alignItems: 'center',
+  },
+  deleteModalIcon: {
+    marginBottom: 16,
+  },
+  deleteModalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  deleteModalMessage: {
+    fontSize: 16,
+    color: '#666',
+    marginBottom: 24,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  deleteModalButtons: {
+    flexDirection: 'row',
+    width: '100%',
+    gap: 12,
+  },
+  deleteModalButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
+  },
+  cancelButton: {
+    backgroundColor: '#f0f0f0',
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  cancelButtonText: {
+    color: '#333',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  confirmButton: {
+    backgroundColor: '#ff3b30',
+  },
+  confirmButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+  },
 });

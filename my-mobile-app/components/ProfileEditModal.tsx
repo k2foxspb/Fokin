@@ -70,7 +70,7 @@ export default function ProfileEditModal({
         }
 
         const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: 'image',
+            mediaTypes: ImagePicker.MediaTypeOptions.Images, // Исправлено
             allowsEditing: true,
             aspect: [1, 1],
             quality: 0.8,
@@ -87,11 +87,6 @@ export default function ProfileEditModal({
         Alert.alert('Ошибка', 'Не удалось выбрать изображение');
     }
 };
-
-
-
-
-
 
 const handleSave = async () => {
     if (!profile) return;
@@ -117,81 +112,105 @@ const handleSave = async () => {
             formData.append('birthday', birthday);
         }
 
-        // Исправленная обработка аватара
+        // Улучшенная обработка аватара для разных платформ
         if (avatar && avatar !== profile.avatar_url) {
-            let localUri = avatar;
-            let filename = localUri.split('/').pop() || 'avatar.jpg';
+            if (Platform.OS === 'web') {
+                // Для React Native Web
+                try {
+                    const response = await fetch(avatar);
+                    const blob = await response.blob();
 
-            // Убеждаемся что у файла правильное расширение
-            if (!filename.match(/\.(jpg|jpeg|png|gif)$/i)) {
-                filename = `${filename}.jpg`;
+                    const mimeType = blob.type || 'image/jpeg';
+                    const extension = mimeType.split('/')[1] || 'jpg';
+                    const fileName = `avatar_${Date.now()}.${extension}`;
+
+                    const file = new File([blob], fileName, { type: mimeType });
+                    formData.append('avatar', file);
+
+                    console.log('Web avatar file:', {
+                        fileName,
+                        type: mimeType,
+                        size: blob.size
+                    });
+                } catch (error) {
+                    console.error('Error processing avatar for web:', error);
+                    Alert.alert('Ошибка', 'Не удалось обработать изображение');
+                    return;
+                }
+            } else {
+                // Для мобильных платформ
+                let filename = avatar.split('/').pop() || 'avatar.jpg';
+
+                if (!filename.match(/\.(jpg|jpeg|png|gif)$/i)) {
+                    filename = `${filename}.jpg`;
+                }
+
+                let mimeType = 'image/jpeg';
+                const extension = filename.toLowerCase().split('.').pop();
+
+                switch (extension) {
+                    case 'png':
+                        mimeType = 'image/png';
+                        break;
+                    case 'gif':
+                        mimeType = 'image/gif';
+                        break;
+                    case 'jpg':
+                    case 'jpeg':
+                    default:
+                        mimeType = 'image/jpeg';
+                        break;
+                }
+
+                const fileObject = {
+                    uri: avatar,
+                    type: mimeType,
+                    name: filename,
+                };
+
+                formData.append('avatar', fileObject as any);
+
+                console.log('Mobile avatar file:', {
+                    filename,
+                    type: mimeType,
+                    uri: avatar
+                });
             }
-
-            // Определяем MIME тип более точно
-            let mimeType = 'image/jpeg';
-            const extension = filename.toLowerCase().split('.').pop();
-
-            switch (extension) {
-                case 'png':
-                    mimeType = 'image/png';
-                    break;
-                case 'gif':
-                    mimeType = 'image/gif';
-                    break;
-                case 'jpg':
-                case 'jpeg':
-                default:
-                    mimeType = 'image/jpeg';
-                    break;
-            }
-
-            // Создаем правильный объект файла для React Native
-            const fileObject = {
-                uri: localUri,
-                type: mimeType,
-                name: filename,
-            };
-
-            formData.append('avatar', fileObject as any);
         }
 
-        console.log('FormData entries:');
-        for (let [key, value] of formData.entries()) {
-            console.log(key, value);
-        }
+        // Убираем цикл formData.entries() для совместимости
+        console.log('Sending profile update request...');
 
-        const response = await fetch(`${API_CONFIG.BASE_URL}/profile/api/profile/me/`, {
+        const response = await axios({
             method: 'PUT',
+            url: `${API_CONFIG.BASE_URL}/profile/api/profile/me/`,
+            data: formData,
             headers: {
                 'Authorization': `Token ${token}`,
-                // Не устанавливаем Content-Type для multipart/form-data
-            },
-            body: formData
+                'Content-Type': 'multipart/form-data',
+            }
         });
 
-        const responseData = await response.json();
-
-        if (response.ok) {
+        if (response.status === 200) {
             Alert.alert('Успех', 'Профиль успешно обновлен');
             onProfileUpdated();
             onClose();
         } else {
-            console.error('Server error response:', responseData);
-            throw new Error(JSON.stringify(responseData));
+            throw new Error('Unexpected response status: ' + response.status);
         }
     } catch (error: any) {
         console.error('Error updating profile:', error);
         let errorMessage = 'Не удалось обновить профиль';
 
-        try {
-            const errorData = JSON.parse(error.message);
+        if (error.response?.data) {
+            const errorData = error.response.data;
             if (typeof errorData === 'object') {
                 errorMessage = Object.entries(errorData)
                     .map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : value}`)
                     .join('\n');
             }
-        } catch {
-            errorMessage = error.message || errorMessage;
+        } else if (error.message) {
+            errorMessage = error.message;
         }
 
         Alert.alert('Ошибка', errorMessage);

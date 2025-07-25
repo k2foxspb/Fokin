@@ -176,15 +176,59 @@ export default function UserAlbums() {
   if (albums.length === 0) {
     return (
       <View style={styles.emptyContainer}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color="#007AFF" />
-        </TouchableOpacity>
+        {/* Хедер даже для пустого состояния */}
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+            <Ionicons name="arrow-back" size={24} color="#007AFF" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Альбомы @{username}</Text>
+          {/* Кнопка создания альбома для владельца */}
+          {currentUser === username && (
+            <TouchableOpacity
+              style={styles.createButton}
+              onPress={() => setCreateModalVisible(true)}
+            >
+              <Ionicons name="add" size={24} color="#007AFF" />
+            </TouchableOpacity>
+          )}
+        </View>
 
-        <Ionicons name="images-outline" size={64} color="#ccc" />
-        <Text style={styles.emptyText}>У пользователя нет альбомов</Text>
-        <TouchableOpacity style={styles.refreshButton} onPress={fetchAlbums}>
-          <Text style={styles.refreshButtonText}>Обновить</Text>
-        </TouchableOpacity>
+        {/* Основное содержимое пустого состояния */}
+        <View style={styles.emptyContent}>
+          <Ionicons name="images-outline" size={64} color="#ccc" />
+          <Text style={styles.emptyText}>
+            {currentUser === username
+              ? 'У вас пока нет альбомов'
+              : 'У пользователя нет альбомов'
+            }
+          </Text>
+
+          {/* Кнопки действий */}
+          <View style={styles.emptyActions}>
+            {currentUser === username && (
+              <TouchableOpacity
+                style={styles.createFirstAlbumButton}
+                onPress={() => setCreateModalVisible(true)}
+              >
+                <Ionicons name="add-circle" size={20} color="white" />
+                <Text style={styles.createFirstAlbumButtonText}>Создать первый альбом</Text>
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity style={styles.refreshButton} onPress={fetchAlbums}>
+              <Text style={styles.refreshButtonText}>Обновить</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Модальные окна */}
+        <AlbumCreateModal
+          visible={createModalVisible}
+          onClose={() => setCreateModalVisible(false)}
+          onAlbumCreated={() => {
+            fetchAlbums();
+          }}
+        />
       </View>
     );
   }
@@ -204,7 +248,6 @@ export default function UserAlbums() {
             <Ionicons name="add" size={24} color="#007AFF" />
           </TouchableOpacity>
         )}
-
       </View>
 
       <FlatList
@@ -284,6 +327,10 @@ const styles = StyleSheet.create({
   },
   emptyContainer: {
     flex: 1,
+    backgroundColor: '#f5f5f5',
+  },
+  emptyContent: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
@@ -292,19 +339,38 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: '#666',
     marginTop: 16,
-    marginBottom: 20,
+    marginBottom: 24,
     textAlign: 'center',
   },
-  refreshButton: {
+  emptyActions: {
+    alignItems: 'center',
+    gap: 12,
+  },
+  createFirstAlbumButton: {
     backgroundColor: '#007AFF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 12,
+    marginBottom: 8,
+  },
+  createFirstAlbumButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  refreshButton: {
+    backgroundColor: '#34C759',
     paddingHorizontal: 20,
-    paddingVertical: 10,
+    paddingVertical: 12,
     borderRadius: 8,
   },
   refreshButtonText: {
     color: 'white',
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '600',
   },
   listContainer: {
     padding: 16,
