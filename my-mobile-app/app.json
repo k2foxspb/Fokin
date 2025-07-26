@@ -7,15 +7,23 @@
     "icon": "./assets/images/icon.png",
     "scheme": "mymobileapp",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "newArchEnabled": false
+,
+    "splash": {
+      "image": "./assets/images/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.yourcompany.fokin"
+      "bundleIdentifier": "com.yourcompany.fokinfun"
     },
     "android": {
-      "package": "com.yourcompany.mymobileapp",
+      "package": "com.yourcompany.fokinfun",
       "versionCode": 1,
-
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/icon.png",
         "backgroundColor": "#ffffff"
