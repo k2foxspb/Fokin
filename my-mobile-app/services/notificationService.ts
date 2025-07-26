@@ -13,6 +13,17 @@ Notifications.setNotificationHandler({
   }),
 });
 
+// Set up background notification handler
+Notifications.setNotificationCategoryAsync('message', [
+  {
+    identifier: 'view',
+    buttonTitle: 'View',
+    options: {
+      opensAppToForeground: true,
+    },
+  },
+]);
+
 // Interface for notification data
 interface MessageNotification {
   title: string;
@@ -139,12 +150,20 @@ export const sendLocalNotification = async (
   notification: MessageNotification
 ): Promise<string> => {
   try {
+    // Determine if this is a message notification
+    const isMessageNotification = notification.data && 
+      (notification.data as any).type === 'message_notification';
+    
     const notificationId = await Notifications.scheduleNotificationAsync({
       content: {
         title: notification.title,
         body: notification.body,
         data: notification.data || {},
         sound: true,
+        // Add category for message notifications to enable action buttons
+        categoryIdentifier: isMessageNotification ? 'message' : undefined,
+        // Add badge count for better visibility
+        badge: 1,
       },
       trigger: null, // Send immediately
     });

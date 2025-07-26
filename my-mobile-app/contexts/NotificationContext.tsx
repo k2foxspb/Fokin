@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useRef } from 'r
 import { useWebSocket } from '../hooks/useWebSocket';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
+import { router } from 'expo-router';
 import { 
   requestNotificationPermissions, 
   registerForPushNotifications, 
@@ -72,14 +73,6 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         setPushToken(token);
       }
 
-      // Проверяем, было ли приложение запущено из уведомления
-      const lastNotificationResponse = await Notifications.getLastNotificationResponseAsync();
-      if (lastNotificationResponse) {
-        console.log('App was opened from notification:', lastNotificationResponse);
-        // Обрабатываем уведомление, которое запустило приложение
-        handleNotificationResponse(lastNotificationResponse);
-      }
-
       // Добавляем слушатель для уведомлений, полученных когда приложение открыто
       notificationListener.current = addNotificationListener(notification => {
         console.log('Notification received in foreground:', notification);
@@ -122,6 +115,28 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     initNotifications();
   }, []);
 
+  // Отдельный эффект для проверки запуска из уведомления
+  // Это нужно делать после проверки аутентификации
+  useEffect(() => {
+    const checkLaunchNotification = async () => {
+      // Проверяем, было ли приложение запущено из уведомления
+      const lastNotificationResponse = await Notifications.getLastNotificationResponseAsync();
+      if (lastNotificationResponse) {
+        console.log('App was opened from notification:', lastNotificationResponse);
+        
+        // Даем приложению время инициализироваться перед навигацией
+        setTimeout(() => {
+          // Обрабатываем уведомление, которое запустило приложение
+          handleNotificationResponse(lastNotificationResponse);
+        }, 1000);
+      }
+    };
+
+    if (isAuthenticated) {
+      checkLaunchNotification();
+    }
+  }, [isAuthenticated]);
+
   // Обработка ответа на уведомление (когда пользователь нажимает на уведомление)
   const handleNotificationResponse = (response: Notifications.NotificationResponse) => {
     // Извлекаем данные из уведомления
@@ -133,12 +148,20 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       connect();
     }
 
-    // Здесь можно добавить навигацию к соответствующему экрану
-    // в зависимости от типа уведомления
+    // Навигация к соответствующему экрану в зависимости от типа уведомления
     if (data && data.type === 'message_notification') {
-      // Например, навигация к экрану сообщений
-      // navigation.navigate('Messages');
-      console.log('Should navigate to messages screen');
+      console.log('Navigating to messages screen');
+      
+      // Если в данных есть конкретный чат, переходим к нему
+      if (data.chatId) {
+        router.push({
+          pathname: '/chat/[id]',
+          params: { id: data.chatId }
+        });
+      } else {
+        // Иначе переходим к списку всех чатов
+        router.push('/(tabs)/messages');
+      }
     }
   };
 
