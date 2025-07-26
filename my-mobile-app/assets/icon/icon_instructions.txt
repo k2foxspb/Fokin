@@ -1,0 +1,19 @@
+App Icon Instructions:
+
+For this app, we need a simple icon that represents a messaging application.
+
+Recommended icon design:
+- A simple message bubble or envelope icon
+- Dark background color (#222222 or similar)
+- Light foreground color (white or light gray)
+- Size: 1024x1024 pixels (square)
+- Format: PNG with transparency
+
+For Expo, the icon should be placed at:
+- ./assets/icon.png (for the main app icon)
+- ./assets/adaptive-icon-foreground.png (for Android adaptive icon foreground)
+
+The app.json will be configured to use these icons.
+
+Note: For this implementation, we're using a placeholder URL for the icon in app.json.
+In a real implementation, you would need to create actual PNG files at these locations.

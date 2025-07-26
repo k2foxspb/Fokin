@@ -4,7 +4,8 @@
     "slug": "fokinfun",
     "version": "1.0.0",
     "orientation": "portrait",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
+    "icon": "./assets/images/logo1024.png",
     "developmentClient": {
       "silentLaunch": false
     },
@@ -16,13 +17,21 @@
       "package": "com.k2foxspb.fokinfun",
       "versionCode": 1,
       "adaptiveIcon": {
-        "backgroundColor": "#FFFFFF"
+        "foregroundImage": "./assets/images/logo1024.png",
+        "backgroundColor": "#222222"
       }
     },
     "plugins": [
       "expo-router",
       "expo-dev-client"
     ],
+    "notification": {
+      "icon": "./assets/images/logo1024.png",
+      "color": "#222222",
+      "androidMode": "default",
+      "androidCollapsedTitle": "Новые сообщения",
+      "iosDisplayInForeground": true
+    },
     "extra": {
       "eas": {
         "projectId": "7a408a11-ebbd-48ac-8f31-e0eb0f1bf1d7"
