@@ -1,59 +1,53 @@
-# Issue Resolution: Expo Production Build Fix
+# Issue Resolution Summary
 
 ## Issue Description
-The Expo production build for the my-mobile-app application was failing. The app was not properly using production URLs when built for production.
+When building the mobile application (my-mobile-app) and downloading it to a phone, the app doesn't open, although the build process completes successfully and everything works during development.
 
 ## Root Cause
-The issue was that the NODE_ENV environment variable was not being explicitly set to 'production' during the EAS build process. 
+The issue was caused by the use of a web-specific API (`window.location.protocol`) in the NotificationContext.tsx file. This API is not available in a native mobile environment, causing the app to crash on startup when installed on a device.
 
-In the app/config.tsx file, the app determines whether to use development or production URLs based on the NODE_ENV environment variable:
+Specifically, the code was trying to determine the WebSocket protocol (ws/wss) using `window.location.protocol`, which is only available in web browsers:
 
 ```typescript
-const DEV = process.env.NODE_ENV === 'development';
-
-export const API_CONFIG = {
-  // Базовый URL для HTTP запросов
-  BASE_URL: DEV ? 'http://localhost:8000' : 'https://fokin.fun',
-
-  // Базовый URL для WebSocket соединений
-  WS_URL: DEV ? 'ws://127.0.0.1:8000' : 'wss://fokin.fun',
-};
+const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+const { connect, disconnect } = useWebSocket(`/${wsProtocol}/notification/`, {
 ```
-
-Without explicitly setting NODE_ENV to 'production' during the build process, the app was likely defaulting to using the development URLs (localhost), which would cause the app to fail in production.
 
 ## Solution
-The solution was to modify the eas.json file to explicitly set NODE_ENV to 'production' for the production build profile. This ensures that when the app is built for production using EAS Build, it uses the production URLs.
+The solution was to remove the web-specific code and rely on the properly configured API_CONFIG, which already handles the correct WebSocket URL based on the environment:
 
-### Changes Made
-Added an "env" section to the production build profile in eas.json:
+1. Added the import for API_CONFIG in NotificationContext.tsx:
+   ```typescript
+   import { API_CONFIG } from '../app/config';
+   ```
 
-```json
-"production": {
-  "autoIncrement": true,
-  "env": {
-    "NODE_ENV": "production"
-  },
-  "android": {
-    "buildType": "apk"
-  }
-}
-```
+2. Removed the web-specific code that was determining the WebSocket protocol:
+   ```typescript
+   // Removed: const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+   const { connect, disconnect } = useWebSocket(`/notification/`, {
+   ```
 
-## Verification
-The test_production_config.py script was run to verify that the mobile app configuration is correctly set up with fokin.fun and wss://fokin.fun URLs.
+The useWebSocket hook already uses API_CONFIG.WS_URL to construct the full WebSocket URL, so this change ensures that the correct protocol is used based on the environment without relying on web-specific APIs.
 
-## Additional Notes
-- The app uses a centralized configuration file (app/config.tsx) to manage environment-specific URLs
-- The app automatically switches between development and production URLs based on the NODE_ENV environment variable
-- For local development, NODE_ENV should be 'development'
-- For production builds, NODE_ENV should be 'production'
+## Testing the Solution
+To verify that the issue is resolved:
 
-## Build Instructions
-To build the app for production, use the following command:
-```bash
-cd my-mobile-app
-eas build --platform all --profile production
-```
+1. Build the app for production:
+   ```
+   npx eas build --platform android --profile production
+   ```
 
-This will use the production build profile from eas.json, which now includes the NODE_ENV=production environment variable.
+2. Install the built app on a physical device.
+
+3. Verify that the app opens successfully and functions as expected.
+
+4. Test the notification functionality to ensure that WebSocket connections are working properly.
+
+## Prevention
+To prevent similar issues in the future:
+
+1. Avoid using web-specific APIs (like `window`, `document`, etc.) in React Native applications.
+
+2. Use environment-specific configuration (like API_CONFIG) for handling different environments.
+
+3. Test production builds on physical devices regularly during development to catch similar issues early.
