@@ -64,31 +64,48 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticated',
     ],
 }
+CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_CREDENTIALS = True
 
-if DEBUG:
-    # Development: Allow all origins для разработки
-    CORS_ALLOW_ALL_ORIGINS = True
-    CORS_ALLOWED_ORIGIN_REGEXES = [
-        r"^https?://localhost:\d+$",
-        r"^https?://127\.0\.0\.1:\d+$",
-        r"^https?://192\.168\.\d+\.\d+:\d+$",
-        r"^exp://.*",  # Expo development
-        r"^capacitor://localhost$",  # Capacitor apps
-        r"^http://localhost$",
-        r"^http://127\.0\.0\.1$",
-    ]
-else:
-    # Production: Specific origins
-    CORS_ALLOWED_ORIGINS = [
-        "https://fokin.fun",
-        "http://fokin.fun",
-    ]
-    # Добавьте регексы для мобильных приложений
-    CORS_ALLOWED_ORIGIN_REGEXES = [
-        r"^capacitor://localhost$",  # Capacitor apps
-        r"^https?://.*\.fokin\.fun$",  # Subdomains
-    ]
-    CORS_ALLOW_ALL_ORIGINS = False
+# Разрешить все заголовки
+CORS_ALLOW_HEADERS = ['*']
+
+# Разрешить все методы
+CORS_ALLOW_METHODS = ['*']
+
+# Убираем ограничения по origin регексам (закомментируем или удалим)
+# CORS_ALLOWED_ORIGINS = [...]
+# CORS_ALLOWED_ORIGIN_REGEXES = [...]
+
+# Дополнительные настройки для полного разрешения
+CORS_PREFLIGHT_MAX_AGE = 86400
+CORS_ALLOW_PRIVATE_NETWORK = True
+CORS_REPLACE_HTTPS_REFERER = True
+
+# if DEBUG:
+#     # Development: Allow all origins для разработки
+#     CORS_ALLOW_ALL_ORIGINS = True
+#     CORS_ALLOWED_ORIGIN_REGEXES = [
+#         r"^https?://localhost:\d+$",
+#         r"^https?://127\.0\.0\.1:\d+$",
+#         r"^https?://192\.168\.\d+\.\d+:\d+$",
+#         r"^exp://.*",  # Expo development
+#         r"^capacitor://localhost$",  # Capacitor apps
+#         r"^http://localhost$",
+#         r"^http://127\.0\.0\.1$",
+#     ]
+# else:
+#     # Production: Specific origins
+#     CORS_ALLOWED_ORIGINS = [
+#         "https://fokin.fun",
+#         "http://fokin.fun",
+#     ]
+#     # Добавьте регексы для мобильных приложений
+#     CORS_ALLOWED_ORIGIN_REGEXES = [
+#         r"^capacitor://localhost$",  # Capacitor apps
+#         r"^https?://.*\.fokin\.fun$",  # Subdomains
+#     ]
+#     CORS_ALLOW_ALL_ORIGINS = False
 
 # Важные настройки для мобильных приложений
 CORS_ALLOW_CREDENTIALS = True
