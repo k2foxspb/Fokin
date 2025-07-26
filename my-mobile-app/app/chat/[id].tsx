@@ -17,7 +17,7 @@ import {useWebSocket} from '../../hooks/useWebSocket';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {MaterialIcons} from '@expo/vector-icons';
-import { API_CONFIG } from '@/config';
+import { API_CONFIG } from '../../config';
 
 interface Message {
     id: number;

@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import axios, { AxiosError } from 'axios';
 import { Link } from "expo-router";
-import { API_CONFIG } from '@/config';
+import { API_CONFIG } from '../../config';
 
 export default function ForgotPassword() {
   const [email, setEmail] = useState('');

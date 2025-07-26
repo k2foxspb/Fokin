@@ -11,7 +11,7 @@ import {
   TextInput,
   Alert
 } from 'react-native';
-import { API_CONFIG } from '@/config';
+import { API_CONFIG } from '../../config';
 import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';

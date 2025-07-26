@@ -14,7 +14,7 @@ import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { Ionicons } from '@expo/vector-icons';
-import {API_CONFIG} from "@/config";
+import {API_CONFIG} from "../../config";
 
 interface Category {
   id: number;
