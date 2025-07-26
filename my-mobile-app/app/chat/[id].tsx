@@ -17,7 +17,7 @@ import {useWebSocket} from '../../hooks/useWebSocket';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {MaterialIcons} from '@expo/vector-icons';
-import { API_CONFIG } from '../config';
+import { API_CONFIG } from '@/config';
 
 interface Message {
     id: number;
@@ -124,7 +124,7 @@ export default function ChatScreen() {
 
     // WebSocket хук с дополнительной отладкой
     const {connect, disconnect, sendMessage, isConnected: wsIsConnected, reconnect} = useWebSocket(
-        `/ws/private/${roomId}/`,
+        `/wss/private/${roomId}/`,
         {
             onOpen: () => {
                 console.log('=== WebSocket CONNECTED ===');

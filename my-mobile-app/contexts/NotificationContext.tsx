@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { useWebSocket } from '../hooks/useWebSocket';
+import { useWebSocket } from '@/hooks/useWebSocket';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface NotificationContextType {

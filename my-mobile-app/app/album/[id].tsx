@@ -19,7 +19,7 @@ import axios from 'axios';
 import { Ionicons } from '@expo/vector-icons';
 import PhotoUploadModal from '../../components/PhotoUploadModal';
 import AlbumEditModal from '../../components/AlbumEditModal';
-import { API_CONFIG } from '../config';
+import { API_CONFIG } from '@/config';
 
 const { width, height } = Dimensions.get('window');
 const photoSize = (width - 48) / 3; // 3 columns with margins

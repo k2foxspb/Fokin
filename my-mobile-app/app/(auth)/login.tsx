@@ -13,7 +13,7 @@ import axios, { AxiosError } from 'axios'; // Добавляем AxiosError
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from "expo-router";
 import { Link } from "expo-router";
-import { API_CONFIG } from '../../app/config';
+import { API_CONFIG } from '@/config';
 
 interface LoginResponse {
   token: string;

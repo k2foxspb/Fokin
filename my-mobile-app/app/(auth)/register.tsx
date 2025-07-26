@@ -13,7 +13,7 @@ import axios, { AxiosError } from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from "expo-router";
 import { Link } from "expo-router";
-import { API_CONFIG } from '../config';
+import { API_CONFIG } from '@/config';
 
 interface RegisterResponse {
   token: string;
