@@ -66,22 +66,32 @@ REST_FRAMEWORK = {
 }
 
 if DEBUG:
-    # Development: Allow all origins
+    # Development: Allow all origins для разработки
     CORS_ALLOW_ALL_ORIGINS = True
+    CORS_ALLOWED_ORIGIN_REGEXES = [
+        r"^https?://localhost:\d+$",
+        r"^https?://127\.0\.0\.1:\d+$",
+        r"^https?://192\.168\.\d+\.\d+:\d+$",
+        r"^exp://.*",  # Expo development
+        r"^capacitor://localhost$",  # Capacitor apps
+        r"^http://localhost$",
+        r"^http://127\.0\.0\.1$",
+    ]
 else:
-    # Production: Only allow specific origins
+    # Production: Specific origins
     CORS_ALLOWED_ORIGINS = [
         "https://fokin.fun",
-        "http://fokin.fun",  # In case HTTP is needed
+        "http://fokin.fun",
+    ]
+    # Добавьте регексы для мобильных приложений
+    CORS_ALLOWED_ORIGIN_REGEXES = [
+        r"^capacitor://localhost$",  # Capacitor apps
+        r"^https?://.*\.fokin\.fun$",  # Subdomains
     ]
     CORS_ALLOW_ALL_ORIGINS = False
 
+# Важные настройки для мобильных приложений
 CORS_ALLOW_CREDENTIALS = True
-
-CORS_ALLOW_HEADERS = ['*']
-CORS_ALLOW_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']
-FILE_UPLOAD_PERMISSIONS = 0o644
-FILE_UPLOAD_MAX_MEMORY_SIZE = 10485760
 CORS_ALLOW_HEADERS = [
     'accept',
     'accept-encoding',
@@ -92,8 +102,22 @@ CORS_ALLOW_HEADERS = [
     'user-agent',
     'x-csrftoken',
     'x-requested-with',
+    'x-forwarded-for',
+    'x-forwarded-proto',
 ]
 
+CORS_ALLOW_METHODS = [
+    'DELETE',
+    'GET',
+    'OPTIONS',
+    'PATCH',
+    'POST',
+    'PUT',
+]
+
+# Добавьте эти настройки для мобильных приложений
+CORS_PREFLIGHT_MAX_AGE = 86400
+CORS_ALLOW_PRIVATE_NETWORK = True  # Для локальной разработки
 
 TEMPLATES = [
     {
