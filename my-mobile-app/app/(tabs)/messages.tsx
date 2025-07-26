@@ -5,7 +5,7 @@ import { Stack, useRouter } from 'expo-router';
 import axios from 'axios';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useNotifications } from '@/contexts/NotificationContext';
+import { useNotifications } from '../../contexts/NotificationContext';
 import { API_CONFIG } from '../../config';
 
 interface User {

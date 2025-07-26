@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Animated, Pressable } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useNotifications } from '@/contexts/NotificationContext';
+import { useNotifications } from '../contexts/NotificationContext';
 
 export const NotificationToast: React.FC = () => {
   const { messages, unreadCount } = useNotifications();
