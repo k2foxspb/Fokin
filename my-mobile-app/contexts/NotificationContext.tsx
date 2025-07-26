@@ -69,7 +69,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
   };
   const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  const { connect, disconnect } = useWebSocket(`/${wsProtocol}/notification/`, {
+  const { connect, disconnect } = useWebSocket(`/wss/notification/`, {
     onOpen: () => {
       console.log('Notification WebSocket connected');
     },
