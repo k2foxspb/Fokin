@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { API_CONFIG } from '@/app/config';
+import { API_CONFIG } from '../app/config';
 
 
 export const useWebSocket = (url: string | string[], options = {}) => {

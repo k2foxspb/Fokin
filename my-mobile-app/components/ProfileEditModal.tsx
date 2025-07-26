@@ -17,7 +17,7 @@ import axios from 'axios';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { Picker } from '@react-native-picker/picker';
-import { API_CONFIG } from '@/app/config';
+import { API_CONFIG } from '../app/config';
 
 interface UserProfile {
   id: number;
