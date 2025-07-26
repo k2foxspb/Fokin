@@ -13,7 +13,7 @@ import {
     ActivityIndicator,
 } from 'react-native';
 import {Stack, useLocalSearchParams, useRouter} from 'expo-router';
-import {useWebSocket} from '@/hooks/useWebSocket';
+import {useWebSocket} from '../../hooks/useWebSocket';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {MaterialIcons} from '@expo/vector-icons';
