@@ -5,6 +5,15 @@
         "projectId": "7a408a11-ebbd-48ac-8f31-e0eb0f1bf1d7"
       }
     },
+    "android": {
+      "package": "com.k2foxspb.fokinfun",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/icon.png",
+        "backgroundColor": "#FFFFFF"
+      }
+    },
+
     "owner": "k2foxspb",
     "name": "Fokin",
     "slug": "fokinfun",
