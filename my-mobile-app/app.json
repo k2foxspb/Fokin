@@ -19,11 +19,20 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/logo1024.png",
         "backgroundColor": "#222222"
-      }
+      },
+      "googleServicesFile": "./google-services.json"
     },
     "plugins": [
       "expo-router",
-      "expo-dev-client"
+      "expo-dev-client",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/logo1024.png",
+          "color": "#222222",
+          "sounds": ["./assets/sounds/notification.wav"]
+        }
+      ]
     ],
     "notification": {
       "icon": "./assets/images/logo1024.png",

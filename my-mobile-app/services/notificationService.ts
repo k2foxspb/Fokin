@@ -59,6 +59,43 @@ export const requestNotificationPermissions = async (): Promise<boolean> => {
 };
 
 /**
+ * Send push token to server
+ * @param {string} token The push token to send
+ * @returns {Promise<boolean>} Whether the token was successfully sent
+ */
+export const sendPushTokenToServer = async (token: string): Promise<boolean> => {
+  try {
+    const userToken = await AsyncStorage.getItem('userToken');
+    if (!userToken) {
+      console.log('User not authenticated, cannot send push token');
+      return false;
+    }
+
+    const response = await fetch(`${API_CONFIG.BASE_URL}/api/notifications/register-device/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Token ${userToken}`,
+      },
+      body: JSON.stringify({
+        token: token,
+        device_type: Platform.OS,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to register push token: ${response.status}`);
+    }
+
+    console.log('Push token successfully registered with server');
+    return true;
+  } catch (error) {
+    console.error('Error sending push token to server:', error);
+    return false;
+  }
+};
+
+/**
  * Register for push notifications
  * @returns {Promise<string|null>} The push token or null if registration failed
  */
@@ -78,8 +115,12 @@ export const registerForPushNotifications = async (): Promise<string | null> => 
     // Store the token
     await AsyncStorage.setItem('pushToken', token.data);
     
-    // Here you would typically send this token to your server
-    // This is just a placeholder - in a real app, you'd implement this
+    // Send the token to the server
+    const sent = await sendPushTokenToServer(token.data);
+    if (!sent) {
+      console.warn('Failed to send push token to server. Notifications may not work when app is closed.');
+    }
+    
     console.log('Push token:', token.data);
     
     return token.data;

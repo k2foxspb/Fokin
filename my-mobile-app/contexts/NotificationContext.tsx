@@ -72,15 +72,27 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         setPushToken(token);
       }
 
+      // Проверяем, было ли приложение запущено из уведомления
+      const lastNotificationResponse = await Notifications.getLastNotificationResponseAsync();
+      if (lastNotificationResponse) {
+        console.log('App was opened from notification:', lastNotificationResponse);
+        // Обрабатываем уведомление, которое запустило приложение
+        handleNotificationResponse(lastNotificationResponse);
+      }
+
       // Добавляем слушатель для уведомлений, полученных когда приложение открыто
       notificationListener.current = addNotificationListener(notification => {
         console.log('Notification received in foreground:', notification);
+        // Можно обновить данные или показать уведомление в приложении
+        if (isAuthenticated) {
+          connect(); // Обновляем данные при получении уведомления
+        }
       });
 
       // Добавляем слушатель для нажатий на уведомления
       responseListener.current = addNotificationResponseListener(response => {
         console.log('Notification response received:', response);
-        // Здесь можно добавить навигацию к экрану сообщений
+        handleNotificationResponse(response);
       });
 
       // Слушаем изменения состояния приложения
@@ -109,6 +121,26 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
     initNotifications();
   }, []);
+
+  // Обработка ответа на уведомление (когда пользователь нажимает на уведомление)
+  const handleNotificationResponse = (response: Notifications.NotificationResponse) => {
+    // Извлекаем данные из уведомления
+    const data = response.notification.request.content.data;
+    console.log('Notification data:', data);
+
+    // Обновляем данные
+    if (isAuthenticated) {
+      connect();
+    }
+
+    // Здесь можно добавить навигацию к соответствующему экрану
+    // в зависимости от типа уведомления
+    if (data && data.type === 'message_notification') {
+      // Например, навигация к экрану сообщений
+      // navigation.navigate('Messages');
+      console.log('Should navigate to messages screen');
+    }
+  };
 
   const handleMessage = (event: WebSocketMessageEvent) => {
     try {
