@@ -32,9 +32,12 @@
       }
     }
   },
-  "hooks": {
-    "prebuild": [
-      "echo $GOOGLE_SERVICES_JSON > google-services.json"
-    ]
+  "submit": {
+    "production": {
+      "android": {
+        "track": "production"
+      }
+
+    }
   }
 }
