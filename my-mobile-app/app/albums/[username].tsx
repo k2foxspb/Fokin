@@ -17,7 +17,7 @@ import axios from 'axios';
 import { Ionicons } from '@expo/vector-icons';
 import AlbumCreateModal from '../../components/AlbumCreateModal';
 import AlbumEditModal from '../../components/AlbumEditModal';
-import {API_CONFIG} from "@/app/config";
+import {API_CONFIG} from "../../app/config";
 
 const { width } = Dimensions.get('window');
 const albumWidth = (width - 48) / 2; // 2 columns with margins
