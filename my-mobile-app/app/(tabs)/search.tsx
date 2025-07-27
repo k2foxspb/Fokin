@@ -88,7 +88,9 @@ export default function SearchScreen() {
           source={
             item.avatar
               ? { uri: item.avatar }
-              : require('../../assets/avatar/male.png')
+              : item.gender === 'male'
+              ? require('../../assets/avatar/male.png')
+              : require('../../assets/avatar/female.png')
           }
           style={styles.avatar}
         />

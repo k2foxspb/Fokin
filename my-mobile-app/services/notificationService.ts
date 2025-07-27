@@ -1,3 +1,4 @@
+
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
@@ -13,16 +14,22 @@ Notifications.setNotificationHandler({
   }),
 });
 
-// Set up background notification handler
-Notifications.setNotificationCategoryAsync('message', [
-  {
-    identifier: 'view',
-    buttonTitle: 'View',
-    options: {
-      opensAppToForeground: true,
-    },
-  },
-]);
+// Set up background notification handler - ТОЛЬКО для мобильных платформ
+if (Platform.OS !== 'web') {
+  try {
+    Notifications.setNotificationCategoryAsync('message', [
+      {
+        identifier: 'view',
+        buttonTitle: 'View',
+        options: {
+          opensAppToForeground: true,
+        },
+      },
+    ]);
+  } catch (error) {
+    console.warn('Failed to set notification category:', error);
+  }
+}
 
 // Interface for notification data
 interface MessageNotification {
@@ -37,6 +44,12 @@ interface MessageNotification {
  */
 export const requestNotificationPermissions = async (): Promise<boolean> => {
   try {
+    // Уведомления не поддерживаются в веб-версии
+    if (Platform.OS === 'web') {
+      console.log('Notifications are not supported on web platform');
+      return false;
+    }
+
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
 
@@ -112,6 +125,12 @@ export const sendPushTokenToServer = async (token: string): Promise<boolean> => 
  */
 export const registerForPushNotifications = async (): Promise<string | null> => {
   try {
+    // Уведомления не поддерживаются в веб-версии
+    if (Platform.OS === 'web') {
+      console.log('Push notifications are not supported on web platform');
+      return null;
+    }
+
     // Check if we have permission
     const hasPermission = await requestNotificationPermissions();
     if (!hasPermission) {
@@ -125,15 +144,15 @@ export const registerForPushNotifications = async (): Promise<string | null> => 
 
     // Store the token
     await AsyncStorage.setItem('pushToken', token.data);
-    
+
     // Send the token to the server
     const sent = await sendPushTokenToServer(token.data);
     if (!sent) {
       console.warn('Failed to send push token to server. Notifications may not work when app is closed.');
     }
-    
+
     console.log('Push token:', token.data);
-    
+
     return token.data;
   } catch (error) {
     console.error('Error registering for push notifications:', error);
@@ -150,10 +169,16 @@ export const sendLocalNotification = async (
   notification: MessageNotification
 ): Promise<string> => {
   try {
+    // Уведомления не поддерживаются в веб-версии
+    if (Platform.OS === 'web') {
+      console.log('Local notifications are not supported on web platform');
+      return 'web-notification-mock';
+    }
+
     // Determine if this is a message notification
-    const isMessageNotification = notification.data && 
+    const isMessageNotification = notification.data &&
       (notification.data as any).type === 'message_notification';
-    
+
     const notificationId = await Notifications.scheduleNotificationAsync({
       content: {
         title: notification.title,
@@ -182,6 +207,10 @@ export const sendLocalNotification = async (
 export const addNotificationListener = (
   handler: (notification: Notifications.Notification) => void
 ) => {
+  if (Platform.OS === 'web') {
+    // Возвращаем пустой объект с методом remove для веб-версии
+    return { remove: () => {} };
+  }
   return Notifications.addNotificationReceivedListener(handler);
 };
 
@@ -193,6 +222,10 @@ export const addNotificationListener = (
 export const addNotificationResponseListener = (
   handler: (response: Notifications.NotificationResponse) => void
 ) => {
+  if (Platform.OS === 'web') {
+    // Возвращаем пустой объект с методом remove для веб-версии
+    return { remove: () => {} };
+  }
   return Notifications.addNotificationResponseReceivedListener(handler);
 };
 
@@ -201,6 +234,9 @@ export const addNotificationResponseListener = (
  * @returns {Promise<Notifications.Notification[]>} The delivered notifications
  */
 export const getDeliveredNotifications = async () => {
+  if (Platform.OS === 'web') {
+    return [];
+  }
   return await Notifications.getPresentedNotificationsAsync();
 };
 
@@ -209,5 +245,8 @@ export const getDeliveredNotifications = async () => {
  * @returns {Promise<void>}
  */
 export const dismissAllNotifications = async () => {
+  if (Platform.OS === 'web') {
+    return;
+  }
   return await Notifications.dismissAllNotificationsAsync();
 };

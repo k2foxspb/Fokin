@@ -3,7 +3,10 @@ from django.urls import path
 
 
 from authapp.apps import AuthappConfig
-from authapp.view_api import LoginAPIView, RegisterAPIView, PasswordResetAPIView, LogoutAPIView
+from authapp.view_api import (
+    LoginAPIView, RegisterAPIView, PasswordResetAPIView, LogoutAPIView,
+    VerifyEmailAPIView, ResendVerificationAPIView
+)
 from authapp.views import CustomLoginView, RegisterView, ProfileEditView, \
     EmailConfirmationSendView,ConfirmEmailView, EmailConfirmationFailedView,PrivacyPolicyView, \
     EmailConfirmedView, ResetPasswordConfirmView, ResetPasswordView, CustomLogoutView
@@ -17,6 +20,8 @@ urlpatterns = [
     path('api/register/', RegisterAPIView.as_view(), name='api_register'),
     path('api/password-reset/', PasswordResetAPIView.as_view(), name='api_password_reset'),
     path('api/logout/', LogoutAPIView.as_view(), name='api_logout'),
+    path('api/verify-email/', VerifyEmailAPIView.as_view(), name='api_verify_email'),
+    path('api/resend-verification/', ResendVerificationAPIView.as_view(), name='api_resend_verification'),
     
     # Web views
     path("login/", CustomLoginView.as_view(), name="login"),

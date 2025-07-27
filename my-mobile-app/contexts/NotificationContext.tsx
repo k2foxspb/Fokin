@@ -11,6 +11,7 @@ import {
   addNotificationResponseListener
 } from '../services/notificationService';
 import { AppState, Platform } from 'react-native';
+import {API_CONFIG} from "@/config";
 
 interface NotificationContextType {
   unreadCount: number;
@@ -212,7 +213,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
   };
   
-  const { connect, disconnect } = useWebSocket(`/wss/notification/`, {
+  const { connect, disconnect } = useWebSocket(`/${API_CONFIG.WS_PROTOCOL}/notification/`, {
     onOpen: () => {
       console.log('Notification WebSocket connected');
     },

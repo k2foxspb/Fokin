@@ -219,11 +219,14 @@ export default function MessagesScreen() {
                       style={styles.avatar}
                     />
                   ) : (
-                    <View style={[styles.avatar, styles.avatarPlaceholder]}>
-                      <Text style={styles.avatarText}>
-                        {item.other_user.username.charAt(0).toUpperCase()}
-                      </Text>
-                    </View>
+                    <Image
+                      source={
+                        item.other_user.gender === 'male'
+                          ? require('../../assets/avatar/male.png')
+                          : require('../../assets/avatar/female.png')
+                      }
+                      style={styles.avatar}
+                    />
                   )}
                 </View>
                 <View style={styles.chatInfo}>

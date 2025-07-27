@@ -58,6 +58,17 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
             'error': "Пользователь с таким адресом электронной почты уже существует.",
         },
     )
+    verification_code = models.CharField(
+        "Код подтверждения email",
+        max_length=10,
+        blank=True,
+        null=True,
+    )
+    verification_code_expires = models.DateTimeField(
+        "Срок действия кода подтверждения",
+        blank=True,
+        null=True,
+    )
     is_staff = models.BooleanField(
         "статус администратора",
         default=False,

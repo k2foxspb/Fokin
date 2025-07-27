@@ -124,7 +124,7 @@ export default function ChatScreen() {
 
     // WebSocket хук с дополнительной отладкой
     const {connect, disconnect, sendMessage, isConnected: wsIsConnected, reconnect} = useWebSocket(
-        `/wss/private/${roomId}/`,
+        `/${API_CONFIG.WS_PROTOCOL}/private/${roomId}/`,
         {
             onOpen: () => {
                 console.log('=== WebSocket CONNECTED ===');

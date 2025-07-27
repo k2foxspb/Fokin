@@ -276,9 +276,14 @@ const handleSave = async () => {
               {avatar ? (
                 <Image source={{ uri: avatar }} style={styles.avatar} />
               ) : (
-                <View style={styles.avatarPlaceholder}>
-                  <Ionicons name="person" size={40} color="#ccc" />
-                </View>
+                <Image 
+                  source={
+                    profile && profile.gender === 'male'
+                      ? require('../assets/avatar/male.png')
+                      : require('../assets/avatar/female.png')
+                  }
+                  style={styles.avatar}
+                />
               )}
               <View style={styles.avatarOverlay}>
                 <Ionicons name="camera" size={20} color="white" />

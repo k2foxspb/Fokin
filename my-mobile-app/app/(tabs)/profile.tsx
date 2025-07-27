@@ -97,7 +97,9 @@ export default function Profile() {
                         source={
                             profile.avatar
                                 ? {uri: profile.avatar}
-                                : require('../../assets/avatar/male.png')
+                                : profile.gender === 'male'
+                                ? require('../../assets/avatar/male.png')
+                                : require('../../assets/avatar/female.png')
                         }
                         style={styles.avatar}
                     />
