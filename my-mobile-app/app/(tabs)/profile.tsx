@@ -7,7 +7,9 @@ import {
     TouchableOpacity,
     ScrollView,
     Alert,
-    RefreshControl
+    RefreshControl,
+    Modal,
+    Dimensions
 } from 'react-native';
 import {router} from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -30,6 +32,7 @@ export default function Profile() {
     const [profile, setProfile] = useState<UserProfile | null>(null);
     const [refreshing, setRefreshing] = useState(false);
     const [editModalVisible, setEditModalVisible] = useState(false);
+    const [avatarModalVisible, setAvatarModalVisible] = useState(false);
 
     const fetchProfile = async () => {
         try {
@@ -93,16 +96,18 @@ export default function Profile() {
                 }
             >
                 <View style={styles.header}>
-                    <Image
-                        source={
-                            profile.avatar
-                                ? {uri: profile.avatar}
-                                : profile.gender === 'male'
-                                ? require('../../assets/avatar/male.png')
-                                : require('../../assets/avatar/female.png')
-                        }
-                        style={styles.avatar}
-                    />
+                    <TouchableOpacity onPress={() => setAvatarModalVisible(true)}>
+                        <Image
+                            source={
+                                profile.avatar
+                                    ? {uri: profile.avatar}
+                                    : profile.gender === 'male'
+                                    ? require('../../assets/avatar/male.png')
+                                    : require('../../assets/avatar/female.png')
+                            }
+                            style={styles.avatar}
+                        />
+                    </TouchableOpacity>
                     <Text style={styles.name}>
                         {profile.first_name} {profile.last_name}
                     </Text>
@@ -160,6 +165,56 @@ export default function Profile() {
                     setEditModalVisible(false);
                 }}
             />
+
+            {/* Modal for displaying full-screen avatar */}
+            <Modal
+                visible={avatarModalVisible}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={() => setAvatarModalVisible(false)}
+                statusBarTranslucent={true}
+            >
+                <View style={styles.modalContainer}>
+                    {/* Header with close button */}
+                    <View style={styles.modalHeader}>
+                        <TouchableOpacity
+                            style={styles.modalButton}
+                            onPress={() => setAvatarModalVisible(false)}
+                            activeOpacity={0.7}
+                        >
+                            <Ionicons name="close" size={24} color="white" />
+                            <Text style={styles.buttonText}>Закрыть</Text>
+                        </TouchableOpacity>
+                    </View>
+
+                    {/* Background for closing modal on tap */}
+                    <TouchableOpacity
+                        style={styles.modalBackground}
+                        onPress={() => setAvatarModalVisible(false)}
+                        activeOpacity={1}
+                    >
+                        {/* Content */}
+                        <View style={styles.modalContent}>
+                            {/* Image */}
+                            <View style={styles.imageContainer}>
+                                {profile && (
+                                    <Image
+                                        source={
+                                            profile.avatar
+                                                ? {uri: profile.avatar}
+                                                : profile.gender === 'male'
+                                                ? require('../../assets/avatar/male.png')
+                                                : require('../../assets/avatar/female.png')
+                                        }
+                                        style={styles.fullImage}
+                                        resizeMode="contain"
+                                    />
+                                )}
+                            </View>
+                        </View>
+                    </TouchableOpacity>
+                </View>
+            </Modal>
         </>
     );
 }
@@ -235,5 +290,59 @@ const styles = StyleSheet.create({
     },
     logoutText: {
         color: '#FF3B30',
+    },
+    // Modal styles for full-screen avatar
+    modalContainer: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.95)',
+    },
+    modalHeader: {
+        flexDirection: 'row',
+        justifyContent: 'flex-end',
+        width: '100%',
+        paddingHorizontal: 20,
+        paddingVertical: 15,
+        paddingTop: 60,
+        position: 'absolute',
+        top: 0,
+        zIndex: 10,
+    },
+    modalButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(0, 0, 0, 0.6)',
+        paddingHorizontal: 20,
+        paddingVertical: 12,
+        borderRadius: 25,
+        minWidth: 120,
+        justifyContent: 'center',
+    },
+    buttonText: {
+        color: 'white',
+        marginLeft: 8,
+        fontSize: 15,
+        fontWeight: '600',
+    },
+    modalBackground: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    modalContent: {
+        width: '100%',
+        height: '100%',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    imageContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        width: '100%',
+    },
+    fullImage: {
+        width: Dimensions.get('window').width,
+        height: Dimensions.get('window').width,
+        resizeMode: 'contain',
     },
 });

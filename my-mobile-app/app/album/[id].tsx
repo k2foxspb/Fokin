@@ -17,6 +17,8 @@ import { router, useLocalSearchParams } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { Ionicons } from '@expo/vector-icons';
+import { GestureDetector, Gesture } from 'react-native-gesture-handler';
+import Animated, { useSharedValue } from 'react-native-reanimated';
 import PhotoUploadModal from '../../components/PhotoUploadModal';
 import AlbumEditModal from '../../components/AlbumEditModal';
 import { API_CONFIG } from '../../config';
@@ -100,6 +102,7 @@ export default function AlbumDetail() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
+  const [currentPhotoIndex, setCurrentPhotoIndex] = useState<number>(0);
   const [modalVisible, setModalVisible] = useState(false);
   const [currentUser, setCurrentUser] = useState<string | null>(null);
   const [uploadModalVisible, setUploadModalVisible] = useState(false);
@@ -262,10 +265,27 @@ export default function AlbumDetail() {
     }
   }, [id]);
 
-  const handlePhotoPress = (photo: Photo) => {
-    console.log('Photo pressed:', photo.id);
+  const handlePhotoPress = (photo: Photo, index: number) => {
+    console.log('Photo pressed:', photo.id, 'at index:', index);
     setSelectedPhoto(photo);
+    setCurrentPhotoIndex(index);
     setModalVisible(true);
+  };
+
+  const goToNextPhoto = () => {
+    if (!album || album.photos.length === 0) return;
+    
+    const nextIndex = (currentPhotoIndex + 1) % album.photos.length;
+    setCurrentPhotoIndex(nextIndex);
+    setSelectedPhoto(album.photos[nextIndex]);
+  };
+
+  const goToPreviousPhoto = () => {
+    if (!album || album.photos.length === 0) return;
+    
+    const prevIndex = (currentPhotoIndex - 1 + album.photos.length) % album.photos.length;
+    setCurrentPhotoIndex(prevIndex);
+    setSelectedPhoto(album.photos[prevIndex]);
   };
 
   const closeModal = () => {
@@ -302,7 +322,7 @@ export default function AlbumDetail() {
         style={styles.photoItem}
         onPress={() => {
           console.log(`Photo ${item.id} pressed`);
-          handlePhotoPress(item);
+          handlePhotoPress(item, index);
         }}
         activeOpacity={0.8}
       >
@@ -445,16 +465,38 @@ export default function AlbumDetail() {
           >
             {/* Контент */}
             <View style={styles.modalContent}>
-              {/* Изображение */}
-              <View style={styles.imageContainer}>
-                {selectedPhoto && (
-                  <Image
-                    source={{ uri: selectedPhoto.image_url }}
-                    style={styles.fullImage}
-                    resizeMode="contain"
-                  />
-                )}
-              </View>
+              {/* Изображение с поддержкой свайпов */}
+              {selectedPhoto && album && album.photos.length > 0 && (
+                <GestureDetector
+                  gesture={Gesture.Pan()
+                    .onEnd((event) => {
+                      // Определяем направление свайпа по оси X
+                      if (event.translationX < -50) {
+                        // Свайп влево - следующее фото
+                        goToNextPhoto();
+                      } else if (event.translationX > 50) {
+                        // Свайп вправо - предыдущее фото
+                        goToPreviousPhoto();
+                      }
+                    })
+                  }
+                >
+                  <View style={styles.imageContainer}>
+                    <Animated.Image
+                      source={{ uri: selectedPhoto.image_url }}
+                      style={styles.fullImage}
+                      resizeMode="contain"
+                    />
+                  
+                    {/* Индикатор позиции фото */}
+                    <View style={styles.photoIndicator}>
+                      <Text style={styles.photoIndicatorText}>
+                        {currentPhotoIndex + 1} / {album.photos.length}
+                      </Text>
+                    </View>
+                  </View>
+                </GestureDetector>
+              )}
 
               {/* Информация */}
               {selectedPhoto?.caption && (
@@ -635,11 +677,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalContent: {
-    width: '90%',
-    height: '70%',
+    width: '100%',
+    height: '100%',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 40,
   },
   modalButton: {
     flexDirection: 'row',
@@ -680,6 +721,20 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
     borderRadius: 12,
+  },
+  photoIndicator: {
+    position: 'absolute',
+    bottom: 20,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  photoIndicatorText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
   caption: {
     color: 'white',
