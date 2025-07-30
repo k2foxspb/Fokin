@@ -85,7 +85,7 @@ export default function Feed() {
   const toggleArticleExpansion = async (article: Article) => {
     // Check if article is already expanded
     const isExpanded = expandedArticleIds.includes(article.id);
-    
+
     if (isExpanded) {
       // Collapse the article
       setExpandedArticleIds(expandedArticleIds.filter(id => id !== article.id));
@@ -93,16 +93,16 @@ export default function Feed() {
       // Expand the article - fetch content if not already loaded
       if (!article.content) {
         // Create a local loading state for this specific article
-        const updatedArticles = articles.map(a => 
+        const updatedArticles = articles.map(a =>
           a.id === article.id ? { ...a, isLoading: true } : a
         );
         setArticles(updatedArticles);
-        
+
         try {
           const token = await AsyncStorage.getItem('userToken');
           if (!token) {
             // Update article to remove loading state
-            const updatedArticles = articles.map(a => 
+            const updatedArticles = articles.map(a =>
               a.id === article.id ? { ...a, isLoading: false } : a
             );
             setArticles(updatedArticles);
@@ -111,25 +111,25 @@ export default function Feed() {
           }
 
           const response = await axios.get(
-            `${API_CONFIG.BASE_URL}/api/articles/${article.slug}/`, 
+            `${API_CONFIG.BASE_URL}/api/articles/${article.slug}/`,
             { headers: { Authorization: `Token ${token}` } }
           );
-          
+
           // Update the article with content and remove loading state
-          const updatedArticles = articles.map(a => 
+          const updatedArticles = articles.map(a =>
             a.id === article.id ? { ...a, content: response.data.content, isLoading: false } : a
           );
           setArticles(updatedArticles);
         } catch (error) {
           // Update article to remove loading state but mark as error
-          const updatedArticles = articles.map(a => 
+          const updatedArticles = articles.map(a =>
             a.id === article.id ? { ...a, isLoading: false, loadError: true } : a
           );
           setArticles(updatedArticles);
           console.error('Error fetching article content:', error);
         }
       }
-      
+
       // Add article id to expanded list
       setExpandedArticleIds([...expandedArticleIds, article.id]);
     }
@@ -141,9 +141,9 @@ export default function Feed() {
 
   const renderArticle = ({ item }: { item: Article }) => {
     const isExpanded = expandedArticleIds.includes(item.id);
-    
+
     return (
-      <TouchableOpacity 
+      <TouchableOpacity
         style={[styles.articleItem, isExpanded && styles.expandedArticleItem]}
         onPress={() => toggleArticleExpansion(item)}
         activeOpacity={0.7}
@@ -156,7 +156,7 @@ export default function Feed() {
         </View>
 
         <Text style={styles.articleTitle}>{item.title}</Text>
-        
+
         {isExpanded ? (
           <View style={styles.expandedContent}>
             {item.content ? (
@@ -195,12 +195,12 @@ export default function Feed() {
               {formatDate(item.created)}
             </Text>
           </View>
-          
+
           <View style={styles.expandIndicator}>
-            <Ionicons 
-              name={isExpanded ? "chevron-up-outline" : "chevron-down-outline"} 
-              size={20} 
-              color="#007AFF" 
+            <Ionicons
+              name={isExpanded ? "chevron-up-outline" : "chevron-down-outline"}
+              size={20}
+              color="#007AFF"
             />
             <Text style={styles.expandText}>
               {isExpanded ? "Свернуть" : "Подробнее"}

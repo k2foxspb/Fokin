@@ -1,5 +1,6 @@
-
 import React, {useState, useEffect, useRef} from 'react';
+import TabBar from '../../components/TabBar';
+
 import {
     View,
     TextInput,
@@ -11,13 +12,15 @@ import {
     Platform,
     Alert,
     ActivityIndicator,
+    Image,
+    TouchableOpacity,
 } from 'react-native';
 import {Stack, useLocalSearchParams, useRouter} from 'expo-router';
 import {useWebSocket} from '../../hooks/useWebSocket';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {MaterialIcons} from '@expo/vector-icons';
-import { API_CONFIG } from '../../config';
+import {API_CONFIG} from '../../config';
 
 interface Message {
     id: number;
@@ -31,6 +34,7 @@ interface User {
     id: number;
     username: string;
     avatar?: string;
+    is_online?: string;
 }
 
 // Функция для безопасного форматирования времени
@@ -282,7 +286,8 @@ export default function ChatScreen() {
             const recipientData = {
                 id: response.data.other_user.id,
                 username: response.data.other_user.username,
-                avatar: response.data.other_user.avatar
+                avatar: response.data.other_user.avatar,
+                is_online: response.data.other_user.is_online
             };
 
             setRecipient(recipientData);
@@ -445,29 +450,48 @@ export default function ChatScreen() {
         }
     };
 
-    // Компонент статуса подключения
-    const ConnectionStatus = () => (
-        <View style={styles.statusContainer}>
-            <View style={[
-                styles.statusIndicator,
-                { backgroundColor: isConnected && isDataLoaded ? '#4CAF50' : '#F44336' }
-            ]} />
-            <Text style={styles.statusText}>
-                {isConnected && isDataLoaded ? 'Подключено' : 'Загрузка...'}
-            </Text>
-            {!isConnected && isDataLoaded && (
-                <Pressable
-                    style={styles.reconnectButton}
-                    onPress={reconnect}
-                >
-                    <Text style={styles.reconnectText}>Переподключиться</Text>
-                </Pressable>
-            )}
-        </View>
+    // Переход в профиль пользователя
+    const navigateToProfile = () => {
+        if (recipient?.username) {
+            router.push(`/user/${recipient.username}`);
+        }
+    };
+
+    // Компонент заголовка с информацией о пользователе
+    const ChatHeader = () => (
+        <TouchableOpacity
+            style={styles.headerUserInfo}
+            onPress={navigateToProfile}
+            activeOpacity={0.7}
+        >
+            <View style={styles.avatarContainer}>
+                <Image
+                    source={
+                        recipient?.avatar
+                            ? {uri: recipient.avatar}
+                            : require('../../assets/avatar/male.png') // Заглушка
+                    }
+                    style={styles.avatar}
+                />
+                <View style={[
+                    styles.onlineIndicator,
+                    {backgroundColor: recipient?.is_online === 'online' ? '#4CAF50' : '#9E9E9E'}
+                ]}/>
+            </View>
+            <View style={styles.userInfo}>
+                <Text style={styles.username}>{recipient?.username || 'Пользователь'}</Text>
+                <Text style={[
+                    styles.onlineStatus,
+                    {color: recipient?.is_online === 'online' ? '#4CAF50' : '#9E9E9E'}
+                ]}>
+                    {recipient?.is_online === 'online' ? 'в сети' : 'не в сети'}
+                </Text>
+            </View>
+        </TouchableOpacity>
     );
 
     // Рендер сообщения - исправленная логика с безопасным форматированием времени
-    const renderMessage = ({item}: {item: Message}) => {
+    const renderMessage = ({item}: { item: Message }) => {
         // Определяем, является ли это моим сообщением
         let isMyMessage = false;
 
@@ -489,6 +513,8 @@ export default function ChatScreen() {
         });
 
         return (
+            <View style={{ flex: 1 }}>
+
             <View style={[
                 styles.messageContainer,
                 isMyMessage ? styles.myMessage : styles.otherMessage
@@ -512,13 +538,15 @@ export default function ChatScreen() {
                     {formatTimestamp(item.timestamp)}
                 </Text>
             </View>
+                <TabBar />
+                </View>
         );
     };
 
     if (isLoading) {
         return (
             <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#007AFF" />
+                <ActivityIndicator size="large" color="#007AFF"/>
                 <Text style={styles.loadingText}>Загрузка чата...</Text>
             </View>
         );
@@ -532,19 +560,17 @@ export default function ChatScreen() {
         >
             <Stack.Screen
                 options={{
-                    title: recipient?.username || 'Чат',
                     headerShown: true,
                     headerLeft: () => (
                         <Pressable onPress={() => router.back()} style={styles.backButton}>
                             <MaterialIcons name="arrow-back" size={24} color="#007AFF"/>
                         </Pressable>
                     ),
+                    headerTitle: () => <ChatHeader/>,
                     headerStyle: {backgroundColor: '#fff'},
                     headerShadowVisible: false,
                 }}
             />
-
-            <ConnectionStatus />
 
             <FlatList
                 ref={flatListRef}
@@ -614,39 +640,46 @@ const styles = StyleSheet.create({
         fontSize: 16,
         color: '#666',
     },
-    statusContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        backgroundColor: '#F8F8F8',
-        borderBottomWidth: 1,
-        borderBottomColor: '#E8E8E8',
-    },
-    statusIndicator: {
-        width: 8,
-        height: 8,
-        borderRadius: 4,
-        marginRight: 8,
-    },
-    statusText: {
-        fontSize: 12,
-        color: '#666',
-        flex: 1,
-    },
-    reconnectButton: {
-        paddingHorizontal: 12,
-        paddingVertical: 4,
-        backgroundColor: '#007AFF',
-        borderRadius: 4,
-    },
-    reconnectText: {
-        color: '#fff',
-        fontSize: 12,
-    },
     backButton: {
         marginLeft: 16,
         padding: 8,
+    },
+    headerUserInfo: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 8,
+    },
+    avatarContainer: {
+        position: 'relative',
+        marginRight: 12,
+    },
+    avatar: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+    },
+    onlineIndicator: {
+        position: 'absolute',
+        bottom: 0,
+        right: 0,
+        width: 12,
+        height: 12,
+        borderRadius: 6,
+        borderWidth: 2,
+        borderColor: 'white',
+    },
+    userInfo: {
+        flex: 1,
+    },
+    username: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: '#333',
+        marginBottom: 2,
+    },
+    onlineStatus: {
+        fontSize: 12,
+        fontWeight: '500',
     },
     chatbox: {
         flex: 1,

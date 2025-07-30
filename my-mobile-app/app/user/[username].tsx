@@ -16,6 +16,7 @@ import axios from 'axios';
 import { Ionicons } from '@expo/vector-icons';
 import { API_CONFIG } from '../../config';
 import ProfileEditModal from '../../components/ProfileEditModal';
+import TabBar from "@/components/TabBar";
 
 interface UserProfile {
   id: number;
@@ -157,7 +158,8 @@ export default function UserDetail() {
   }
 
   return (
-    <>
+    <View style={{ flex: 1 }}>
+
       <ScrollView
         style={styles.container}
         refreshControl={
@@ -241,6 +243,8 @@ export default function UserDetail() {
             </TouchableOpacity>
           )}
         </View>
+        <View style={{ height: 100 }} />
+
       </ScrollView>
       
       <ProfileEditModal
@@ -251,9 +255,12 @@ export default function UserDetail() {
           fetchUserProfile();
         }}
       />
-    </>
+
+      <TabBar />
+    </View>
   );
 }
+
 
 const styles = StyleSheet.create({
   container: {
