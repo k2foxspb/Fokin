@@ -36,7 +36,8 @@ export default function MainLayout() {
         <Stack.Screen
           name="profile"
           options={{
-            title: "Мой профиль"
+            title: "Мой профиль",
+            headerTitleAlign: 'center',
           }}
         />
       </Stack>
