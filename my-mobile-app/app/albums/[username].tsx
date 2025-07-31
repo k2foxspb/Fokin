@@ -20,6 +20,7 @@ import {Ionicons} from '@expo/vector-icons';
 import AlbumCreateModal from '../../components/AlbumCreateModal';
 import AlbumEditModal from '../../components/AlbumEditModal';
 import {API_CONFIG} from "../../config";
+import { useTheme } from '../../contexts/ThemeContext';
 
 const {width} = Dimensions.get('window');
 const albumWidth = (width - 48) / 2; // 2 columns with margins
@@ -42,6 +43,7 @@ interface Album {
 }
 
 export default function UserAlbums() {
+    const { theme } = useTheme();
     const {username} = useLocalSearchParams<{ username: string }>();
     const [albums, setAlbums] = useState<Album[]>([]);
     const [loading, setLoading] = useState(true);
@@ -50,6 +52,8 @@ export default function UserAlbums() {
     const [createModalVisible, setCreateModalVisible] = useState(false);
     const [editModalVisible, setEditModalVisible] = useState(false);
     const [selectedAlbum, setSelectedAlbum] = useState<Album | null>(null);
+
+    const styles = createStyles(theme);
 
     const getCurrentUser = async () => {
         try {
@@ -131,6 +135,7 @@ export default function UserAlbums() {
             style={styles.albumItem}
             onPress={() => handleAlbumPress(item.id)}
             onLongPress={() => handleAlbumLongPress(item)}
+            activeOpacity={0.8}
         >
             <View style={styles.albumCover}>
                 {item.cover_photo ? (
@@ -141,7 +146,7 @@ export default function UserAlbums() {
                     />
                 ) : (
                     <View style={styles.emptyCover}>
-                        <Ionicons name="images-outline" size={40} color="#ccc"/>
+                        <Ionicons name="images-outline" size={40} color={theme.textSecondary}/>
                     </View>
                 )}
 
@@ -169,198 +174,233 @@ export default function UserAlbums() {
 
     if (loading) {
         return (
-            <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#007AFF"/>
-                <Text style={styles.loadingText}>Загрузка альбомов...</Text>
-            </View>
+            <>
+                <View style={styles.loadingContainer}>
+                    <ActivityIndicator size="large" color={theme.primary}/>
+                    <Text style={styles.loadingText}>Загрузка альбомов...</Text>
+                </View>
+                <TabBar/>
+            </>
         );
     }
 
     if (albums.length === 0) {
         return (
-            <View style={styles.emptyContainer}>
-                {/* Хедер даже для пустого состояния */}
-                <View style={styles.header}>
-                    <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-                        <Ionicons name="arrow-back" size={24} color="#007AFF"/>
-                    </TouchableOpacity>
-                    <Text style={styles.headerTitle}>Альбомы @{username}</Text>
-                    {/* Кнопка создания альбома для владельца */}
-                    {currentUser === username && (
-                        <TouchableOpacity
-                            style={styles.createButton}
-                            onPress={() => setCreateModalVisible(true)}
-                        >
-                            <Ionicons name="add" size={24} color="#007AFF"/>
+            <>
+                <View style={styles.emptyContainer}>
+                    {/* Хедер даже для пустого состояния */}
+                    <View style={styles.header}>
+                        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+                            <Ionicons name="arrow-back" size={24} color={theme.primary}/>
                         </TouchableOpacity>
-                    )}
-                </View>
-
-                {/* Основное содержимое пустого состояния */}
-                <View style={styles.emptyContent}>
-                    <Ionicons name="images-outline" size={64} color="#ccc"/>
-                    <Text style={styles.emptyText}>
-                        {currentUser === username
-                            ? 'У вас пока нет альбомов'
-                            : 'У пользователя нет альбомов'
-                        }
-                    </Text>
-
-                    {/* Кнопки действий */}
-                    <View style={styles.emptyActions}>
+                        <Text style={styles.headerTitle}>Альбомы @{username}</Text>
+                        {/* Кнопка создания альбома для владельца */}
                         {currentUser === username && (
                             <TouchableOpacity
-                                style={styles.createFirstAlbumButton}
+                                style={styles.createButton}
                                 onPress={() => setCreateModalVisible(true)}
                             >
-                                <Ionicons name="add-circle" size={20} color="white"/>
-                                <Text style={styles.createFirstAlbumButtonText}>Создать первый альбом</Text>
+                                <Ionicons name="add" size={24} color={theme.primary}/>
                             </TouchableOpacity>
                         )}
-
-                        <TouchableOpacity style={styles.refreshButton} onPress={fetchAlbums}>
-                            <Text style={styles.refreshButtonText}>Обновить</Text>
-                        </TouchableOpacity>
                     </View>
-                </View>
 
-                {/* Модальные окна */}
-                <AlbumCreateModal
-                    visible={createModalVisible}
-                    onClose={() => setCreateModalVisible(false)}
-                    onAlbumCreated={() => {
-                        fetchAlbums();
-                    }}
-                />
-            </View>
+                    {/* Основное содержимое пустого состояния */}
+                    <View style={styles.emptyContent}>
+                        <Ionicons name="images-outline" size={64} color={theme.textSecondary}/>
+                        <Text style={styles.emptyText}>
+                            {currentUser === username
+                                ? 'У вас пока нет альбомов'
+                                : 'У пользователя нет альбомов'
+                            }
+                        </Text>
+
+                        {/* Кнопки действий */}
+                        <View style={styles.emptyActions}>
+                            {currentUser === username && (
+                                <TouchableOpacity
+                                    style={styles.createFirstAlbumButton}
+                                    onPress={() => setCreateModalVisible(true)}
+                                >
+                                    <Ionicons name="add-circle" size={20} color="white"/>
+                                    <Text style={styles.createFirstAlbumButtonText}>Создать первый альбом</Text>
+                                </TouchableOpacity>
+                            )}
+
+                            <TouchableOpacity style={styles.refreshButton} onPress={fetchAlbums}>
+                                <Text style={styles.refreshButtonText}>Обновить</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+
+                    {/* Модальные окна */}
+                    <AlbumCreateModal
+                        visible={createModalVisible}
+                        onClose={() => setCreateModalVisible(false)}
+                        onAlbumCreated={() => {
+                            fetchAlbums();
+                        }}
+                    />
+                </View>
+                <TabBar/>
+            </>
         );
     }
 
     return (
-        <View style={{flex: 1}}>
-            <View style={styles.container}>
-                <View style={styles.header}>
-                    <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-                        <Ionicons name="arrow-back" size={24} color="#007AFF"/>
-                    </TouchableOpacity>
-                    <Text style={styles.headerTitle}>Альбомы @{username}</Text>
-                    {currentUser === username && (
-                        <TouchableOpacity
-                            style={styles.createButton}
-                            onPress={() => setCreateModalVisible(true)}
-                        >
-                            <Ionicons name="add" size={24} color="#007AFF"/>
+        <>
+            <View style={{flex: 1}}>
+                <View style={styles.container}>
+                    <View style={styles.header}>
+                        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+                            <Ionicons name="arrow-back" size={24} color={theme.primary}/>
                         </TouchableOpacity>
-                    )}
+                        <Text style={styles.headerTitle}>Альбомы @{username}</Text>
+                        {currentUser === username && (
+                            <TouchableOpacity
+                                style={styles.createButton}
+                                onPress={() => setCreateModalVisible(true)}
+                            >
+                                <Ionicons name="add" size={24} color={theme.primary}/>
+                            </TouchableOpacity>
+                        )}
+                    </View>
+
+                    <FlatList
+                        data={albums}
+                        renderItem={renderAlbum}
+                        keyExtractor={(item) => item.id.toString()}
+                        numColumns={2}
+                        refreshControl={
+                            <RefreshControl
+                                refreshing={refreshing}
+                                onRefresh={onRefresh}
+                                colors={[theme.primary]}
+                                tintColor={theme.primary}
+                            />
+                        }
+                        showsVerticalScrollIndicator={false}
+                        contentContainerStyle={[styles.listContainer, {paddingBottom: 100}]}
+                        columnWrapperStyle={styles.row}
+                    />
+
+                    <AlbumCreateModal
+                        visible={createModalVisible}
+                        onClose={() => setCreateModalVisible(false)}
+                        onAlbumCreated={() => {
+                            fetchAlbums();
+                        }}
+                    />
+
+                    <AlbumEditModal
+                        visible={editModalVisible}
+                        album={selectedAlbum}
+                        onClose={() => {
+                            setEditModalVisible(false);
+                            setSelectedAlbum(null);
+                        }}
+                        onAlbumUpdated={handleAlbumUpdated}
+                        onAlbumDeleted={handleAlbumDeleted}
+                    />
                 </View>
 
-                <FlatList
-                    data={albums}
-                    renderItem={renderAlbum}
-                    keyExtractor={(item) => item.id.toString()}
-                    numColumns={2}
-                    refreshControl={
-                        <RefreshControl refreshing={refreshing} onRefresh={onRefresh}/>
-                    }
-                    showsVerticalScrollIndicator={false}
-                    contentContainerStyle={[styles.listContainer, {paddingBottom: 100}]}
-                    columnWrapperStyle={styles.row}
-                />
-
-                <AlbumCreateModal
-                    visible={createModalVisible}
-                    onClose={() => setCreateModalVisible(false)}
-                    onAlbumCreated={() => {
-                        fetchAlbums();
-                    }}
-                />
-
-                <AlbumEditModal
-                    visible={editModalVisible}
-                    album={selectedAlbum}
-                    onClose={() => {
-                        setEditModalVisible(false);
-                        setSelectedAlbum(null);
-                    }}
-                    onAlbumUpdated={handleAlbumUpdated}
-                    onAlbumDeleted={handleAlbumDeleted}
-                />
+                <TabBar/>
             </View>
-
-            <TabBar/>
-        </View>
+        </>
     );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: any) => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#f5f5f5',
+        backgroundColor: theme.background,
     },
     header: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: 'white',
+        backgroundColor: theme.surface,
         paddingHorizontal: 16,
         paddingVertical: 12,
         paddingTop: 50,
-        elevation: 2,
-        shadowColor: '#000',
-        shadowOffset: {width: 0, height: 1},
-        shadowOpacity: 0.2,
-        shadowRadius: 2,
+        elevation: 4,
+        shadowColor: theme.text,
+        shadowOffset: {width: 0, height: 2},
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+        borderBottomWidth: 1,
+        borderBottomColor: theme.border,
     },
     backButton: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: theme.primary + '15',
+        justifyContent: 'center',
+        alignItems: 'center',
         marginRight: 16,
     },
     headerTitle: {
         fontSize: 18,
         fontWeight: 'bold',
-        color: '#333',
+        color: theme.text,
         flex: 1,
     },
     createButton: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: theme.primary + '15',
+        justifyContent: 'center',
+        alignItems: 'center',
         marginLeft: 16,
-        padding: 4,
     },
     loadingContainer: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
+        backgroundColor: theme.background,
     },
     loadingText: {
-        marginTop: 8,
-        color: '#666',
+        marginTop: 16,
+        color: theme.textSecondary,
+        fontSize: 16,
+        fontWeight: '500',
     },
     emptyContainer: {
         flex: 1,
-        backgroundColor: '#f5f5f5',
+        backgroundColor: theme.background,
     },
     emptyContent: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        padding: 20,
+        padding: 24,
     },
     emptyText: {
         fontSize: 18,
-        color: '#666',
-        marginTop: 16,
-        marginBottom: 24,
+        color: theme.textSecondary,
+        marginTop: 24,
+        marginBottom: 32,
         textAlign: 'center',
+        lineHeight: 24,
     },
     emptyActions: {
         alignItems: 'center',
-        gap: 12,
+        gap: 16,
     },
     createFirstAlbumButton: {
-        backgroundColor: '#007AFF',
+        backgroundColor: theme.primary,
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 24,
-        paddingVertical: 14,
-        borderRadius: 12,
-        marginBottom: 8,
+        paddingHorizontal: 28,
+        paddingVertical: 16,
+        borderRadius: 25,
+        marginBottom: 12,
+        elevation: 3,
+        shadowColor: theme.text,
+        shadowOffset: {width: 0, height: 2},
+        shadowOpacity: 0.15,
+        shadowRadius: 6,
     },
     createFirstAlbumButtonText: {
         color: 'white',
@@ -369,10 +409,15 @@ const styles = StyleSheet.create({
         marginLeft: 8,
     },
     refreshButton: {
-        backgroundColor: '#34C759',
-        paddingHorizontal: 20,
-        paddingVertical: 12,
-        borderRadius: 8,
+        backgroundColor: theme.success || '#34C759',
+        paddingHorizontal: 24,
+        paddingVertical: 14,
+        borderRadius: 12,
+        elevation: 2,
+        shadowColor: theme.text,
+        shadowOffset: {width: 0, height: 1},
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
     },
     refreshButtonText: {
         color: 'white',
@@ -387,20 +432,21 @@ const styles = StyleSheet.create({
     },
     albumItem: {
         width: albumWidth,
-        backgroundColor: 'white',
-        borderRadius: 12,
-        marginBottom: 16,
-        elevation: 2,
-        shadowColor: '#000',
-        shadowOffset: {width: 0, height: 1},
-        shadowOpacity: 0.2,
-        shadowRadius: 2,
+        backgroundColor: theme.surface,
+        borderRadius: 16,
+        marginBottom: 20,
+        elevation: 4,
+        shadowColor: theme.text,
+        shadowOffset: {width: 0, height: 2},
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+        overflow: 'hidden',
     },
     albumCover: {
         position: 'relative',
         height: albumWidth,
-        borderTopLeftRadius: 12,
-        borderTopRightRadius: 12,
+        borderTopLeftRadius: 16,
+        borderTopRightRadius: 16,
         overflow: 'hidden',
     },
     coverImage: {
@@ -410,26 +456,28 @@ const styles = StyleSheet.create({
     emptyCover: {
         width: '100%',
         height: '100%',
-        backgroundColor: '#f0f0f0',
+        backgroundColor: theme.border,
         justifyContent: 'center',
         alignItems: 'center',
     },
     hiddenBadge: {
         position: 'absolute',
-        top: 8,
-        right: 8,
-        backgroundColor: 'rgba(0, 0, 0, 0.6)',
-        borderRadius: 12,
-        padding: 4,
+        top: 12,
+        right: 12,
+        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        borderRadius: 16,
+        padding: 6,
+        elevation: 2,
     },
     photoCount: {
         position: 'absolute',
-        bottom: 8,
-        right: 8,
-        backgroundColor: 'rgba(0, 0, 0, 0.6)',
-        borderRadius: 12,
-        paddingHorizontal: 8,
-        paddingVertical: 4,
+        bottom: 12,
+        right: 12,
+        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        borderRadius: 16,
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        elevation: 2,
     },
     photoCountText: {
         color: 'white',
@@ -437,16 +485,18 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
     },
     albumInfo: {
-        padding: 12,
+        padding: 16,
     },
     albumTitle: {
         fontSize: 16,
         fontWeight: 'bold',
-        color: '#333',
-        marginBottom: 4,
+        color: theme.text,
+        marginBottom: 6,
+        lineHeight: 20,
     },
     albumDate: {
-        fontSize: 12,
-        color: '#666',
+        fontSize: 13,
+        color: theme.textSecondary,
+        fontWeight: '500',
     },
 });

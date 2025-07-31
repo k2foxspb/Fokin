@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import {
   View,
@@ -14,6 +15,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { Ionicons } from '@expo/vector-icons';
 import {API_CONFIG} from "../config";
+import { useTheme } from '../contexts/ThemeContext';
 
 interface AlbumCreateModalProps {
   visible: boolean;
@@ -22,9 +24,12 @@ interface AlbumCreateModalProps {
 }
 
 export default function AlbumCreateModal({ visible, onClose, onAlbumCreated }: AlbumCreateModalProps) {
+  const { theme } = useTheme();
   const [title, setTitle] = useState('');
   const [isHidden, setIsHidden] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  const styles = createStyles(theme);
 
   const handleCreate = async () => {
     if (!title.trim()) {
@@ -81,7 +86,7 @@ export default function AlbumCreateModal({ visible, onClose, onAlbumCreated }: A
           <View style={styles.header}>
             <Text style={styles.headerTitle}>Создать альбом</Text>
             <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
-              <Ionicons name="close" size={24} color="#666" />
+              <Ionicons name="close" size={24} color={theme.textSecondary} />
             </TouchableOpacity>
           </View>
 
@@ -92,16 +97,24 @@ export default function AlbumCreateModal({ visible, onClose, onAlbumCreated }: A
               value={title}
               onChangeText={setTitle}
               placeholder="Введите название альбома"
+              placeholderTextColor={theme.textSecondary}
               maxLength={255}
               editable={!loading}
             />
 
             <View style={styles.switchContainer}>
-              <Text style={styles.label}>Скрытый альбом</Text>
+              <View style={styles.switchLabelContainer}>
+                <Text style={styles.label}>Скрытый альбом</Text>
+                <Text style={styles.switchDescription}>
+                  Только вы сможете видеть этот альбом
+                </Text>
+              </View>
               <Switch
                 value={isHidden}
                 onValueChange={setIsHidden}
                 disabled={loading}
+                trackColor={{ false: theme.border, true: theme.primary + '50' }}
+                thumbColor={isHidden ? theme.primary : theme.textSecondary}
               />
             </View>
 
@@ -109,11 +122,15 @@ export default function AlbumCreateModal({ visible, onClose, onAlbumCreated }: A
               style={[styles.createButton, loading && styles.disabledButton]}
               onPress={handleCreate}
               disabled={loading}
+              activeOpacity={0.8}
             >
               {loading ? (
-                <ActivityIndicator color="white" />
+                <ActivityIndicator color="white" size="small" />
               ) : (
-                <Text style={styles.createButtonText}>Создать альбом</Text>
+                <>
+                  <Ionicons name="add-circle-outline" size={20} color="white" />
+                  <Text style={styles.createButtonText}>Создать альбом</Text>
+                </>
               )}
             </TouchableOpacity>
           </View>
@@ -123,50 +140,62 @@ export default function AlbumCreateModal({ visible, onClose, onAlbumCreated }: A
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: any) => StyleSheet.create({
   modalContainer: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   modalContent: {
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 20,
+    backgroundColor: theme.surface,
+    borderRadius: 20,
+    padding: 24,
     width: '90%',
     maxWidth: 400,
+    elevation: 8,
+    shadowColor: theme.text,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 24,
   },
   headerTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: 'bold',
-    color: '#333',
+    color: theme.text,
   },
   closeButton: {
-    padding: 4,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: theme.border,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   form: {
-    gap: 16,
+    gap: 20,
   },
   label: {
     fontSize: 16,
-    fontWeight: '500',
-    color: '#333',
+    fontWeight: '600',
+    color: theme.text,
     marginBottom: 8,
   },
   input: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
+    borderWidth: 1.5,
+    borderColor: theme.border,
+    borderRadius: 12,
+    padding: 16,
     fontSize: 16,
-    backgroundColor: '#f9f9f9',
+    backgroundColor: theme.background,
+    color: theme.text,
+    fontWeight: '500',
   },
   switchContainer: {
     flexDirection: 'row',
@@ -174,19 +203,38 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 8,
   },
+  switchLabelContainer: {
+    flex: 1,
+    marginRight: 16,
+  },
+  switchDescription: {
+    fontSize: 13,
+    color: theme.textSecondary,
+    marginTop: 2,
+    lineHeight: 18,
+  },
   createButton: {
-    backgroundColor: '#007AFF',
-    borderRadius: 8,
-    padding: 16,
+    backgroundColor: theme.primary,
+    borderRadius: 16,
+    padding: 18,
     alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
     marginTop: 8,
+    elevation: 3,
+    shadowColor: theme.text,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
   },
   disabledButton: {
-    backgroundColor: '#ccc',
+    backgroundColor: theme.textSecondary,
+    opacity: 0.6,
   },
   createButtonText: {
     color: 'white',
     fontSize: 16,
     fontWeight: '600',
+    marginLeft: 8,
   },
 });

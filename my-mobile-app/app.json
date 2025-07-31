@@ -6,6 +6,11 @@
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "icon": "./assets/images/logo1024.png",
+    "splash": {
+      "image": "./assets/images/logo_white 192.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#222222"
+    },
     "developmentClient": {
       "silentLaunch": false
     },
@@ -21,6 +26,10 @@
         "backgroundColor": "#222222"
       },
       "googleServicesFile": "./google-services.json"
+    },
+    "web": {
+      "favicon": "./assets/images/icon.png",
+      "bundler": "metro"
     },
     "plugins": [
       "expo-router",

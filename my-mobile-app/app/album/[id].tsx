@@ -520,19 +520,24 @@ export default function AlbumDetail() {
                     </View>
 
                     <View style={styles.headerButtons}>
-                        <TouchableOpacity
-                            style={styles.headerButton}
-                            onPress={() => setEditModalVisible(true)}
-                        >
-                            <Ionicons name="create-outline" size={24} color="#007AFF"/>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            style={styles.headerButton}
-                            onPress={() => setUploadModalVisible(true)}
-                        >
-                            <Ionicons name="camera" size={24} color="#007AFF"/>
-                        </TouchableOpacity>
+                       {isOwner && (
+                            <>
+                                <TouchableOpacity
+                                    style={styles.headerButton}
+                                    onPress={() => setEditModalVisible(true)}
+                                >
+                                    <Ionicons name="create-outline" size={24} color="#007AFF"/>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={styles.headerButton}
+                                    onPress={() => setUploadModalVisible(true)}
+                                >
+                                    <Ionicons name="camera" size={24} color="#007AFF"/>
+                                </TouchableOpacity>
+                            </>
+                        )}
                     </View>
+
                 </View>
 
                 {album.photos.length === 0 ? (

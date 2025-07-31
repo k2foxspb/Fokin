@@ -6,12 +6,14 @@ import axios from 'axios';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNotifications } from '../../contexts/NotificationContext';
+import { useTheme } from '../../contexts/ThemeContext';
 import { API_CONFIG } from '../../config';
 
 interface User {
   id: number;
   username: string;
   avatar: string | null;
+  is_online?: string;
 }
 
 interface ChatPreview {
@@ -25,6 +27,7 @@ interface ChatPreview {
 export default function MessagesScreen() {
   const router = useRouter();
   const { senderCounts } = useNotifications();
+  const { theme } = useTheme();
   const [chats, setChats] = useState<ChatPreview[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -103,22 +106,45 @@ export default function MessagesScreen() {
         return '';
       }
 
-      // Преобразуем timestamp в число
-      let timestampNum: number;
-      if (typeof timestamp === 'string') {
-        timestampNum = parseInt(timestamp, 10);
-      } else {
-        timestampNum = timestamp;
-      }
+      let date: Date;
 
-      // Проверяем, что timestamp валидный
-      if (isNaN(timestampNum) || timestampNum <= 0) {
-        console.warn('Invalid timestamp:', timestamp);
+      if (typeof timestamp === 'string') {
+        // Handle various string formats
+        if (timestamp.includes('T') && timestamp.includes('-')) {
+          // ISO format: "2025-07-31T08:55:32.436877Z" or "2025-07-31T08:55:32"
+          date = new Date(timestamp);
+        } else if (timestamp.includes('.') && timestamp.includes(',')) {
+          // Russian format: "31.07.2025, 08:55:32"
+          const cleanTimestamp = timestamp.replace(',', '');
+          const parts = cleanTimestamp.split(' ');
+          if (parts.length >= 2) {
+            const datePart = parts[0].split('.').reverse().join('-'); // DD.MM.YYYY -> YYYY-MM-DD
+            const timePart = parts[1];
+            date = new Date(`${datePart}T${timePart}`);
+          } else {
+            date = new Date(timestamp);
+          }
+        } else if (timestamp.includes('-') && timestamp.includes(' ')) {
+          // Django default format: "2025-07-31 08:55:32"
+          date = new Date(timestamp.replace(' ', 'T'));
+        } else {
+          // Try parsing as number string (Unix timestamp)
+          const timestampNum = parseFloat(timestamp);
+          if (!isNaN(timestampNum)) {
+            // If timestamp is in seconds (less than 1e10), convert to milliseconds
+            date = new Date(timestampNum < 1e10 ? timestampNum * 1000 : timestampNum);
+          } else {
+            date = new Date(timestamp);
+          }
+        }
+      } else if (typeof timestamp === 'number') {
+        // Handle numeric timestamps
+        // If timestamp is in seconds (less than 1e10), convert to milliseconds
+        date = new Date(timestamp < 1e10 ? timestamp * 1000 : timestamp);
+      } else {
+        console.warn('Unknown timestamp format:', timestamp);
         return 'Неверная дата';
       }
-
-      // Создаем дату из timestamp (умножаем на 1000, так как JS работает с миллисекундами)
-      const date = new Date(timestampNum * 1000);
 
       // Проверяем, что дата валидная
       if (isNaN(date.getTime())) {
@@ -161,33 +187,34 @@ export default function MessagesScreen() {
   if (isLoading && !isRefreshing) {
     console.log('Rendering loading state');
     return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color="#007AFF" />
-        <Text style={styles.loadingText}>Загрузка...</Text>
+      <View style={[styles.centerContainer, { backgroundColor: theme.background }]}>
+        <ActivityIndicator size="large" color={theme.primary} />
+        <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Загрузка...</Text>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
       <Stack.Screen
         options={{
           title: 'Чаты',
           headerStyle: {
-            backgroundColor: '#fff',
+            backgroundColor: theme.headerBackground,
           },
+          headerTintColor: theme.headerText,
           headerShadowVisible: false,
         }}
       />
       {error ? (
-        <View style={styles.centerContainer}>
-          <MaterialCommunityIcons name="alert-circle-outline" size={50} color="#ff3b30" />
-          <Text style={styles.errorText}>{error}</Text>
+        <View style={[styles.centerContainer, { backgroundColor: theme.background }]}>
+          <MaterialCommunityIcons name="alert-circle-outline" size={50} color={theme.error} />
+          <Text style={[styles.errorText, { color: theme.error }]}>{error}</Text>
           <Pressable
-            style={styles.retryButton}
+            style={[styles.retryButton, { backgroundColor: theme.primary }]}
             onPress={() => fetchChats()}
           >
-            <Text style={styles.retryButtonText}>Повторить</Text>
+            <Text style={[styles.retryButtonText, { color: theme.background }]}>Повторить</Text>
           </Pressable>
         </View>
       ) : (
@@ -202,7 +229,8 @@ export default function MessagesScreen() {
               <Pressable
                 style={({ pressed }) => [
                   styles.chatItem,
-                  pressed && styles.chatItemPressed
+                  { borderBottomColor: theme.border },
+                  pressed && [styles.chatItemPressed, { backgroundColor: theme.surfacePressed }]
                 ]}
                 onPress={() => {
                   console.log('Chat pressed:', item);
@@ -228,23 +256,31 @@ export default function MessagesScreen() {
                       style={styles.avatar}
                     />
                   )}
+                  {/* Online status indicator */}
+                  <View style={[
+                    styles.onlineIndicator,
+                    { 
+                      backgroundColor: item.other_user.is_online === 'online' ? theme.online : theme.offline,
+                      borderColor: theme.background
+                    }
+                  ]} />
                 </View>
                 <View style={styles.chatInfo}>
                   <View style={styles.chatHeader}>
-                    <Text style={styles.username} numberOfLines={1}>
+                    <Text style={[styles.username, { color: theme.text }]} numberOfLines={1}>
                       {item.other_user.username}
                     </Text>
-                    <Text style={styles.timestamp}>
+                    <Text style={[styles.timestamp, { color: theme.textSecondary }]}>
                       {formatDate(item.last_message_time)}
                     </Text>
                   </View>
-                  <Text style={styles.lastMessage} numberOfLines={1}>
+                  <Text style={[styles.lastMessage, { color: theme.textSecondary }]} numberOfLines={1}>
                     {item.last_message}
                   </Text>
                 </View>
                 {displayUnreadCount > 0 && (
-                  <View style={styles.badge}>
-                    <Text style={styles.badgeText}>
+                  <View style={[styles.badge, { backgroundColor: theme.primary }]}>
+                    <Text style={[styles.badgeText, { color: theme.background }]}>
                       {displayUnreadCount > 99 ? '99+' : displayUnreadCount}
                     </Text>
                   </View>
@@ -257,14 +293,14 @@ export default function MessagesScreen() {
             <RefreshControl
               refreshing={isRefreshing}
               onRefresh={onRefresh}
-              colors={['#007AFF']}
-              tintColor="#007AFF"
+              colors={[theme.primary]}
+              tintColor={theme.primary}
             />
           }
           ListEmptyComponent={() => (
             <View style={styles.emptyContainer}>
-              <MaterialCommunityIcons name="chat-outline" size={50} color="#666" />
-              <Text style={styles.emptyText}>У вас пока нет чатов</Text>
+              <MaterialCommunityIcons name="chat-outline" size={50} color={theme.textSecondary} />
+              <Text style={[styles.emptyText, { color: theme.textSecondary }]}>У вас пока нет чатов</Text>
             </View>
           )}
         />
@@ -276,39 +312,44 @@ export default function MessagesScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
   },
   centerContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#fff',
   },
   chatItem: {
     flexDirection: 'row',
     padding: 15,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
   },
   chatItemPressed: {
-    backgroundColor: '#f5f5f5',
+    // Background color is now handled dynamically
   },
   avatarContainer: {
     marginRight: 15,
+    position: 'relative',
   },
   avatar: {
     width: 50,
     height: 50,
     borderRadius: 25,
   },
+  onlineIndicator: {
+    position: 'absolute',
+    bottom: 2,
+    right: 2,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    borderWidth: 2,
+  },
   avatarPlaceholder: {
-    backgroundColor: '#e1e1e1',
     justifyContent: 'center',
     alignItems: 'center',
   },
   avatarText: {
     fontSize: 20,
-    color: '#666',
   },
   chatInfo: {
     flex: 1,
@@ -328,14 +369,11 @@ const styles = StyleSheet.create({
   },
   timestamp: {
     fontSize: 12,
-    color: '#666',
   },
   lastMessage: {
     fontSize: 14,
-    color: '#666',
   },
   badge: {
-    backgroundColor: '#007AFF',
     borderRadius: 10,
     minWidth: 20,
     height: 20,
@@ -344,7 +382,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
   },
   badgeText: {
-    color: '#fff',
     fontSize: 12,
     fontWeight: 'bold',
   },
@@ -357,25 +394,22 @@ const styles = StyleSheet.create({
   emptyText: {
     marginTop: 10,
     fontSize: 16,
-    color: '#666',
   },
   errorText: {
     marginTop: 10,
-    color: '#ff3b30',
     textAlign: 'center',
     paddingHorizontal: 20,
   },
   retryButton: {
     marginTop: 15,
     padding: 10,
-    backgroundColor: '#007AFF',
     borderRadius: 5,
   },
   retryButtonText: {
-    color: '#fff',
+    fontSize: 16,
   },
   loadingText: {
     marginTop: 10,
-    color: '#666',
+    fontSize: 16,
   },
 });

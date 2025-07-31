@@ -305,32 +305,72 @@ class NotificationConsumer(AsyncWebsocketConsumer):
             if not self.user_id:
                 await self.close()
                 return
-            await self.send_user_online(self.user_id)
+
+            # Добавляем пользователя в общую группу для статусов
+            await self.channel_layer.group_add("online_status", self.channel_name)
             await self.channel_layer.group_add(f"user_{self.user_id}", self.channel_name)
+
+            # Устанавливаем статус онлайн и уведомляем других
+            await self.send_user_online(self.user_id)
+            await self.broadcast_user_status(self.user_id, 'online')
+
             await self.accept()
+
+            # Отправляем начальные данные
             unread_sender_count = await self.get_unique_senders_count(self.user_id)
             messages_by_sender = await self.get_messages_by_sender(self.user_id)
             await self.send_initial_notification(unread_sender_count, messages_by_sender)
+
         except Exception as e:
             print(f'Error connecting to notification: {e}')
-            await self.close()  # Закрываем соединение при ошибке
+            await self.close()
 
     @database_sync_to_async
     def send_user_online(self, user_id):
-        user = CustomUser.objects.get(pk=user_id)
-        user.is_online = 'online'
-        user.save()
+        try:
+            user = CustomUser.objects.get(pk=user_id)
+            user.is_online = 'online'
+            user.save()
+            return user
+        except CustomUser.DoesNotExist:
+            print(f"User {user_id} not found")
+            return None
 
     @database_sync_to_async
     def send_user_offline(self, user_id):
-        user = CustomUser.objects.get(pk=user_id)
-        user.is_online = 'offline'
-        user.save()
+        try:
+            user = CustomUser.objects.get(pk=user_id)
+            user.is_online = 'offline'
+            user.save()
+            return user
+        except CustomUser.DoesNotExist:
+            print(f"User {user_id} not found")
+            return None
+
+    async def broadcast_user_status(self, user_id, status):
+        """Рассылаем изменение статуса всем подключенным пользователям"""
+        try:
+            await self.channel_layer.group_send(
+                "online_status",
+                {
+                    'type': 'user_status_update',
+                    'user_id': user_id,
+                    'status': status
+                }
+            )
+        except Exception as e:
+            print(f'Error broadcasting user status: {e}')
 
     async def disconnect(self, close_code):
         try:
+            # Убираем из групп
+            await self.channel_layer.group_discard("online_status", self.channel_name)
             await self.channel_layer.group_discard(f"user_{self.user_id}", self.channel_name)
+
+            # Устанавливаем статус оффлайн и уведомляем других
             await self.send_user_offline(self.user_id)
+            await self.broadcast_user_status(self.user_id, 'offline')
+
         except Exception as e:
             print(f'Error disconnecting from notification: {e}')
 
@@ -343,10 +383,24 @@ class NotificationConsumer(AsyncWebsocketConsumer):
         try:
             messages_by_sender = await self.get_messages_by_sender(user_id)
             unread_sender_count = await self.get_unique_senders_count(self.user_id)
-            await self.send(text_data=json.dumps({'type': 'messages_by_sender_update', 'messages': messages_by_sender,
-                                                  "unique_sender_count": unread_sender_count, }))
+            await self.send(text_data=json.dumps({
+                'type': 'messages_by_sender_update',
+                'messages': messages_by_sender,
+                "unique_sender_count": unread_sender_count,
+            }))
         except Exception as e:
             print(f"Error in NotificationConsumer.notification: {e}")
+
+    async def user_status_update(self, event):
+        """Обработчик для получения обновлений статуса пользователей"""
+        try:
+            await self.send(text_data=json.dumps({
+                'type': 'user_status_update',
+                'user_id': event['user_id'],
+                'status': event['status']
+            }))
+        except Exception as e:
+            print(f"Error in user_status_update: {e}")
 
     @database_sync_to_async
     def get_unique_senders_count(self, user_id):
@@ -381,5 +435,4 @@ class NotificationConsumer(AsyncWebsocketConsumer):
             "type": "initial_notification",
             "unique_sender_count": unread_sender_count,
             "messages": messages_by_sender
-
         }))

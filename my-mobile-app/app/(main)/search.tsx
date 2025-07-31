@@ -16,6 +16,7 @@ import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '../../contexts/ThemeContext';
 
 interface User {
   id: number;
@@ -23,14 +24,19 @@ interface User {
   first_name: string;
   last_name: string;
   avatar?: string;
+  gender?: string;
   is_online: string;
 }
 
 export default function SearchScreen() {
+  const { theme } = useTheme();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Создаем стили с темой
+  const styles = createStyles(theme);
 
   const fetchUsers = async (search?: string) => {
     try {
@@ -96,10 +102,10 @@ export default function SearchScreen() {
         />
         <View style={[
           styles.onlineIndicator,
-          { backgroundColor: item.is_online === 'online' ? '#4CAF50' : '#9E9E9E' }
+          { backgroundColor: item.is_online === 'online' ? theme.online : theme.offline }
         ]} />
       </View>
-      
+
       <View style={styles.userInfo}>
         <Text style={styles.userName}>
           {item.first_name} {item.last_name}
@@ -107,20 +113,20 @@ export default function SearchScreen() {
         <Text style={styles.username}>@{item.username}</Text>
         <Text style={[
           styles.onlineStatus,
-          { color: item.is_online === 'online' ? '#4CAF50' : '#9E9E9E' }
+          { color: item.is_online === 'online' ? theme.online : theme.offline }
         ]}>
           {item.is_online === 'online' ? 'в сети' : 'не в сети'}
         </Text>
       </View>
-      
-      <Ionicons name="chevron-forward" size={20} color="#ccc" />
+
+      <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
     </TouchableOpacity>
   );
 
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007AFF" />
+        <ActivityIndicator size="large" color={theme.primary} />
         <Text style={styles.loadingText}>Загрузка пользователей...</Text>
       </View>
     );
@@ -129,21 +135,27 @@ export default function SearchScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.searchContainer}>
-        <Ionicons name="search" size={20} color="#666" style={styles.searchIcon} />
+        <Ionicons name="search" size={20} color={theme.textSecondary} style={styles.searchIcon} />
         <TextInput
           style={styles.searchInput}
           placeholder="Поиск пользователей..."
+          placeholderTextColor={theme.placeholder}
           value={searchQuery}
           onChangeText={handleSearch}
         />
       </View>
-      
+
       <FlatList
         data={users}
         renderItem={renderUser}
         keyExtractor={(item) => item.id.toString()}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[theme.primary]}
+            tintColor={theme.primary}
+          />
         }
         showsVerticalScrollIndicator={false}
       />
@@ -151,89 +163,104 @@ export default function SearchScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: any) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: theme.background,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: theme.background,
   },
   loadingText: {
     marginTop: 8,
-    color: '#666',
+    color: theme.textSecondary,
+    fontSize: 16,
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'white',
+    backgroundColor: theme.surface,
     margin: 16,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    elevation: 3,
+    shadowColor: theme.text,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    borderWidth: 1,
+    borderColor: theme.border,
   },
   searchIcon: {
-    marginRight: 8,
+    marginRight: 12,
   },
   searchInput: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: 14,
     fontSize: 16,
+    color: theme.text,
   },
   userItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'white',
-    padding: 16,
+    backgroundColor: theme.surface,
+    padding: 18,
     marginHorizontal: 16,
-    marginVertical: 4,
-    borderRadius: 8,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    marginVertical: 6,
+    borderRadius: 12,
+    elevation: 2,
+    shadowColor: theme.text,
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 1,
+    shadowRadius: 4,
+    borderWidth: 1,
+    borderColor: theme.border,
   },
   avatarContainer: {
     position: 'relative',
-    marginRight: 12,
+    marginRight: 16,
   },
   avatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 2,
+    borderColor: theme.border,
   },
   onlineIndicator: {
     position: 'absolute',
     bottom: 2,
     right: 2,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
     borderWidth: 2,
-    borderColor: 'white',
+    borderColor: theme.surface,
+    elevation: 2,
+    shadowColor: theme.text,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
   },
   userInfo: {
     flex: 1,
   },
   userName: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: 'bold',
-    color: '#333',
+    color: theme.text,
+    marginBottom: 2,
   },
   username: {
     fontSize: 14,
-    color: '#666',
-    marginTop: 2,
+    color: theme.textSecondary,
+    marginBottom: 4,
   },
   onlineStatus: {
     fontSize: 12,
-    marginTop: 2,
+    fontWeight: '500',
   },
 });

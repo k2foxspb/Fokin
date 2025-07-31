@@ -1,5 +1,4 @@
 import React, {useState, useEffect, useRef} from 'react';
-import TabBar from '../../components/TabBar';
 
 import {
     View,
@@ -20,6 +19,7 @@ import {useWebSocket} from '../../hooks/useWebSocket';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {MaterialIcons} from '@expo/vector-icons';
+import { useTheme } from '../../contexts/ThemeContext';
 import {API_CONFIG} from '../../config';
 
 interface Message {
@@ -34,6 +34,7 @@ interface User {
     id: number;
     username: string;
     avatar?: string;
+    gender?: string;
     is_online?: string;
 }
 
@@ -97,6 +98,7 @@ const formatTimestamp = (timestamp: number | string | undefined): string => {
 };
 
 export default function ChatScreen() {
+    const { theme } = useTheme();
     const {id: roomId} = useLocalSearchParams();
     const [messages, setMessages] = useState<Message[]>([]);
     const [messageText, setMessageText] = useState('');
@@ -108,6 +110,9 @@ export default function ChatScreen() {
     const [isDataLoaded, setIsDataLoaded] = useState(false);
     const flatListRef = useRef<FlatList>(null);
     const router = useRouter();
+
+    // Создаем стили с темой
+    const styles = createStyles(theme);
 
     // Отладочная информация
     useEffect(() => {
@@ -282,6 +287,7 @@ export default function ChatScreen() {
                     headers: {'Authorization': `Token ${token}`}
                 }
             );
+
 
             const recipientData = {
                 id: response.data.other_user.id,
@@ -467,22 +473,23 @@ export default function ChatScreen() {
             <View style={styles.avatarContainer}>
                 <Image
                     source={
-                        recipient?.avatar
-                            ? {uri: recipient.avatar}
-                            : require('../../assets/avatar/male.png') // Заглушка
+                         {uri: `${API_CONFIG.BASE_URL}${recipient?.avatar}`}
+
                     }
+
                     style={styles.avatar}
                 />
                 <View style={[
                     styles.onlineIndicator,
-                    {backgroundColor: recipient?.is_online === 'online' ? '#4CAF50' : '#9E9E9E'}
+                    {backgroundColor: recipient?.is_online === 'online' ? theme.online : theme.offline}
+
                 ]}/>
             </View>
             <View style={styles.userInfo}>
-                <Text style={styles.username}>{recipient?.username || 'Пользователь'}</Text>
+                <Text style={[styles.username, { color: theme.text }]}>{recipient?.username || 'Пользователь'}</Text>
                 <Text style={[
                     styles.onlineStatus,
-                    {color: recipient?.is_online === 'online' ? '#4CAF50' : '#9E9E9E'}
+                    {color: recipient?.is_online === 'online' ? theme.online : theme.offline}
                 ]}>
                     {recipient?.is_online === 'online' ? 'в сети' : 'не в сети'}
                 </Text>
@@ -513,15 +520,13 @@ export default function ChatScreen() {
         });
 
         return (
-            <View style={{ flex: 1 }}>
-
             <View style={[
                 styles.messageContainer,
                 isMyMessage ? styles.myMessage : styles.otherMessage
             ]}>
                 {/* Показываем имя отправителя ТОЛЬКО для чужих сообщений */}
                 {!isMyMessage && (
-                    <Text style={styles.senderName}>{item.sender__username}</Text>
+                    <Text style={[styles.senderName, { color: theme.textSecondary }]}>{item.sender__username}</Text>
                 )}
 
                 <Text style={[
@@ -538,16 +543,14 @@ export default function ChatScreen() {
                     {formatTimestamp(item.timestamp)}
                 </Text>
             </View>
-                <TabBar />
-                </View>
         );
     };
 
     if (isLoading) {
         return (
             <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#007AFF"/>
-                <Text style={styles.loadingText}>Загрузка чата...</Text>
+                <ActivityIndicator size="large" color={theme.primary}/>
+                <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Загрузка чата...</Text>
             </View>
         );
     }
@@ -563,11 +566,11 @@ export default function ChatScreen() {
                     headerShown: true,
                     headerLeft: () => (
                         <Pressable onPress={() => router.back()} style={styles.backButton}>
-                            <MaterialIcons name="arrow-back" size={24} color="#007AFF"/>
+                            <MaterialIcons name="arrow-back" size={24} color={theme.primary}/>
                         </Pressable>
                     ),
                     headerTitle: () => <ChatHeader/>,
-                    headerStyle: {backgroundColor: '#fff'},
+                    headerStyle: {backgroundColor: theme.headerBackground},
                     headerShadowVisible: false,
                 }}
             />
@@ -586,7 +589,7 @@ export default function ChatScreen() {
                 }}
                 ListEmptyComponent={
                     <View style={styles.emptyContainer}>
-                        <Text style={styles.emptyText}>Нет сообщений</Text>
+                        <Text style={[styles.emptyText, { color: theme.textSecondary }]}>Нет сообщений</Text>
                     </View>
                 }
                 showsVerticalScrollIndicator={false}
@@ -594,11 +597,11 @@ export default function ChatScreen() {
 
             <View style={styles.inputContainer}>
                 <TextInput
-                    style={styles.input}
+                    style={[styles.input, { backgroundColor: theme.surface, color: theme.text }]}
                     value={messageText}
                     onChangeText={setMessageText}
                     placeholder="Введите сообщение..."
-                    placeholderTextColor="#999"
+                    placeholderTextColor={theme.placeholder}
                     multiline
                     maxLength={1000}
                 />
@@ -606,7 +609,7 @@ export default function ChatScreen() {
                     style={[
                         styles.sendButton,
                         {
-                            backgroundColor: messageText.trim() && isConnected && isDataLoaded ? '#007AFF' : '#F0F0F0',
+                            backgroundColor: messageText.trim() && isConnected && isDataLoaded ? theme.primary : theme.placeholder,
                             opacity: messageText.trim() && isConnected && isDataLoaded ? 1 : 0.5
                         }
                     ]}
@@ -616,29 +619,29 @@ export default function ChatScreen() {
                     <MaterialIcons
                         name="send"
                         size={20}
-                        color={messageText.trim() && isConnected && isDataLoaded ? "#fff" : "#A0A0A0"}
+                        color={messageText.trim() && isConnected && isDataLoaded ? "#fff" : theme.textSecondary}
                     />
                 </Pressable>
+
             </View>
         </KeyboardAvoidingView>
     );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: any) => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#fff',
+        backgroundColor: theme.background,
     },
     loadingContainer: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: '#fff',
+        backgroundColor: theme.background,
     },
     loadingText: {
         marginTop: 16,
         fontSize: 16,
-        color: '#666',
     },
     backButton: {
         marginLeft: 16,
@@ -666,7 +669,7 @@ const styles = StyleSheet.create({
         height: 12,
         borderRadius: 6,
         borderWidth: 2,
-        borderColor: 'white',
+        borderColor: theme.surface,
     },
     userInfo: {
         flex: 1,
@@ -674,7 +677,6 @@ const styles = StyleSheet.create({
     username: {
         fontSize: 16,
         fontWeight: 'bold',
-        color: '#333',
         marginBottom: 2,
     },
     onlineStatus: {
@@ -683,7 +685,7 @@ const styles = StyleSheet.create({
     },
     chatbox: {
         flex: 1,
-        backgroundColor: '#F5F5F5',
+        backgroundColor: theme.chatBackground,
     },
     chatboxContent: {
         padding: 16,
@@ -695,28 +697,27 @@ const styles = StyleSheet.create({
         padding: 12,
         borderRadius: 16,
         elevation: 1,
-        shadowColor: '#000',
+        shadowColor: theme.text,
         shadowOffset: {width: 0, height: 1},
         shadowOpacity: 0.1,
         shadowRadius: 1,
     },
     myMessage: {
         alignSelf: 'flex-end',
-        backgroundColor: '#007AFF',
+        backgroundColor: theme.primary,
         marginLeft: '20%',
         borderBottomRightRadius: 4,
     },
     otherMessage: {
         alignSelf: 'flex-start',
-        backgroundColor: '#fff',
+        backgroundColor: theme.surface,
         marginRight: '20%',
         borderBottomLeftRadius: 4,
         borderWidth: 1,
-        borderColor: '#E8E8E8',
+        borderColor: theme.border,
     },
     senderName: {
         fontSize: 12,
-        color: '#666',
         marginBottom: 4,
         fontWeight: '600',
     },
@@ -725,10 +726,10 @@ const styles = StyleSheet.create({
         lineHeight: 22,
     },
     myMessageText: {
-        color: '#fff',
+        color: 'white',
     },
     otherMessageText: {
-        color: '#000',
+        color: theme.text,
     },
     timestamp: {
         fontSize: 11,
@@ -739,7 +740,7 @@ const styles = StyleSheet.create({
         color: 'rgba(255, 255, 255, 0.8)',
     },
     otherTimestamp: {
-        color: '#666',
+        color: theme.textSecondary,
     },
     emptyContainer: {
         flex: 1,
@@ -749,19 +750,17 @@ const styles = StyleSheet.create({
     },
     emptyText: {
         fontSize: 16,
-        color: '#999',
     },
     inputContainer: {
         flexDirection: 'row',
         padding: 16,
         borderTopWidth: 1,
-        borderTopColor: '#E8E8E8',
-        backgroundColor: '#fff',
+        borderTopColor: theme.border,
+        backgroundColor: theme.surface,
         alignItems: 'flex-end',
     },
     input: {
         flex: 1,
-        backgroundColor: '#F8F8F8',
         borderRadius: 20,
         paddingHorizontal: 16,
         paddingVertical: 12,
@@ -770,6 +769,8 @@ const styles = StyleSheet.create({
         maxHeight: 100,
         minHeight: 44,
         textAlignVertical: 'top',
+        borderWidth: 1,
+        borderColor: theme.border,
     },
     sendButton: {
         justifyContent: 'center',

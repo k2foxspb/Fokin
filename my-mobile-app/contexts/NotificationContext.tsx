@@ -17,6 +17,7 @@ interface NotificationContextType {
   unreadCount: number;
   messages: MessageType[];
   senderCounts: Map<number, number>;
+  userStatuses: Map<number, string>; // Добавляем статусы пользователей
   connect: () => void;
   disconnect: () => void;
 }
@@ -32,10 +33,17 @@ interface NotificationData {
   messages: [{ user: string }, MessageType[]];
 }
 
+interface UserStatusUpdate {
+  type: 'user_status_update';
+  user_id: number;
+  status: string;
+}
+
 const NotificationContext = createContext<NotificationContextType>({
   unreadCount: 0,
   messages: [],
   senderCounts: new Map(),
+  userStatuses: new Map(),
   connect: () => {},
   disconnect: () => {},
 });
@@ -44,6 +52,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const [unreadCount, setUnreadCount] = useState<number>(0);
   const [messages, setMessages] = useState<MessageType[]>([]);
   const [senderCounts, setSenderCounts] = useState<Map<number, number>>(new Map());
+  const [userStatuses, setUserStatuses] = useState<Map<number, string>>(new Map()); // Новое состояние
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [hasNotificationPermission, setHasNotificationPermission] = useState<boolean>(false);
   const [pushToken, setPushToken] = useState<string | null>(null);
@@ -92,7 +101,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       // Слушаем изменения состояния приложения
       const subscription = AppState.addEventListener('change', nextAppState => {
         if (
-          appState.current.match(/inactive|background/) && 
+          appState.current.match(/inactive|background/) &&
           nextAppState === 'active'
         ) {
           // Приложение вернулось на передний план
@@ -124,7 +133,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       const lastNotificationResponse = await Notifications.getLastNotificationResponseAsync();
       if (lastNotificationResponse) {
         console.log('App was opened from notification:', lastNotificationResponse);
-        
+
         // Даем приложению время инициализироваться перед навигацией
         setTimeout(() => {
           // Обрабатываем уведомление, которое запустило приложение
@@ -152,7 +161,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     // Навигация к соответствующему экрану в зависимости от типа уведомления
     if (data && data.type === 'message_notification') {
       console.log('Navigating to messages screen');
-      
+
       // Если в данных есть конкретный чат, переходим к нему
       if (data.chatId) {
         router.push({
@@ -168,14 +177,29 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   const handleMessage = (event: WebSocketMessageEvent) => {
     try {
-      const data: NotificationData = JSON.parse(event.data);
-      console.log('Notification received:', data);
+      const data: NotificationData | UserStatusUpdate = JSON.parse(event.data);
+      console.log('WebSocket message received:', data);
 
-      if (data.type === 'initial_notification' || data.type === 'messages_by_sender_update') {
-        setUnreadCount(data.unique_sender_count);
+      // Обработка обновления статуса пользователя
+      if (data.type === 'user_status_update') {
+        const statusUpdate = data as UserStatusUpdate;
+        console.log(`User ${statusUpdate.user_id} status changed to: ${statusUpdate.status}`);
+
+        setUserStatuses(prevStatuses => {
+          const newStatuses = new Map(prevStatuses);
+          newStatuses.set(statusUpdate.user_id, statusUpdate.status);
+          return newStatuses;
+        });
+        return;
+      }
+
+      // Обработка уведомлений о сообщениях
+      const notificationData = data as NotificationData;
+      if (notificationData.type === 'initial_notification' || notificationData.type === 'messages_by_sender_update') {
+        setUnreadCount(notificationData.unique_sender_count);
         // Извлекаем массив сообщений из структуры [dict, messages[]]
-        if (Array.isArray(data.messages) && data.messages.length === 2) {
-          const messageArray = data.messages[1];
+        if (Array.isArray(notificationData.messages) && notificationData.messages.length === 2) {
+          const messageArray = notificationData.messages[1];
           setMessages(messageArray);
 
           // Создаем Map для быстрого поиска количества сообщений по sender_id
@@ -196,7 +220,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
               // Отправляем уведомление о новых сообщениях
               sendLocalNotification({
                 title: 'Новые сообщения',
-                body: `У вас ${data.unique_sender_count} непрочитанных сообщений`,
+                body: `У вас ${notificationData.unique_sender_count} непрочитанных сообщений`,
                 data: { type: 'message_notification' }
               }).catch(error => {
                 console.error('Failed to send notification:', error);
@@ -209,11 +233,11 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         }
       }
     } catch (error) {
-      console.error('Error processing notification:', error);
+      console.error('Error processing WebSocket message:', error);
     }
   };
-  
-  const { connect, disconnect } = useWebSocket(`${API_CONFIG}/notification/`, {
+
+  const { connect, disconnect } = useWebSocket(`${API_CONFIG.BASE_URL.replace('http', 'ws')}/ws/notification/`, {
     onOpen: () => {
       console.log('Notification WebSocket connected');
     },
@@ -223,6 +247,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       setUnreadCount(0);
       setMessages([]);
       setSenderCounts(new Map());
+      setUserStatuses(new Map());
     },
     onError: (error: any) => {
       console.error('Notification WebSocket error:', error);
@@ -243,6 +268,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     unreadCount,
     messages,
     senderCounts,
+    userStatuses, // Добавляем в контекст
     connect,
     disconnect,
   };

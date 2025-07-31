@@ -53,7 +53,7 @@ export default function TabBar() {
             <View style={styles.iconContainer}>
               <Ionicons
                 name={isActive ? tab.activeIcon : tab.icon}
-                size={24}
+                size={22}
                 color={isActive ? '#007AFF' : 'gray'}
               />
               {tab.name === 'messages' && unreadCount > 0 && (
@@ -80,14 +80,14 @@ export default function TabBar() {
 const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
-    backgroundColor: '#fff',
-    paddingBottom: 20,
-    paddingTop: 10,
+    backgroundColor: '#ffffff',
+    paddingBottom: 6,
+    paddingTop: 6,
     paddingHorizontal: 10,
     borderTopWidth: 1,
     borderTopColor: '#e0e0e0',
     elevation: 8,
-    shadowColor: '#000',
+    shadowColor: '#ef0000',
     shadowOffset: {
       width: 0,
       height: -2,
@@ -104,7 +104,7 @@ const styles = StyleSheet.create({
     position: 'relative',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   label: {
     fontSize: 12,

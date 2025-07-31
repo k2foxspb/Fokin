@@ -96,7 +96,8 @@ def get_room_info(request, room_id):
             'other_user': {
                 'id': other_user.id,
                 'username': other_user.username,
-                'avatar': other_user.avatar.url if other_user.avatar else None
+                'avatar': other_user.avatar.url if other_user.avatar else None,
+                'is_online': other_user.is_online
             }
         })
     except PrivateChatRoom.DoesNotExist:

@@ -14,7 +14,8 @@ import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { Ionicons } from '@expo/vector-icons';
-import {API_CONFIG} from "../../config";
+import { useTheme } from '../../contexts/ThemeContext';
+import { API_CONFIG } from "../../config";
 
 interface Category {
   id: number;
@@ -26,20 +27,24 @@ interface Article {
   id: number;
   title: string;
   preamble: string;
-  content?: string; // Optional content field for expanded articles
+  content?: string;
   category: Category;
   created: string;
   updated: string;
   slug: string;
-  isLoading?: boolean; // Flag to indicate if article content is being loaded
-  loadError?: boolean; // Flag to indicate if there was an error loading the content
+  isLoading?: boolean;
+  loadError?: boolean;
 }
 
 export default function Feed() {
+  const { theme } = useTheme();
   const [articles, setArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [expandedArticleIds, setExpandedArticleIds] = useState<number[]>([]);
+
+  // Создаем стили сразу, используя тему
+  const styles = createStyles(theme);
 
   const fetchArticles = async () => {
     try {
@@ -83,16 +88,12 @@ export default function Feed() {
   };
 
   const toggleArticleExpansion = async (article: Article) => {
-    // Check if article is already expanded
     const isExpanded = expandedArticleIds.includes(article.id);
 
     if (isExpanded) {
-      // Collapse the article
       setExpandedArticleIds(expandedArticleIds.filter(id => id !== article.id));
     } else {
-      // Expand the article - fetch content if not already loaded
       if (!article.content) {
-        // Create a local loading state for this specific article
         const updatedArticles = articles.map(a =>
           a.id === article.id ? { ...a, isLoading: true } : a
         );
@@ -101,7 +102,6 @@ export default function Feed() {
         try {
           const token = await AsyncStorage.getItem('userToken');
           if (!token) {
-            // Update article to remove loading state
             const updatedArticles = articles.map(a =>
               a.id === article.id ? { ...a, isLoading: false } : a
             );
@@ -115,13 +115,11 @@ export default function Feed() {
             { headers: { Authorization: `Token ${token}` } }
           );
 
-          // Update the article with content and remove loading state
           const updatedArticles = articles.map(a =>
             a.id === article.id ? { ...a, content: response.data.content, isLoading: false } : a
           );
           setArticles(updatedArticles);
         } catch (error) {
-          // Update article to remove loading state but mark as error
           const updatedArticles = articles.map(a =>
             a.id === article.id ? { ...a, isLoading: false, loadError: true } : a
           );
@@ -130,7 +128,6 @@ export default function Feed() {
         }
       }
 
-      // Add article id to expanded list
       setExpandedArticleIds([...expandedArticleIds, article.id]);
     }
   };
@@ -152,30 +149,30 @@ export default function Feed() {
           <View style={styles.categoryContainer}>
             <Text style={styles.categoryText}>{item.category.title}</Text>
           </View>
-          <Text style={styles.dateText}>{formatDate(item.updated)}</Text>
+          <Text style={[styles.dateText, { color: theme.textSecondary }]}>{formatDate(item.updated)}</Text>
         </View>
 
-        <Text style={styles.articleTitle}>{item.title}</Text>
+        <Text style={[styles.articleTitle, { color: theme.text }]}>{item.title}</Text>
 
         {isExpanded ? (
-          <View style={styles.expandedContent}>
+          <View style={[styles.expandedContent, { borderTopColor: theme.border, borderBottomColor: theme.border }]}>
             {item.content ? (
-              <Text style={styles.articleContent}>
+              <Text style={[styles.articleContent, { color: theme.text }]}>
                 {stripHtml(item.content)}
               </Text>
             ) : (
               <View>
-                <Text style={styles.articlePreamble}>
+                <Text style={[styles.articlePreamble, { color: theme.textSecondary }]}>
                   {stripHtml(item.preamble)}
                 </Text>
                 {item.isLoading ? (
-                  <ActivityIndicator style={styles.contentLoader} color="#007AFF" />
+                  <ActivityIndicator style={styles.contentLoader} color={theme.primary} />
                 ) : item.loadError ? (
-                  <Text style={styles.noContentText}>
+                  <Text style={[styles.noContentText, { color: theme.error }]}>
                     Не удалось загрузить полный текст статьи
                   </Text>
                 ) : (
-                  <Text style={styles.waitingText}>
+                  <Text style={[styles.waitingText, { color: theme.textSecondary }]}>
                     Нажмите, чтобы загрузить полный текст
                   </Text>
                 )}
@@ -183,26 +180,26 @@ export default function Feed() {
             )}
           </View>
         ) : (
-          <Text style={styles.articlePreamble} numberOfLines={3}>
+          <Text style={[styles.articlePreamble, { color: theme.textSecondary }]} numberOfLines={3}>
             {stripHtml(item.preamble)}
           </Text>
         )}
 
-        <View style={styles.articleFooter}>
+        <View style={[styles.articleFooter, { borderTopColor: theme.borderLight }]}>
           <View style={styles.footerLeft}>
-            <Ionicons name="time-outline" size={16} color="#666" />
-            <Text style={styles.footerText}>
+            <Ionicons name="time-outline" size={16} color={theme.textSecondary} />
+            <Text style={[styles.footerText, { color: theme.textSecondary }]}>
               {formatDate(item.created)}
             </Text>
           </View>
 
-          <View style={styles.expandIndicator}>
+          <View style={[styles.expandIndicator, { backgroundColor: theme.primary + '10' }]}>
             <Ionicons
               name={isExpanded ? "chevron-up-outline" : "chevron-down-outline"}
               size={20}
-              color="#007AFF"
+              color={theme.primary}
             />
-            <Text style={styles.expandText}>
+            <Text style={[styles.expandText, { color: theme.primary }]}>
               {isExpanded ? "Свернуть" : "Подробнее"}
             </Text>
           </View>
@@ -214,7 +211,7 @@ export default function Feed() {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007AFF" />
+        <ActivityIndicator size="large" color={theme.primary} />
         <Text style={styles.loadingText}>Загрузка новостей...</Text>
       </View>
     );
@@ -223,7 +220,7 @@ export default function Feed() {
   if (articles.length === 0) {
     return (
       <View style={styles.emptyContainer}>
-        <Ionicons name="newspaper-outline" size={64} color="#ccc" />
+        <Ionicons name="newspaper-outline" size={64} color={theme.textSecondary} />
         <Text style={styles.emptyText}>Новостей пока нет</Text>
         <TouchableOpacity style={styles.refreshButton} onPress={fetchArticles}>
           <Text style={styles.refreshButtonText}>Обновить</Text>
@@ -239,7 +236,12 @@ export default function Feed() {
         renderItem={renderArticle}
         keyExtractor={(item) => item.id.toString()}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[theme.primary]}
+            tintColor={theme.primary}
+          />
         }
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContainer}
@@ -248,19 +250,21 @@ export default function Feed() {
   );
 }
 
-const styles = StyleSheet.create({
+// Функция создания стилей вынесена вниз
+const createStyles = (theme: any) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: theme.background,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: theme.background,
   },
   loadingText: {
     marginTop: 8,
-    color: '#666',
+    color: theme.textSecondary,
     fontSize: 16,
   },
   emptyContainer: {
@@ -268,58 +272,71 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
+    backgroundColor: theme.background,
   },
   emptyText: {
     fontSize: 18,
-    color: '#666',
+    color: theme.textSecondary,
     marginTop: 16,
     marginBottom: 20,
   },
   refreshButton: {
-    backgroundColor: '#007AFF',
+    backgroundColor: theme.primary,
     paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
+    paddingVertical: 12,
+    borderRadius: 12,
+    elevation: 2,
+    shadowColor: theme.text,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
   refreshButtonText: {
     color: 'white',
     fontSize: 16,
     fontWeight: 'bold',
+    textAlign: 'center',
   },
   listContainer: {
     padding: 16,
   },
   articleItem: {
-    backgroundColor: 'white',
-    padding: 16,
+    backgroundColor: theme.surface,
+    padding: 18,
     marginBottom: 16,
-    borderRadius: 12,
+    borderRadius: 16,
     elevation: 3,
-    shadowColor: '#000',
+    shadowColor: theme.text,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowRadius: 6,
     borderWidth: 1,
-    borderColor: '#f0f0f0',
+    borderColor: theme.border,
   },
   expandedArticleItem: {
-    backgroundColor: '#f9f9ff',
-    borderColor: '#e0e0ff',
+    backgroundColor: theme.surfacePressed,
+    borderColor: theme.primary,
     shadowOpacity: 0.15,
-    shadowRadius: 6,
+    shadowRadius: 8,
     elevation: 5,
+    borderWidth: 2,
   },
   articleHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 12,
   },
   categoryContainer: {
-    backgroundColor: '#007AFF',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 6,
+    backgroundColor: theme.primary,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    elevation: 1,
+    shadowColor: theme.text,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
   },
   categoryText: {
     color: 'white',
@@ -328,34 +345,28 @@ const styles = StyleSheet.create({
   },
   dateText: {
     fontSize: 12,
-    color: '#666',
     fontStyle: 'italic',
   },
   articleTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 10,
-    lineHeight: 26,
+    marginBottom: 12,
+    lineHeight: 28,
   },
   articlePreamble: {
-    fontSize: 15,
-    color: '#555',
-    lineHeight: 22,
+    fontSize: 16,
+    lineHeight: 24,
     marginBottom: 15,
   },
   expandedContent: {
-    marginVertical: 10,
-    paddingVertical: 5,
+    marginVertical: 12,
+    paddingVertical: 8,
     borderTopWidth: 1,
-    borderTopColor: '#eaeaea',
     borderBottomWidth: 1,
-    borderBottomColor: '#eaeaea',
   },
   articleContent: {
     fontSize: 16,
-    color: '#333',
-    lineHeight: 24,
+    lineHeight: 26,
     marginBottom: 15,
     textAlign: 'justify',
   },
@@ -363,7 +374,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 5,
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
   },
   footerLeft: {
     flexDirection: 'row',
@@ -371,34 +384,33 @@ const styles = StyleSheet.create({
   },
   footerText: {
     fontSize: 12,
-    color: '#666',
     marginLeft: 4,
   },
   expandIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
   },
   expandText: {
     fontSize: 14,
-    color: '#007AFF',
     marginLeft: 4,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   contentLoader: {
-    marginVertical: 10,
+    marginVertical: 12,
   },
   noContentText: {
     fontSize: 14,
-    color: '#ff6b6b',
     fontStyle: 'italic',
     textAlign: 'center',
-    marginVertical: 10,
+    marginVertical: 12,
   },
   waitingText: {
     fontSize: 14,
-    color: '#666',
     fontStyle: 'italic',
     textAlign: 'center',
-    marginVertical: 10,
+    marginVertical: 12,
   },
 });

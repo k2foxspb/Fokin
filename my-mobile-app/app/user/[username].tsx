@@ -1,415 +1,631 @@
-import React, { useState, useEffect } from 'react';
+import React, {useState, useEffect} from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  Image,
-  ScrollView,
-  Alert,
-  RefreshControl,
-  TouchableOpacity,
-  ActivityIndicator
+    View,
+    Text,
+    StyleSheet,
+    Image,
+    TouchableOpacity,
+    ScrollView,
+    Alert,
+    RefreshControl,
+    Modal,
+    Dimensions
 } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
+import {router, useLocalSearchParams} from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
-import { Ionicons } from '@expo/vector-icons';
-import { API_CONFIG } from '../../config';
-import ProfileEditModal from '../../components/ProfileEditModal';
-import TabBar from "@/components/TabBar";
+import {Ionicons} from '@expo/vector-icons';
+import {useTheme} from '../../contexts/ThemeContext';
+import {API_CONFIG} from "../../config";
+import TabBar from '../../components/TabBar';
 
 interface UserProfile {
-  id: number;
-  username: string;
-  email: string;
-  first_name: string;
-  last_name: string;
-  gender: string;
-  birthday?: string;
-  avatar?: string;
-  avatar_url?: string;
-  is_online: string;
-  age?: number;
+    id: number;
+    username: string;
+    first_name: string;
+    last_name: string;
+    avatar?: string;
+    bio?: string;
+    gender?: string;
+    birthday?: string;
+    age?: number;
+    is_online?: string;
 }
 
-export default function UserDetail() {
-  const { username } = useLocalSearchParams<{ username: string }>();
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [currentUser, setCurrentUser] = useState<string | null>(null);
-  const [editModalVisible, setEditModalVisible] = useState(false);
+export default function UserProfile() {
+    const { theme } = useTheme();
+    const { username } = useLocalSearchParams<{ username: string }>();
+    const [profile, setProfile] = useState<UserProfile | null>(null);
+    const [refreshing, setRefreshing] = useState(false);
+    const [avatarModalVisible, setAvatarModalVisible] = useState(false);
+    const [isLoadingChat, setIsLoadingChat] = useState(false);
+    const [currentUserId, setCurrentUserId] = useState<number | null>(null);
+    const [currentUsername, setCurrentUsername] = useState<string | null>(null);
 
-  const getCurrentUser = async () => {
-    try {
-      const token = await AsyncStorage.getItem('userToken');
-      if (!token) return;
+    const styles = createStyles(theme);
 
-      const response = await axios.get(
-        `${API_CONFIG.BASE_URL}/profile/api/current-user/`,
-        {
-          headers: { Authorization: `Token ${token}` }
+    const fetchCurrentUser = async () => {
+        try {
+            const token = await AsyncStorage.getItem('userToken');
+            if (!token) return;
+
+            const response = await axios.get(`${API_CONFIG.BASE_URL}/profile/api/profile/me/`, {
+                headers: {Authorization: `Token ${token}`}
+            });
+
+            setCurrentUserId(response.data.id);
+            setCurrentUsername(response.data.username);
+        } catch (error) {
+            console.error('Error fetching current user:', error);
         }
-      );
-      setCurrentUser(response.data.username);
-    } catch (error) {
-      console.log('Error fetching current user:', error);
-    }
-  };
+    };
 
-  const fetchUserProfile = async () => {
-    try {
-      const token = await AsyncStorage.getItem('userToken');
-      if (!token) {
-        router.replace('/(auth)/login');
-        return;
-      }
+    const fetchProfile = async () => {
+        try {
+            const token = await AsyncStorage.getItem('userToken');
+            if (!token) {
+                router.replace('/(auth)/login');
+                return;
+            }
 
-      const response = await axios.get(
-        `${API_CONFIG.BASE_URL}/profile/api/profile/${username}/`,
-        {
-          headers: { Authorization: `Token ${token}` }
+            const response = await axios.get(`${API_CONFIG.BASE_URL}/profile/api/profile/${username}/`, {
+                headers: {Authorization: `Token ${token}`}
+            });
+
+            setProfile(response.data);
+        } catch (error) {
+            Alert.alert('Ошибка', 'Не удалось загрузить профиль пользователя');
+            router.back();
         }
-      );
+    };
 
-      setProfile(response.data);
-    } catch (error) {
-      Alert.alert('Ошибка', 'Не удалось загрузить профиль пользователя');
-      router.back();
-    } finally {
-      setLoading(false);
-    }
-  };
+    const onRefresh = async () => {
+        setRefreshing(true);
+        await fetchProfile();
+        setRefreshing(false);
+    };
 
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await fetchUserProfile();
-    setRefreshing(false);
-  };
-
-  useEffect(() => {
-    if (username) {
-      getCurrentUser();
-      fetchUserProfile();
-    }
-  }, [username]);
-
-  const handleSendMessage = async () => {
-    try {
-      const token = await AsyncStorage.getItem('userToken');
-      if (!token) {
-        router.replace('/(auth)/login');
-        return;
-      }
-
-      // Get current user info to get the room ID
-      const currentUserResponse = await axios.get(`${API_CONFIG.BASE_URL}/profile/api/profile/me/`, {
-        headers: { Authorization: `Token ${token}` }
-      });
-
-      const currentUsername = currentUserResponse.data.username;
-
-      // Get or create room ID for the conversation
-      const roomResponse = await axios.get(
-        `${API_CONFIG.BASE_URL}/chat/api/get_private_room/${currentUsername}/${username}/`,
-        {
-          headers: { Authorization: `Token ${token}` }
+    useEffect(() => {
+        if (username) {
+            fetchCurrentUser();
+            fetchProfile();
         }
-      );
+    }, [username]);
 
-      const roomId = roomResponse.data.room_name;
+    const handleViewAlbums = () => {
+        if (profile) {
+            router.push(`/albums/${profile.username}`);
+        }
+    };
 
-      // Navigate to chat with room ID
-      router.push(`/chat/${roomId}`);
-    } catch (error) {
-      Alert.alert('Ошибка', 'Не удалось открыть чат');
+    // Исправленная функция для создания чата - используем логику из Selection
+    const handleStartChat = async () => {
+        if (!profile || !currentUsername) return;
+
+        // Предотвращаем создание чата с самим собой
+        if (profile.id === currentUserId) {
+            Alert.alert('Уведомление', 'Вы не можете создать чат с самим собой');
+            return;
+        }
+
+        setIsLoadingChat(true);
+        try {
+            const token = await AsyncStorage.getItem('userToken');
+            if (!token) {
+                router.replace('/(auth)/login');
+                return;
+            }
+
+            // Получаем или создаем room ID для разговора - используем правильный endpoint
+            const roomResponse = await axios.get(
+                `${API_CONFIG.BASE_URL}/chat/api/get_private_room/${currentUsername}/${username}/`,
+                {
+                    headers: { Authorization: `Token ${token}` }
+                }
+            );
+
+            const roomId = roomResponse.data.room_name;
+
+            // Переходим в чат с room ID
+            router.push(`/chat/${roomId}`);
+        } catch (error) {
+            console.error('Error creating/getting chat:', error);
+            Alert.alert('Ошибка', 'Не удалось открыть чат');
+        } finally {
+            setIsLoadingChat(false);
+        }
+    };
+
+    const formatBirthday = (birthday?: string) => {
+        if (!birthday) return 'Не указано';
+        const date = new Date(birthday);
+        return date.toLocaleDateString('ru-RU');
+    };
+
+    // Если профиль не загружен, показываем загрузку БЕЗ TabBar
+    if (!profile) {
+        return (
+            <View style={styles.loadingContainer}>
+                <Text style={styles.loadingText}>Загрузка...</Text>
+            </View>
+        );
     }
-  };
 
-  const handleViewAlbums = () => {
-    // Navigate to user's photo albums
-    router.push(`/albums/${username}`);
-  };
-
-  const formatBirthday = (birthday?: string) => {
-    if (!birthday) return 'Не указано';
-    const date = new Date(birthday);
-    return date.toLocaleDateString('ru-RU');
-  };
-
-  if (loading) {
+    // Когда профиль загружен, показываем контент С TabBar
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007AFF" />
-        <Text style={styles.loadingText}>Загрузка профиля...</Text>
-      </View>
-    );
-  }
+        <>
+            <View style={styles.container}>
+                <ScrollView
+                    style={styles.scrollView}
+                    refreshControl={
+                        <RefreshControl
+                            refreshing={refreshing}
+                            onRefresh={onRefresh}
+                            colors={[theme.primary]}
+                            tintColor={theme.primary}
+                        />
+                    }
+                    showsVerticalScrollIndicator={false}
+                >
+                    {/* Header Section */}
+                    <View style={styles.header}>
+                        <TouchableOpacity
+                            style={styles.backButton}
+                            onPress={() => router.back()}
+                        >
+                            <Ionicons name="arrow-back" size={24} color={theme.primary} />
+                        </TouchableOpacity>
 
-  if (!profile) {
-    return (
-      <View style={styles.errorContainer}>
-        <Text style={styles.errorText}>Профиль не найден</Text>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <Text style={styles.backButtonText}>Назад</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
+                        <View style={styles.avatarSection}>
+                            <TouchableOpacity onPress={() => setAvatarModalVisible(true)} style={styles.avatarContainer}>
+                                <Image
+                                    source={
+                                        profile.avatar
+                                            ? {uri: profile.avatar}
+                                            : profile.gender === 'male'
+                                            ? require('../../assets/avatar/male.png')
+                                            : require('../../assets/avatar/female.png')
+                                    }
+                                    style={styles.avatar}
+                                />
 
-  return (
-    <View style={{ flex: 1 }}>
+                                {/* Индикатор онлайн статуса */}
+                                <View style={[
+                                    styles.onlineIndicator,
+                                    {backgroundColor: profile.is_online === 'online' ? theme.online : theme.offline}
+                                ]} />
+                            </TouchableOpacity>
 
-      <ScrollView
-        style={styles.container}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
-      >
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.backIcon} onPress={() => router.back()}>
-            <Ionicons name="arrow-back" size={24} color="#007AFF" />
-          </TouchableOpacity>
+                            <View style={styles.userInfo}>
+                                <Text style={styles.name}>
+                                    {profile.first_name} {profile.last_name}
+                                </Text>
+                                <Text style={styles.username}>@{profile.username}</Text>
+                                <Text style={[
+                                    styles.onlineStatus,
+                                    {color: profile.is_online === 'online' ? theme.online : theme.offline}
+                                ]}>
+                                    {profile.is_online === 'online' ? 'в сети' : 'не в сети'}
+                                </Text>
+                            </View>
+                        </View>
+                    </View>
 
-          <View style={styles.avatarContainer}>
-            <Image
-              source={
-                profile.avatar_url
-                  ? { uri: profile.avatar_url }
-                  : profile.gender === 'male'
-                  ? require('../../assets/avatar/male.png')
-                  : require('../../assets/avatar/female.png')
-              }
-              style={styles.avatar}
-            />
-            <View style={[
-              styles.onlineIndicator,
-              { backgroundColor: profile.is_online === 'online' ? '#4CAF50' : '#9E9E9E' }
-            ]} />
-          </View>
+                    {/* Bio Section */}
+                    {profile.bio && (
+                        <View style={styles.bioSection}>
+                            <Text style={styles.bioText}>{profile.bio}</Text>
+                        </View>
+                    )}
 
-          <Text style={styles.name}>
-            {profile.first_name} {profile.last_name}
-          </Text>
-          <Text style={styles.username}>@{profile.username}</Text>
-          <Text style={[
-            styles.onlineStatus,
-            { color: profile.is_online === 'online' ? '#4CAF50' : '#9E9E9E' }
-          ]}>
-            {profile.is_online === 'online' ? 'в сети' : 'не в сети'}
-          </Text>
-        </View>
+                    {/* Info Section */}
+                    <View style={styles.infoSection}>
+                        <Text style={styles.sectionTitle}>Информация</Text>
 
-        <View style={styles.infoSection}>
-          <View style={styles.infoRow}>
-            <Ionicons name="mail-outline" size={20} color="#666" />
-            <Text style={styles.infoText}>{profile.email}</Text>
-          </View>
+                        <View style={styles.infoCard}>
+                            {profile.gender && (
+                                <View style={styles.infoRow}>
+                                    <View style={styles.infoIconContainer}>
+                                        <Ionicons name="person-outline" size={20} color={theme.primary} />
+                                    </View>
+                                    <View style={styles.infoContent}>
+                                        <Text style={styles.infoLabel}>Пол</Text>
+                                        <Text style={styles.infoText}>
+                                            {profile.gender === 'male' ? 'Мужчина' : 'Женщина'}
+                                        </Text>
+                                    </View>
+                                </View>
+                            )}
 
-          <View style={styles.infoRow}>
-            <Ionicons name="person-outline" size={20} color="#666" />
-            <Text style={styles.infoText}>
-              {profile.gender === 'male' ? 'Мужчина' : 'Женщина'}
-            </Text>
-          </View>
+                            {profile.birthday && (
+                                <>
+                                    {profile.gender && <View style={styles.divider} />}
+                                    <View style={styles.infoRow}>
+                                        <View style={styles.infoIconContainer}>
+                                            <Ionicons name="calendar-outline" size={20} color={theme.primary} />
+                                        </View>
+                                        <View style={styles.infoContent}>
+                                            <Text style={styles.infoLabel}>Дата рождения</Text>
+                                            <Text style={styles.infoText}>
+                                                {formatBirthday(profile.birthday)}
+                                                {profile.age && ` (${profile.age} лет)`}
+                                            </Text>
+                                        </View>
+                                    </View>
+                                </>
+                            )}
 
-          <View style={styles.infoRow}>
-            <Ionicons name="calendar-outline" size={20} color="#666" />
-            <Text style={styles.infoText}>
-              {formatBirthday(profile.birthday)}
-              {profile.age && ` (${profile.age} лет)`}
-            </Text>
-          </View>
-        </View>
+                            {/* Показываем сообщение, если нет дополнительной информации */}
+                            {!profile.gender && !profile.birthday && (
+                                <View style={styles.infoRow}>
+                                    <View style={styles.infoIconContainer}>
+                                        <Ionicons name="information-circle-outline" size={20} color={theme.textSecondary} />
+                                    </View>
+                                    <View style={styles.infoContent}>
+                                        <Text style={[styles.infoText, { color: theme.textSecondary, fontStyle: 'italic' }]}>
+                                            Дополнительная информация не указана
+                                        </Text>
+                                    </View>
+                                </View>
+                            )}
+                        </View>
+                    </View>
 
-        <View style={styles.actionSection}>
-          <TouchableOpacity style={styles.albumsButton} onPress={handleViewAlbums}>
-            <Ionicons name="images-outline" size={20} color="#007AFF" />
-            <Text style={styles.albumsButtonText}>Фотоальбомы</Text>
-          </TouchableOpacity>
+                    {/* Actions Section */}
+                    <View style={styles.actionsSection}>
+                        <TouchableOpacity
+                            style={styles.actionButton}
+                            onPress={handleStartChat}
+                            disabled={isLoadingChat || profile.id === currentUserId}
+                        >
+                            <View style={[
+                                styles.actionIconContainer,
+                                profile.id === currentUserId && styles.disabledIconContainer
+                            ]}>
+                                {isLoadingChat ? (
+                                    <View style={styles.loadingIcon} />
+                                ) : (
+                                    <Ionicons
+                                        name="chatbubble-outline"
+                                        size={20}
+                                        color={profile.id === currentUserId ? theme.textSecondary : theme.primary}
+                                    />
+                                )}
+                            </View>
+                            <Text style={[
+                                styles.actionButtonText,
+                                profile.id === currentUserId && styles.disabledText
+                            ]}>
+                                {profile.id === currentUserId ? 'Это ваш профиль' : 'Написать сообщение'}
+                            </Text>
+                            {profile.id !== currentUserId && (
+                                <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
+                            )}
+                        </TouchableOpacity>
 
-          {currentUser === username ? (
-            <TouchableOpacity 
-              style={styles.editButton} 
-              onPress={() => setEditModalVisible(true)}
+                        <TouchableOpacity
+                            style={styles.actionButton}
+                            onPress={handleViewAlbums}
+                        >
+                            <View style={styles.actionIconContainer}>
+                                <Ionicons name="images-outline" size={20} color={theme.primary} />
+                            </View>
+                            <Text style={styles.actionButtonText}>Альбомы</Text>
+                            <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
+                        </TouchableOpacity>
+                    </View>
+
+                    {/* Отступ для нижней навигации */}
+                    <View style={styles.bottomSpacer} />
+                </ScrollView>
+            </View>
+
+            {/* Нижняя навигационная панель - показывается ТОЛЬКО когда профиль загружен */}
+            <TabBar />
+
+            {/* Avatar Modal */}
+            <Modal
+                visible={avatarModalVisible}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={() => setAvatarModalVisible(false)}
+                statusBarTranslucent={true}
             >
-              <Ionicons name="create-outline" size={20} color="white" />
-              <Text style={styles.editButtonText}>Редактировать профиль</Text>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity style={styles.messageButton} onPress={handleSendMessage}>
-              <Ionicons name="chatbubble-outline" size={20} color="white" />
-              <Text style={styles.messageButtonText}>Написать сообщение</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-        <View style={{ height: 100 }} />
+                <View style={styles.modalContainer}>
+                    <View style={styles.modalHeader}>
+                        <TouchableOpacity
+                            style={styles.modalButton}
+                            onPress={() => setAvatarModalVisible(false)}
+                            activeOpacity={0.7}
+                        >
+                            <Ionicons name="close" size={24} color="white" />
+                            <Text style={styles.buttonText}>Закрыть</Text>
+                        </TouchableOpacity>
+                    </View>
 
-      </ScrollView>
-      
-      <ProfileEditModal
-        visible={editModalVisible}
-        profile={profile}
-        onClose={() => setEditModalVisible(false)}
-        onProfileUpdated={() => {
-          fetchUserProfile();
-        }}
-      />
-
-      <TabBar />
-    </View>
-  );
+                    <TouchableOpacity
+                        style={styles.modalBackground}
+                        onPress={() => setAvatarModalVisible(false)}
+                        activeOpacity={1}
+                    >
+                        <View style={styles.modalContent}>
+                            <View style={styles.imageContainer}>
+                                <Image
+                                    source={
+                                        profile.avatar
+                                            ? {uri: profile.avatar}
+                                            : profile.gender === 'male'
+                                            ? require('../../assets/avatar/male.png')
+                                            : require('../../assets/avatar/female.png')
+                                    }
+                                    style={styles.fullImage}
+                                    resizeMode="contain"
+                                />
+                            </View>
+                        </View>
+                    </TouchableOpacity>
+                </View>
+            </Modal>
+        </>
+    );
 }
 
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 8,
-    color: '#666',
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  errorText: {
-    fontSize: 18,
-    color: '#666',
-    marginBottom: 20,
-  },
-  backButton: {
-    backgroundColor: '#007AFF',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
-  },
-  backButtonText: {
-    color: 'white',
-    fontSize: 16,
-  },
-  header: {
-    backgroundColor: 'white',
-    alignItems: 'center',
-    paddingVertical: 30,
-    paddingHorizontal: 20,
-    position: 'relative',
-  },
-  backIcon: {
-    position: 'absolute',
-    top: 40,
-    left: 20,
-    zIndex: 1,
-  },
-  avatarContainer: {
-    position: 'relative',
-    marginBottom: 16,
-  },
-  avatar: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    borderWidth: 4,
-    borderColor: '#f0f0f0',
-  },
-  onlineIndicator: {
-    position: 'absolute',
-    bottom: 8,
-    right: 8,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 3,
-    borderColor: 'white',
-  },
-  name: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 4,
-  },
-  username: {
-    fontSize: 16,
-    color: '#666',
-    marginBottom: 8,
-  },
-  onlineStatus: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  infoSection: {
-    backgroundColor: 'white',
-    margin: 16,
-    borderRadius: 12,
-    padding: 20,
-  },
-  infoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  infoText: {
-    fontSize: 16,
-    color: '#333',
-    marginLeft: 12,
-    flex: 1,
-  },
-  actionSection: {
-    margin: 16,
-    gap: 12,
-  },
-  albumsButton: {
-    backgroundColor: 'white',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 16,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: '#007AFF',
-  },
-  albumsButtonText: {
-    color: '#007AFF',
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  messageButton: {
-    backgroundColor: '#007AFF',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 16,
-    borderRadius: 12,
-  },
-  messageButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  editButton: {
-    backgroundColor: '#34C759',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 16,
-    borderRadius: 12,
-  },
-  editButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
+const createStyles = (theme: any) => StyleSheet.create({
+    container: {
+        flex: 1,
+        backgroundColor: theme.background,
+    },
+    scrollView: {
+        flex: 1,
+    },
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: theme.background,
+    },
+    loadingText: {
+        color: theme.textSecondary,
+        fontSize: 16,
+    },
+    header: {
+        backgroundColor: theme.surface,
+        paddingVertical: 40,
+        paddingHorizontal: 20,
+        paddingTop: 60,
+        borderBottomLeftRadius: 20,
+        borderBottomRightRadius: 20,
+        elevation: 3,
+        shadowColor: theme.text,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 6,
+    },
+    backButton: {
+        position: 'absolute',
+        top: 60,
+        left: 20,
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: theme.background + '20',
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 1,
+    },
+    avatarSection: {
+        alignItems: 'center',
+        marginTop: 20,
+    },
+    avatarContainer: {
+        position: 'relative',
+        marginBottom: 16,
+    },
+    avatar: {
+        width: 120,
+        height: 120,
+        borderRadius: 60,
+        borderWidth: 4,
+        borderColor: theme.border,
+    },
+    onlineIndicator: {
+        position: 'absolute',
+        bottom: 8,
+        right: 8,
+        width: 20,
+        height: 20,
+        borderRadius: 10,
+        borderWidth: 3,
+        borderColor: theme.surface,
+        elevation: 2,
+        shadowColor: theme.text,
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.2,
+        shadowRadius: 2,
+    },
+    userInfo: {
+        alignItems: 'center',
+    },
+    name: {
+        fontSize: 24,
+        fontWeight: 'bold',
+        color: theme.text,
+        marginBottom: 4,
+    },
+    username: {
+        fontSize: 16,
+        color: theme.textSecondary,
+        marginBottom: 6,
+    },
+    onlineStatus: {
+        fontSize: 14,
+        fontWeight: '500',
+    },
+    bioSection: {
+        backgroundColor: theme.surface,
+        margin: 16,
+        padding: 16,
+        borderRadius: 12,
+        elevation: 2,
+        shadowColor: theme.text,
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 3,
+    },
+    bioText: {
+        fontSize: 16,
+        color: theme.text,
+        lineHeight: 22,
+        textAlign: 'center',
+        fontStyle: 'italic',
+    },
+    infoSection: {
+        marginHorizontal: 16,
+        marginBottom: 16,
+    },
+    sectionTitle: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        color: theme.text,
+        marginBottom: 12,
+        marginLeft: 4,
+    },
+    infoCard: {
+        backgroundColor: theme.surface,
+        borderRadius: 12,
+        elevation: 2,
+        shadowColor: theme.text,
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 3,
+    },
+    infoRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 16,
+    },
+    infoIconContainer: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        backgroundColor: theme.primary + '20',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 16,
+    },
+    infoContent: {
+        flex: 1,
+    },
+    infoLabel: {
+        fontSize: 12,
+        color: theme.textSecondary,
+        marginBottom: 2,
+        fontWeight: '500',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+    },
+    infoText: {
+        fontSize: 16,
+        color: theme.text,
+        fontWeight: '500',
+    },
+    divider: {
+        height: 1,
+        backgroundColor: theme.border,
+        marginHorizontal: 16,
+    },
+    actionsSection: {
+        marginHorizontal: 16,
+        marginBottom: 16,
+    },
+    actionButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: theme.surface,
+        paddingVertical: 16,
+        paddingHorizontal: 16,
+        borderRadius: 12,
+        marginBottom: 8,
+        elevation: 2,
+        shadowColor: theme.text,
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 3,
+    },
+    actionIconContainer: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        backgroundColor: theme.primary + '20',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 16,
+    },
+    disabledIconContainer: {
+        backgroundColor: theme.textSecondary + '20',
+    },
+    actionButtonText: {
+        flex: 1,
+        fontSize: 16,
+        color: theme.text,
+        fontWeight: '500',
+    },
+    disabledText: {
+        color: theme.textSecondary,
+    },
+    loadingIcon: {
+        width: 20,
+        height: 20,
+        borderRadius: 10,
+        backgroundColor: theme.primary + '40',
+    },
+    bottomSpacer: {
+        height: 100, // Отступ для нижней навигации
+    },
+    modalContainer: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.9)',
+    },
+    modalHeader: {
+        flexDirection: 'row',
+        justifyContent: 'flex-end',
+        paddingTop: 50,
+        paddingHorizontal: 20,
+        paddingBottom: 10,
+    },
+    modalButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(255, 255, 255, 0.2)',
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: 20,
+    },
+    buttonText: {
+        color: 'white',
+        marginLeft: 8,
+        fontSize: 16,
+        fontWeight: '500',
+    },
+    modalBackground: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    modalContent: {
+        width: '100%',
+        height: '100%',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    imageContainer: {
+        width: Dimensions.get('window').width,
+        height: Dimensions.get('window').width,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    fullImage: {
+        width: '100%',
+        height: '100%',
+    },
 });

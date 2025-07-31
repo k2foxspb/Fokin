@@ -3,9 +3,11 @@ import { StyleSheet, ActivityIndicator } from "react-native";
 import { Text, View } from "react-native";
 import { router } from "expo-router";
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useTheme } from '../contexts/ThemeContext';
 
 export default function Index() {
   const [isLoading, setIsLoading] = useState(true);
+  const { theme } = useTheme();
 
   useEffect(() => {
     checkAuthStatus();
@@ -17,7 +19,7 @@ export default function Index() {
       
       if (token) {
         // Пользователь авторизован, перенаправляем на страницу новостей (feed)
-        router.replace('/(tabs)/feed');
+        router.replace('/(main)/feed');
       } else {
         // Пользователь не авторизован, перенаправляем на страницу авторизации
         router.replace('/(auth)/login');
@@ -33,9 +35,9 @@ export default function Index() {
 
   if (isLoading) {
     return (
-      <View style={styles.container}>
-        <ActivityIndicator size="large" color="#007AFF" />
-        <Text style={styles.loadingText}>Загрузка...</Text>
+      <View style={[styles.container, { backgroundColor: theme.background }]}>
+        <ActivityIndicator size="large" color={theme.primary} />
+        <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Загрузка...</Text>
       </View>
     );
   }
@@ -56,7 +58,10 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   link: {
-    color: "#007AFF",
+    fontSize: 16,
+  },
+  loadingText: {
+    marginTop: 10,
     fontSize: 16,
   },
 });
