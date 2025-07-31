@@ -28,6 +28,7 @@ import Animated, {
 import PhotoUploadModal from '../../components/PhotoUploadModal';
 import AlbumEditModal from '../../components/AlbumEditModal';
 import {API_CONFIG} from '../../config';
+import {useTheme} from '../../contexts/ThemeContext';
 
 const {width, height} = Dimensions.get('window');
 const photoSize = (width - 48) / 3; // 3 columns with margins
@@ -57,52 +58,59 @@ const DeleteConfirmModal = ({
                                 visible,
                                 onCancel,
                                 onConfirm,
-                                loading
+                                loading,
+                                theme
                             }: {
     visible: boolean;
     onCancel: () => void;
     onConfirm: () => void;
     loading: boolean;
-}) => (
-    <Modal
-        visible={visible}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={onCancel}
-    >
-        <View style={styles.deleteModalContainer}>
-            <View style={styles.deleteModalContent}>
-                <Ionicons name="warning" size={48} color="#ff3b30" style={styles.deleteModalIcon}/>
-                <Text style={styles.deleteModalTitle}>Удалить фотографию?</Text>
-                <Text style={styles.deleteModalMessage}>Это действие нельзя отменить</Text>
+    theme: any;
+}) => {
+    const modalStyles = createModalStyles(theme);
 
-                <View style={styles.deleteModalButtons}>
-                    <TouchableOpacity
-                        style={[styles.deleteModalButton, styles.cancelButton]}
-                        onPress={onCancel}
-                        disabled={loading}
-                    >
-                        <Text style={styles.cancelButtonText}>Отмена</Text>
-                    </TouchableOpacity>
+    return (
+        <Modal
+            visible={visible}
+            transparent={true}
+            animationType="fade"
+            onRequestClose={onCancel}
+        >
+            <View style={modalStyles.deleteModalContainer}>
+                <View style={modalStyles.deleteModalContent}>
+                    <Ionicons name="warning" size={48} color={theme.error} style={modalStyles.deleteModalIcon}/>
+                    <Text style={modalStyles.deleteModalTitle}>Удалить фотографию?</Text>
+                    <Text style={modalStyles.deleteModalMessage}>Это действие нельзя отменить</Text>
 
-                    <TouchableOpacity
-                        style={[styles.deleteModalButton, styles.confirmButton]}
-                        onPress={onConfirm}
-                        disabled={loading}
-                    >
-                        {loading ? (
-                            <ActivityIndicator size="small" color="white"/>
-                        ) : (
-                            <Text style={styles.confirmButtonText}>Удалить</Text>
-                        )}
-                    </TouchableOpacity>
+                    <View style={modalStyles.deleteModalButtons}>
+                        <TouchableOpacity
+                            style={[modalStyles.deleteModalButton, modalStyles.cancelButton]}
+                            onPress={onCancel}
+                            disabled={loading}
+                        >
+                            <Text style={modalStyles.cancelButtonText}>Отмена</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={[modalStyles.deleteModalButton, modalStyles.confirmButton]}
+                            onPress={onConfirm}
+                            disabled={loading}
+                        >
+                            {loading ? (
+                                <ActivityIndicator size="small" color="white"/>
+                            ) : (
+                                <Text style={modalStyles.confirmButtonText}>Удалить</Text>
+                            )}
+                        </TouchableOpacity>
+                    </View>
                 </View>
             </View>
-        </View>
-    </Modal>
-);
+        </Modal>
+    );
+};
 
 export default function AlbumDetail() {
+    const {theme} = useTheme();
     const {id} = useLocalSearchParams<{ id: string }>();
     const [album, setAlbum] = useState<Album | null>(null);
     const [loading, setLoading] = useState(true);
@@ -482,10 +490,12 @@ export default function AlbumDetail() {
     const albumId = id ? parseInt(id.toString(), 10) : undefined;
     console.log('Parsed albumId:', albumId);
 
+    const styles = createStyles(theme);
+
     if (loading) {
         return (
             <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#007AFF"/>
+                <ActivityIndicator size="large" color={theme.primary}/>
                 <Text style={styles.loadingText}>Загрузка альбома...</Text>
             </View>
         );
@@ -495,9 +505,9 @@ export default function AlbumDetail() {
         return (
             <View style={styles.emptyContainer}>
                 <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-                    <Ionicons name="arrow-back" size={24} color="#007AFF"/>
+                    <Ionicons name="arrow-back" size={24} color={theme.primary}/>
                 </TouchableOpacity>
-                <Ionicons name="alert-circle-outline" size={64} color="#ccc"/>
+                <Ionicons name="alert-circle-outline" size={64} color={theme.textSecondary}/>
                 <Text style={styles.emptyText}>Альбом не найден</Text>
             </View>
         );
@@ -505,11 +515,10 @@ export default function AlbumDetail() {
 
     return (
         <View style={{flex: 1}}>
-
             <View style={styles.container}>
                 <View style={styles.header}>
                     <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-                        <Ionicons name="arrow-back" size={24} color="#007AFF"/>
+                        <Ionicons name="arrow-back" size={24} color={theme.primary}/>
                     </TouchableOpacity>
                     <View style={styles.headerInfo}>
                         <Text style={styles.headerTitle}>{album.title}</Text>
@@ -520,53 +529,65 @@ export default function AlbumDetail() {
                     </View>
 
                     <View style={styles.headerButtons}>
-                       {isOwner && (
+                        {isOwner && (
                             <>
                                 <TouchableOpacity
                                     style={styles.headerButton}
                                     onPress={() => setEditModalVisible(true)}
                                 >
-                                    <Ionicons name="create-outline" size={24} color="#007AFF"/>
+                                    <Ionicons name="create-outline" size={24} color={theme.primary}/>
                                 </TouchableOpacity>
                                 <TouchableOpacity
                                     style={styles.headerButton}
                                     onPress={() => setUploadModalVisible(true)}
                                 >
-                                    <Ionicons name="camera" size={24} color="#007AFF"/>
+                                    <Ionicons name="camera" size={24} color={theme.primary}/>
                                 </TouchableOpacity>
                             </>
                         )}
                     </View>
-
                 </View>
 
                 {album.photos.length === 0 ? (
                     <View style={styles.emptyPhotosContainer}>
-                        <Ionicons name="images-outline" size={64} color="#ccc"/>
+                        <Ionicons name="images-outline" size={64} color={theme.textSecondary}/>
                         <Text style={styles.emptyText}>В альбоме пока нет фотографий</Text>
-                        <TouchableOpacity
-                            style={styles.uploadFirstButton}
-                            onPress={() => setUploadModalVisible(true)}
-                        >
-                            <Text style={styles.uploadFirstButtonText}>Загрузить первое фото</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.refreshButton} onPress={fetchAlbum}>
-                            <Text style={styles.refreshButtonText}>Обновить</Text>
-                        </TouchableOpacity>
+                        {isOwner && (
+                            <>
+                                <TouchableOpacity
+                                    style={styles.uploadFirstButton}
+                                    onPress={() => setUploadModalVisible(true)}
+                                >
+                                    <Text style={styles.uploadFirstButtonText}>Загрузить первое фото</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity style={styles.refreshButton} onPress={fetchAlbum}>
+                                    <Text style={styles.refreshButtonText}>Обновить</Text>
+                                </TouchableOpacity>
+                            </>
+                        )}
                     </View>
                 ) : (
                     <FlatList
                         data={album.photos}
                         renderItem={renderPhoto}
-                        keyExtractor={(item) => item.id.toString()}
+                        keyExtractor={(item) => `album-${item.id}`}
                         numColumns={3}
                         refreshControl={
-                            <RefreshControl refreshing={refreshing} onRefresh={onRefresh}/>
+                            <RefreshControl
+                                refreshing={refreshing}
+                                onRefresh={onRefresh}
+                                colors={[theme.primary]}
+                                tintColor={theme.primary}
+                            />
                         }
                         showsVerticalScrollIndicator={false}
                         contentContainerStyle={[styles.photoList, {paddingBottom: 100}]}
-                    />
+                        columnWrapperStyle={styles.row}
+                        removeClippedSubviews={false}
+                        maxToRenderPerBatch={10}
+                        windowSize={10}
 
+                    />
                 )}
 
                 {/* Photo Modal - обновленная версия */}
@@ -594,7 +615,7 @@ export default function AlbumDetail() {
                                         disabled={deletingPhoto}
                                         activeOpacity={0.7}
                                     >
-                                        <Ionicons name="trash" size={24} color="#ff3b30"/>
+                                        <Ionicons name="trash" size={24} color={theme.error}/>
                                         <Text style={[styles.buttonText, {color: '#ffffff'}]}>Удалить</Text>
                                     </TouchableOpacity>
                                 )}
@@ -690,6 +711,7 @@ export default function AlbumDetail() {
                     onCancel={handleDeleteCancel}
                     onConfirm={handleDeleteConfirm}
                     loading={deletingPhoto}
+                    theme={theme}
                 />
 
                 <PhotoUploadModal
@@ -711,31 +733,35 @@ export default function AlbumDetail() {
                 />
             </View>
             <TabBar/>
-
         </View>
     );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: any) => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#f5f5f5',
+        backgroundColor: theme.background,
     },
     header: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: 'white',
+        backgroundColor: theme.surface,
         paddingHorizontal: 16,
         paddingVertical: 12,
         paddingTop: 50,
         elevation: 2,
-        shadowColor: '#000',
+        shadowColor: theme.shadow,
         shadowOffset: {width: 0, height: 1},
         shadowOpacity: 0.2,
         shadowRadius: 2,
+        borderBottomWidth: 1,
+        borderBottomColor: theme.border,
     },
     backButton: {
         marginRight: 16,
+        padding: 8,
+        borderRadius: 20,
+        backgroundColor: theme.primary + '15',
     },
     headerInfo: {
         flex: 1,
@@ -743,11 +769,11 @@ const styles = StyleSheet.create({
     headerTitle: {
         fontSize: 18,
         fontWeight: 'bold',
-        color: '#333',
+        color: theme.text,
     },
     headerSubtitle: {
         fontSize: 14,
-        color: '#666',
+        color: theme.textSecondary,
         marginTop: 2,
     },
     headerButtons: {
@@ -756,22 +782,27 @@ const styles = StyleSheet.create({
     },
     headerButton: {
         marginLeft: 12,
-        padding: 4,
+        padding: 8,
+        borderRadius: 20,
+        backgroundColor: theme.primary + '15',
     },
     loadingContainer: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
+        backgroundColor: theme.background,
     },
     loadingText: {
         marginTop: 8,
-        color: '#666',
+        color: theme.textSecondary,
+        fontSize: 16,
     },
     emptyContainer: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
         padding: 20,
+        backgroundColor: theme.background,
     },
     emptyPhotosContainer: {
         flex: 1,
@@ -781,13 +812,13 @@ const styles = StyleSheet.create({
     },
     emptyText: {
         fontSize: 18,
-        color: '#666',
+        color: theme.textSecondary,
         marginTop: 16,
         marginBottom: 20,
         textAlign: 'center',
     },
     uploadFirstButton: {
-        backgroundColor: '#007AFF',
+        backgroundColor: theme.primary,
         paddingHorizontal: 20,
         paddingVertical: 12,
         borderRadius: 8,
@@ -799,7 +830,7 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
     },
     refreshButton: {
-        backgroundColor: '#007AFF',
+        backgroundColor: theme.success,
         paddingHorizontal: 20,
         paddingVertical: 10,
         borderRadius: 8,
@@ -809,7 +840,7 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: 'bold',
     },
-    listContainer: {
+    photoList: {
         padding: 16,
     },
     photoItem: {
@@ -818,6 +849,12 @@ const styles = StyleSheet.create({
         margin: 2,
         borderRadius: 8,
         overflow: 'hidden',
+        backgroundColor: theme.surface,
+        elevation: 2,
+        shadowColor: theme.shadow,
+        shadowOffset: {width: 0, height: 1},
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
     },
     photoImage: {
         width: '100%',
@@ -826,7 +863,7 @@ const styles = StyleSheet.create({
     // Стили для модального окна просмотра фото
     modalContainer: {
         flex: 1,
-        backgroundColor: 'rgba(0, 0, 0, 0.95)',
+        backgroundColor: theme.overlay,
     },
     modalHeader: {
         flexDirection: 'row',
@@ -865,6 +902,7 @@ const styles = StyleSheet.create({
     },
     deleteButton: {
         borderWidth: 2,
+        borderColor: theme.error,
     },
     buttonText: {
         color: 'white',
@@ -931,21 +969,29 @@ const styles = StyleSheet.create({
         paddingVertical: 6,
         borderRadius: 12,
     },
-    // Стили для модального окна подтверждения удаления
+});
+
+// Стили для модального окна подтверждения удаления
+const createModalStyles = (theme: any) => StyleSheet.create({
     deleteModalContainer: {
         flex: 1,
-        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        backgroundColor: theme.overlay,
         justifyContent: 'center',
         alignItems: 'center',
         paddingHorizontal: 20,
     },
     deleteModalContent: {
-        backgroundColor: 'white',
+        backgroundColor: theme.surface,
         borderRadius: 16,
         padding: 24,
         width: '100%',
         maxWidth: 320,
         alignItems: 'center',
+        elevation: 8,
+        shadowColor: theme.shadow,
+        shadowOffset: {width: 0, height: 4},
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
     },
     deleteModalIcon: {
         marginBottom: 16,
@@ -953,13 +999,13 @@ const styles = StyleSheet.create({
     deleteModalTitle: {
         fontSize: 20,
         fontWeight: 'bold',
-        color: '#333',
+        color: theme.text,
         marginBottom: 8,
         textAlign: 'center',
     },
     deleteModalMessage: {
         fontSize: 16,
-        color: '#666',
+        color: theme.textSecondary,
         marginBottom: 24,
         textAlign: 'center',
         lineHeight: 22,
@@ -979,17 +1025,17 @@ const styles = StyleSheet.create({
         minHeight: 44,
     },
     cancelButton: {
-        backgroundColor: '#f0f0f0',
+        backgroundColor: theme.border,
         borderWidth: 1,
-        borderColor: '#ddd',
+        borderColor: theme.border,
     },
     cancelButtonText: {
-        color: '#333',
+        color: theme.text,
         fontSize: 16,
         fontWeight: '600',
     },
     confirmButton: {
-        backgroundColor: '#ff3b30',
+        backgroundColor: theme.error,
     },
     confirmButtonText: {
         color: 'white',

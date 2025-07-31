@@ -3,10 +3,12 @@ import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router, usePathname } from 'expo-router';
 import { useNotifications } from '../contexts/NotificationContext';
+import { useTheme } from '../contexts/ThemeContext';
 
 export default function TabBar() {
   const pathname = usePathname();
   const { unreadCount } = useNotifications();
+  const { theme } = useTheme();
 
   const tabs = [
     {
@@ -39,6 +41,8 @@ export default function TabBar() {
     }
   ];
 
+  const styles = createStyles(theme);
+
   return (
     <View style={styles.container}>
       {tabs.map((tab) => {
@@ -49,12 +53,13 @@ export default function TabBar() {
             key={tab.name}
             style={styles.tab}
             onPress={() => router.push(tab.path)}
+            activeOpacity={0.7}
           >
             <View style={styles.iconContainer}>
               <Ionicons
                 name={isActive ? tab.activeIcon : tab.icon}
                 size={22}
-                color={isActive ? '#007AFF' : 'gray'}
+                color={isActive ? theme.tabBarActive : theme.tabBarInactive}
               />
               {tab.name === 'messages' && unreadCount > 0 && (
                 <View style={styles.badge}>
@@ -66,7 +71,7 @@ export default function TabBar() {
             </View>
             <Text style={[
               styles.label,
-              { color: isActive ? '#007AFF' : 'gray' }
+              { color: isActive ? theme.tabBarActive : theme.tabBarInactive }
             ]}>
               {tab.title}
             </Text>
@@ -77,17 +82,17 @@ export default function TabBar() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: any) => StyleSheet.create({
   container: {
     flexDirection: 'row',
-    backgroundColor: '#ffffff',
+    backgroundColor: theme.tabBarBackground,
     paddingBottom: 6,
     paddingTop: 6,
     paddingHorizontal: 10,
     borderTopWidth: 1,
-    borderTopColor: '#e0e0e0',
+    borderTopColor: theme.tabBarBorder,
     elevation: 8,
-    shadowColor: '#ef0000',
+    shadowColor: theme.shadow,
     shadowOffset: {
       width: 0,
       height: -2,
@@ -99,6 +104,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingVertical: 4,
   },
   iconContainer: {
     position: 'relative',
@@ -114,7 +120,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: -8,
     right: -12,
-    backgroundColor: '#ff3b30',
+    backgroundColor: theme.tabBarBadge,
     borderRadius: 10,
     minWidth: 20,
     height: 20,
@@ -122,10 +128,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 6,
     borderWidth: 2,
-    borderColor: '#fff',
+    borderColor: theme.tabBarBackground,
+    elevation: 3,
+    shadowColor: theme.shadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
   },
   badgeText: {
-    color: '#fff',
+    color: '#FFFFFF',
     fontSize: 11,
     fontWeight: 'bold',
   },

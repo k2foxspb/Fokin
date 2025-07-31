@@ -38,7 +38,9 @@
         "expo-notifications",
         {
           "icon": "./assets/images/logo1024.png",
-          "color": "#222222"
+          "color": "#222222",
+          "defaultChannel": "default"
+
 
         }
       ]
