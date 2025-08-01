@@ -38,7 +38,7 @@
       "googleServicesFile": "./google-services.json"
     },
     "web": {
-      "favicon": "./assets/images/icon.png",
+      "favicon": "./assets/images/logo1024.png",
       "bundler": "metro"
     },
     "plugins": [
