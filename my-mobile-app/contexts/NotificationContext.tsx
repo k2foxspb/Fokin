@@ -245,7 +245,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
   };
 
-  const { connect, disconnect, sendMessage, isConnected } = useWebSocket(`/ws/notification/`, {
+  const { connect, disconnect, sendMessage, isConnected } = useWebSocket(`/wss/notification/`, {
     onOpen: () => {
       console.log('Notification WebSocket connected');
       // Запрашиваем начальные данные

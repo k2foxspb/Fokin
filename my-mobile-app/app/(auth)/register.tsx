@@ -188,7 +188,7 @@ export default function Register() {
         Alert.alert('Успех', 'Регистрация прошла успешно!', [
           {
             text: 'OK',
-            onPress: () => router.replace('/(tabs)/feed'),
+            onPress: () => router.replace('/(main)/feed'),
           },
         ]);
       }

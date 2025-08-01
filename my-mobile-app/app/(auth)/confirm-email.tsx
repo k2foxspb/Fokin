@@ -65,7 +65,7 @@ export default function ConfirmEmail() {
       Alert.alert('Успех', 'Email успешно подтвержден!', [
         {
           text: 'OK',
-          onPress: () => router.replace('/(tabs)/feed'),
+          onPress: () => router.replace('/(main)/feed'),
         },
       ]);
     } catch (error) {

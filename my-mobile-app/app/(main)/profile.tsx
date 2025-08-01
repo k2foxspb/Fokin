@@ -102,7 +102,7 @@ export default function Profile() {
     };
 
     const handleViewChats = () => {
-        router.push('/(tabs)/chats');
+        router.push('/(main)/chats');
     };
 
     const formatBirthday = (birthday?: string) => {

@@ -51,7 +51,7 @@ export default function Login() { // Убираем параметр navigation,
       axios.defaults.headers.common['Authorization'] = `Token ${token}`;
 
       // Переходим на страницу новостей
-      router.replace('/(tabs)/feed');
+      router.replace('/(main)/feed');
     } catch (error) {
       const axiosError = error as AxiosError<{ error: string }>;
       Alert.alert(
