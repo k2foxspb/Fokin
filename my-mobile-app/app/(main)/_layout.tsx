@@ -1,4 +1,3 @@
-
 import { Stack } from "expo-router";
 import TabBar from "../../components/TabBar";
 import { View, StyleSheet } from "react-native";
@@ -15,13 +14,6 @@ export default function MainLayout() {
         screenOptions={{
           headerStyle: {
             backgroundColor: theme.headerBackground,
-            borderBottomWidth: 1,
-            borderBottomColor: theme.headerBorder,
-            elevation: 4,
-            shadowColor: theme.shadow,
-            shadowOffset: { width: 0, height: 2 },
-            shadowOpacity: 0.1,
-            shadowRadius: 4,
           },
           headerTitleStyle: {
             fontWeight: "bold",
@@ -29,7 +21,7 @@ export default function MainLayout() {
             fontSize: 18,
           },
           headerTintColor: theme.primary,
-          headerBackTitleVisible: false,
+          headerShadowVisible: true,
         }}
       >
         <Stack.Screen

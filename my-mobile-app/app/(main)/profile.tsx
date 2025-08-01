@@ -27,13 +27,13 @@ interface UserProfile {
     last_name: string;
     avatar?: string;
     bio?: string;
-    gender?: string;
+    gender: string;
     birthday?: string;
     age?: number;
 }
 
 export default function Profile() {
-    const { theme, isDark, toggleTheme } = useTheme();
+    const {theme, themeType, toggleTheme} = useTheme();
     const [profile, setProfile] = useState<UserProfile | null>(null);
     const [refreshing, setRefreshing] = useState(false);
     const [editModalVisible, setEditModalVisible] = useState(false);
@@ -142,13 +142,13 @@ export default function Profile() {
                                     profile.avatar
                                         ? {uri: profile.avatar}
                                         : profile.gender === 'male'
-                                        ? require('../../assets/avatar/male.png')
-                                        : require('../../assets/avatar/female.png')
+                                            ? require('../../assets/avatar/male.png')
+                                            : require('../../assets/avatar/female.png')
                                 }
                                 style={styles.avatar}
                             />
                             <View style={styles.editAvatarOverlay}>
-                                <Ionicons name="camera" size={20} color="white" />
+                                <Ionicons name="camera" size={20} color="white"/>
                             </View>
                         </TouchableOpacity>
 
@@ -175,7 +175,7 @@ export default function Profile() {
                     <View style={styles.infoCard}>
                         <View style={styles.infoRow}>
                             <View style={styles.infoIconContainer}>
-                                <Ionicons name="mail-outline" size={20} color={theme.primary} />
+                                <Ionicons name="mail-outline" size={20} color={theme.primary}/>
                             </View>
                             <View style={styles.infoContent}>
                                 <Text style={styles.infoLabel}>Email</Text>
@@ -185,10 +185,10 @@ export default function Profile() {
 
                         {profile.gender && (
                             <>
-                                <View style={styles.divider} />
+                                <View style={styles.divider}/>
                                 <View style={styles.infoRow}>
                                     <View style={styles.infoIconContainer}>
-                                        <Ionicons name="person-outline" size={20} color={theme.primary} />
+                                        <Ionicons name="person-outline" size={20} color={theme.primary}/>
                                     </View>
                                     <View style={styles.infoContent}>
                                         <Text style={styles.infoLabel}>Пол</Text>
@@ -202,10 +202,10 @@ export default function Profile() {
 
                         {profile.birthday && (
                             <>
-                                <View style={styles.divider} />
+                                <View style={styles.divider}/>
                                 <View style={styles.infoRow}>
                                     <View style={styles.infoIconContainer}>
-                                        <Ionicons name="calendar-outline" size={20} color={theme.primary} />
+                                        <Ionicons name="calendar-outline" size={20} color={theme.primary}/>
                                     </View>
                                     <View style={styles.infoContent}>
                                         <Text style={styles.infoLabel}>Дата рождения</Text>
@@ -227,10 +227,10 @@ export default function Profile() {
                         onPress={() => setEditModalVisible(true)}
                     >
                         <View style={styles.actionIconContainer}>
-                            <Ionicons name="create-outline" size={20} color={theme.primary} />
+                            <Ionicons name="create-outline" size={20} color={theme.primary}/>
                         </View>
                         <Text style={styles.actionButtonText}>Редактировать профиль</Text>
-                        <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
+                        <Ionicons name="chevron-forward" size={16} color={theme.textSecondary}/>
                     </TouchableOpacity>
 
                     <TouchableOpacity
@@ -238,12 +238,11 @@ export default function Profile() {
                         onPress={handleViewAlbums}
                     >
                         <View style={styles.actionIconContainer}>
-                            <Ionicons name="images-outline" size={20} color={theme.primary} />
+                            <Ionicons name="images-outline" size={20} color={theme.primary}/>
                         </View>
                         <Text style={styles.actionButtonText}>Мои альбомы</Text>
-                        <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
+                        <Ionicons name="chevron-forward" size={16} color={theme.textSecondary}/>
                     </TouchableOpacity>
-
 
 
                     <TouchableOpacity
@@ -252,15 +251,15 @@ export default function Profile() {
                     >
                         <View style={styles.actionIconContainer}>
                             <Ionicons
-                                name={isDark ? "sunny-outline" : "moon-outline"}
+                                name={themeType ? "sunny-outline" : "moon-outline"}
                                 size={20}
                                 color={theme.primary}
                             />
                         </View>
                         <Text style={styles.actionButtonText}>
-                            {isDark ? "Светлая тема" : "Тёмная тема"}
+                            {themeType ? "Светлая тема" : "Тёмная тема"}
                         </Text>
-                        <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
+                        <Ionicons name="chevron-forward" size={16} color={theme.textSecondary}/>
                     </TouchableOpacity>
 
                     <TouchableOpacity
@@ -268,16 +267,16 @@ export default function Profile() {
                         onPress={handleLogout}
                     >
                         <View style={[styles.actionIconContainer, styles.logoutIconContainer]}>
-                            <Ionicons name="log-out-outline" size={20} color={theme.error} />
+                            <Ionicons name="log-out-outline" size={20} color={theme.error}/>
                         </View>
                         <Text style={[styles.actionButtonText, styles.logoutText]}>
                             Выйти из аккаунта
                         </Text>
-                        <Ionicons name="chevron-forward" size={16} color={theme.error} />
+                        <Ionicons name="chevron-forward" size={16} color={theme.error}/>
                     </TouchableOpacity>
                 </View>
 
-                <View style={styles.bottomSpacer} />
+                <View style={styles.bottomSpacer}/>
             </ScrollView>
 
             <ProfileEditModal
@@ -305,7 +304,7 @@ export default function Profile() {
                             onPress={() => setAvatarModalVisible(false)}
                             activeOpacity={0.7}
                         >
-                            <Ionicons name="close" size={24} color="white" />
+                            <Ionicons name="close" size={24} color="white"/>
                             <Text style={styles.buttonText}>Закрыть</Text>
                         </TouchableOpacity>
                     </View>
@@ -322,8 +321,8 @@ export default function Profile() {
                                         profile.avatar
                                             ? {uri: profile.avatar}
                                             : profile.gender === 'male'
-                                            ? require('../../assets/avatar/male.png')
-                                            : require('../../assets/avatar/female.png')
+                                                ? require('../../assets/avatar/male.png')
+                                                : require('../../assets/avatar/female.png')
                                     }
                                     style={styles.fullImage}
                                     resizeMode="contain"
@@ -360,7 +359,7 @@ const createStyles = (theme: any) => StyleSheet.create({
         borderBottomRightRadius: 20,
         elevation: 3,
         shadowColor: theme.text,
-        shadowOffset: { width: 0, height: 2 },
+        shadowOffset: {width: 0, height: 2},
         shadowOpacity: 0.1,
         shadowRadius: 6,
     },
@@ -411,7 +410,7 @@ const createStyles = (theme: any) => StyleSheet.create({
         borderRadius: 12,
         elevation: 2,
         shadowColor: theme.text,
-        shadowOffset: { width: 0, height: 1 },
+        shadowOffset: {width: 0, height: 1},
         shadowOpacity: 0.1,
         shadowRadius: 3,
     },
@@ -438,7 +437,7 @@ const createStyles = (theme: any) => StyleSheet.create({
         borderRadius: 12,
         elevation: 2,
         shadowColor: theme.text,
-        shadowOffset: { width: 0, height: 1 },
+        shadowOffset: {width: 0, height: 1},
         shadowOpacity: 0.1,
         shadowRadius: 3,
     },
@@ -491,7 +490,7 @@ const createStyles = (theme: any) => StyleSheet.create({
         marginBottom: 8,
         elevation: 2,
         shadowColor: theme.text,
-        shadowOffset: { width: 0, height: 1 },
+        shadowOffset: {width: 0, height: 1},
         shadowOpacity: 0.1,
         shadowRadius: 3,
     },
