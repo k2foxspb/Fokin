@@ -1,307 +1,317 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
-import * as Notifications from 'expo-notifications';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Platform } from 'react-native';
+import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { useWebSocket } from '../hooks/useWebSocket';
-
-// Настройка обработки уведомлений
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Notifications from 'expo-notifications';
+import { router } from 'expo-router';
+import { 
+  requestNotificationPermissions, 
+  registerForPushNotifications, 
+  sendLocalNotification,
+  addNotificationListener,
+  addNotificationResponseListener
+} from '../services/notificationService';
+import { AppState, Platform } from 'react-native';
+import { API_CONFIG } from '../config';
 
 interface NotificationContextType {
-  expoPushToken: string | null;
-  notification: Notifications.Notification | null;
   unreadCount: number;
+  messages: MessageType[];
   senderCounts: Map<number, number>;
-  setUnreadCount: (count: number) => void;
-  incrementUnreadCount: () => void;
-  clearUnreadCount: () => void;
-  setSenderCount: (senderId: number, count: number) => void;
-  incrementSenderCount: (senderId: number) => void;
-  clearSenderCount: (senderId: number) => void;
+  userStatuses: Map<number, string>;
+  connect: () => void;
+  disconnect: () => void;
+  refreshNotifications: () => void; // Добавляем метод для принудительного обновления
+}
+
+interface MessageType {
+  sender_id: number;
+  count: number;
+}
+
+interface NotificationData {
+  type: string;
+  unique_sender_count: number;
+  messages: [{ user: string }, MessageType[]];
+}
+
+interface UserStatusUpdate {
+  type: 'user_status_update';
+  user_id: number;
+  status: string;
 }
 
 const NotificationContext = createContext<NotificationContextType>({
-  expoPushToken: null,
-  notification: null,
   unreadCount: 0,
+  messages: [],
   senderCounts: new Map(),
-  setUnreadCount: () => {},
-  incrementUnreadCount: () => {},
-  clearUnreadCount: () => {},
-  setSenderCount: () => {},
-  incrementSenderCount: () => {},
-  clearSenderCount: () => {},
+  userStatuses: new Map(),
+  connect: () => {},
+  disconnect: () => {},
+  refreshNotifications: () => {},
 });
 
 export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [expoPushToken, setExpoPushToken] = useState<string | null>(null);
-  const [notification, setNotification] = useState<Notifications.Notification | null>(null);
-  const [unreadCount, setUnreadCount] = useState(0);
+  const [unreadCount, setUnreadCount] = useState<number>(0);
+  const [messages, setMessages] = useState<MessageType[]>([]);
   const [senderCounts, setSenderCounts] = useState<Map<number, number>>(new Map());
-
+  const [userStatuses, setUserStatuses] = useState<Map<number, string>>(new Map());
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [hasNotificationPermission, setHasNotificationPermission] = useState<boolean>(false);
+  const [pushToken, setPushToken] = useState<string | null>(null);
+  const appState = useRef(AppState.currentState);
+  // Исправляем TypeScript ошибки - добавляем null как начальное значение
   const notificationListener = useRef<Notifications.Subscription | null>(null);
   const responseListener = useRef<Notifications.Subscription | null>(null);
+  const previousMessagesRef = useRef<MessageType[]>([]);
 
-  // 🔥 ПРОВЕРИМ ПОДКЛЮЧЕНИЕ К WebSocket
-  const { connect, disconnect, isConnected } = useWebSocket(
-    '/ws/notification/',
-    {
-      onOpen: () => {
-        console.log('🌐 ✅ Notifications WebSocket CONNECTED');
-      },
-      onMessage: (event: MessageEvent) => {
-        console.log('🔔 📨 WebSocket message received:', event.data);
-        try {
-          const data = JSON.parse(event.data);
-          console.log('🔔 📊 Parsed WebSocket data:', data);
+  // Проверяем аутентификацию при инициализации
+  useEffect(() => {
+    const checkAuth = async () => {
+      const token = await AsyncStorage.getItem('userToken');
+      setIsAuthenticated(!!token);
+    };
+    checkAuth();
+  }, []);
 
-          if (data.type === 'messages_by_sender_update') {
-            console.log('🔔 🔄 Processing messages_by_sender_update');
-            console.log('🔔 📈 unique_sender_count:', data.unique_sender_count);
-            console.log('🔔 📬 messages:', data.messages);
+  // Инициализация уведомлений
+  useEffect(() => {
+    const initNotifications = async () => {
+      // Запрашиваем разрешение на отправку уведомлений
+      const hasPermission = await requestNotificationPermissions();
+      setHasNotificationPermission(hasPermission);
 
-            // Обновляем общий счетчик
-            if (typeof data.unique_sender_count === 'number') {
-              console.log('🔔 ⚡ Setting unread count to:', data.unique_sender_count);
-              setUnreadCountWithSave(data.unique_sender_count);
-            }
+      if (hasPermission) {
+        // Регистрируем устройство для push-уведомлений
+        const token = await registerForPushNotifications();
+        setPushToken(token);
+      }
 
-            // Обновляем счетчики по отправителям
-            if (data.messages && typeof data.messages === 'object') {
-              setSenderCounts(prev => {
-                const newMap = new Map();
-                Object.entries(data.messages).forEach(([senderId, count]) => {
-                  if (typeof count === 'number' && count > 0) {
-                    newMap.set(Number(senderId), count);
-                  }
-                });
-                console.log('🔔 🗺️ Updated sender counts:', newMap);
-                return newMap;
+      // Добавляем слушатель для уведомлений, полученных когда приложение открыто
+      notificationListener.current = addNotificationListener(notification => {
+        console.log('Notification received in foreground:', notification);
+        // Принудительно обновляем данные при получении уведомления
+        if (isAuthenticated) {
+          refreshNotifications();
+        }
+      });
+
+      // Добавляем слушатель для нажатий на уведомления
+      responseListener.current = addNotificationResponseListener(response => {
+        console.log('Notification response received:', response);
+        handleNotificationResponse(response);
+      });
+
+      // Слушаем изменения состояния приложения
+      const subscription = AppState.addEventListener('change', nextAppState => {
+        if (
+          appState.current.match(/inactive|background/) &&
+          nextAppState === 'active'
+        ) {
+          // Приложение вернулось на передний план
+          console.log('App has come to the foreground!');
+          // Принудительно обновляем данные
+          if (isAuthenticated) {
+            refreshNotifications();
+          }
+        }
+        appState.current = nextAppState;
+      });
+
+      return () => {
+        // Очищаем слушатели при размонтировании
+        notificationListener.current?.remove();
+        responseListener.current?.remove();
+        subscription.remove();
+      };
+    };
+
+    if (isAuthenticated) {
+      initNotifications();
+    }
+  }, [isAuthenticated]);
+
+  // Отдельный эффект для проверки запуска из уведомления
+  useEffect(() => {
+    const checkLaunchNotification = async () => {
+      // Проверяем, было ли приложение запущено из уведомления
+      const lastNotificationResponse = await Notifications.getLastNotificationResponseAsync();
+      if (lastNotificationResponse) {
+        console.log('App was opened from notification:', lastNotificationResponse);
+
+        // Даем приложению время инициализироваться перед навигацией
+        setTimeout(() => {
+          // Обрабатываем уведомление, которое запустило приложение
+          handleNotificationResponse(lastNotificationResponse);
+        }, 1000);
+      }
+    };
+
+    if (isAuthenticated) {
+      checkLaunchNotification();
+    }
+  }, [isAuthenticated]);
+
+  // Обработка ответа на уведомление
+  const handleNotificationResponse = (response: Notifications.NotificationResponse) => {
+    const data = response.notification.request.content.data;
+    console.log('Notification data:', data);
+
+    // Обновляем данные
+    if (isAuthenticated) {
+      refreshNotifications();
+    }
+
+    // Навигация к соответствующему экрану
+    if (data && data.type === 'message_notification') {
+      console.log('Navigating to messages screen');
+
+      // Исправляем TypeScript ошибку - приводим к строке
+      if (data.chatId) {
+        router.push({
+          pathname: '/chat/[id]',
+          params: { id: String(data.chatId) }
+        });
+      } else {
+        router.push('/(tabs)/messages');
+      }
+    }
+  };
+
+  const handleMessage = (event: WebSocketMessageEvent) => {
+    try {
+      const data: NotificationData | UserStatusUpdate = JSON.parse(event.data);
+      console.log('WebSocket message received:', data);
+
+      // Обработка обновления статуса пользователя
+      if (data.type === 'user_status_update') {
+        const statusUpdate = data as UserStatusUpdate;
+        console.log(`User ${statusUpdate.user_id} status changed to: ${statusUpdate.status}`);
+
+        setUserStatuses(prevStatuses => {
+          const newStatuses = new Map(prevStatuses);
+          newStatuses.set(statusUpdate.user_id, statusUpdate.status);
+          return newStatuses;
+        });
+        return;
+      }
+
+      // Обработка уведомлений о сообщениях
+      const notificationData = data as NotificationData;
+      if (notificationData.type === 'initial_notification' || notificationData.type === 'messages_by_sender_update') {
+        console.log('Updating notification counts:', {
+          unreadCount: notificationData.unique_sender_count,
+          messages: notificationData.messages
+        });
+
+        setUnreadCount(notificationData.unique_sender_count);
+
+        // Извлекаем массив сообщений из структуры [dict, messages[]]
+        if (Array.isArray(notificationData.messages) && notificationData.messages.length === 2) {
+          const messageArray = notificationData.messages[1];
+          setMessages(messageArray);
+
+          // Создаем Map для быстрого поиска количества сообщений по sender_id
+          const newSenderCounts = new Map<number, number>();
+          messageArray.forEach(message => {
+            newSenderCounts.set(message.sender_id, message.count);
+          });
+          setSenderCounts(newSenderCounts);
+
+          // Проверяем, есть ли новые сообщения для отправки уведомления
+          if (previousMessagesRef.current.length > 0) {
+            const hasNewMessages = messageArray.some(newMsg => {
+              const prevMsg = previousMessagesRef.current.find(m => m.sender_id === newMsg.sender_id);
+              return !prevMsg || newMsg.count > prevMsg.count;
+            });
+
+            if (hasNewMessages && hasNotificationPermission && AppState.currentState !== 'active') {
+              // Отправляем уведомление только если приложение не активно
+              sendLocalNotification({
+                title: 'Новые сообщения',
+                body: `У вас ${notificationData.unique_sender_count} непрочитанных сообщений`,
+                data: { type: 'message_notification' }
+              }).catch(error => {
+                console.error('Failed to send notification:', error);
               });
             }
           }
-        } catch (error) {
-          console.error('🔔 ❌ Error parsing WebSocket notification message:', error);
-        }
-      },
-      onClose: () => {
-        console.log('🌐 ❌ Notifications WebSocket DISCONNECTED');
-      },
-      onError: (error: Event) => {
-        console.error('🌐 🚨 Notifications WebSocket ERROR:', error);
-      }
-    }
-  );
 
-  // Загрузка/сохранение счетчиков
-  const loadUnreadCount = async () => {
-    try {
-      const saved = await AsyncStorage.getItem('unreadCount');
-      if (saved) {
-        const count = parseInt(saved, 10);
-        const finalCount = isNaN(count) ? 0 : count;
-        setUnreadCount(finalCount);
-        console.log('📊 ✅ Loaded unread count from storage:', finalCount);
-      }
-    } catch (error) {
-      console.error('📊 ❌ Error loading unread count:', error);
-    }
-  };
-
-  const saveUnreadCount = async (count: number) => {
-    try {
-      await AsyncStorage.setItem('unreadCount', count.toString());
-      console.log('💾 ✅ Saved unread count to storage:', count);
-    } catch (error) {
-      console.error('💾 ❌ Error saving unread count:', error);
-    }
-  };
-
-  // Методы для работы с счетчиками
-  const setSenderCount = (senderId: number, count: number) => {
-    console.log('📤 Setting sender count:', senderId, '=', count);
-    setSenderCounts(prev => {
-      const newMap = new Map(prev);
-      if (count > 0) {
-        newMap.set(senderId, count);
-      } else {
-        newMap.delete(senderId);
-      }
-      return newMap;
-    });
-  };
-
-  const incrementSenderCount = (senderId: number) => {
-    console.log('⬆️ Incrementing sender count for:', senderId);
-    setSenderCounts(prev => {
-      const newMap = new Map(prev);
-      const currentCount = newMap.get(senderId) || 0;
-      const newCount = currentCount + 1;
-      newMap.set(senderId, newCount);
-      console.log('⬆️ New sender count:', senderId, '=', newCount);
-      return newMap;
-    });
-  };
-
-  const clearSenderCount = (senderId: number) => {
-    console.log('🧹 Clearing sender count for:', senderId);
-    setSenderCounts(prev => {
-      const newMap = new Map(prev);
-      newMap.delete(senderId);
-      return newMap;
-    });
-  };
-
-  const incrementUnreadCount = () => {
-    console.log('⬆️ Incrementing unread count');
-    setUnreadCount(prev => {
-      const newCount = prev + 1;
-      saveUnreadCount(newCount);
-      console.log('⬆️ New unread count:', newCount);
-      return newCount;
-    });
-  };
-
-  const clearUnreadCount = () => {
-    console.log('🧹 Clearing all unread counts');
-    setUnreadCount(0);
-    saveUnreadCount(0);
-    setSenderCounts(new Map());
-  };
-
-  const setUnreadCountWithSave = (count: number) => {
-    console.log('📝 Setting unread count with save:', count);
-    setUnreadCount(count);
-    saveUnreadCount(count);
-  };
-
-  // 🔥 ЛОГИРУЕМ ИЗМЕНЕНИЯ СОСТОЯНИЯ
-  useEffect(() => {
-    console.log('🔢 📊 NotificationProvider: unreadCount changed to:', unreadCount);
-  }, [unreadCount]);
-
-  useEffect(() => {
-    console.log('🔢 🗺️ NotificationProvider: senderCounts changed to:', senderCounts);
-  }, [senderCounts]);
-
-  // Регистрация push токена (упрощенная версия)
-  async function registerForPushNotificationsAsync() {
-    try {
-      console.log('🔔 📝 Starting push notification registration...');
-
-      if (Platform.OS === 'android') {
-        await Notifications.setNotificationChannelAsync('default', {
-          name: 'default',
-          importance: Notifications.AndroidImportance.MAX,
-          vibrationPattern: [0, 250, 250, 250],
-          lightColor: '#FF231F7C',
-          sound: undefined,
-          enableVibrate: true,
-        });
-      }
-
-      const { status: existingStatus } = await Notifications.getPermissionsAsync();
-      let finalStatus = existingStatus;
-
-      if (existingStatus !== 'granted') {
-        const { status } = await Notifications.requestPermissionsAsync({
-          ios: {
-            allowAlert: true,
-            allowBadge: true,
-            allowSound: true,
-          },
-        });
-        finalStatus = status;
-      }
-
-      if (finalStatus !== 'granted') {
-        console.warn('❌ Push notification permissions not granted!');
-        return null;
-      }
-
-      const tokenData = await Notifications.getExpoPushTokenAsync();
-      console.log('🎯 ✅ Expo Push Token obtained:', tokenData.data);
-      return tokenData.data;
-    } catch (error) {
-      console.error('💥 Error during push notification setup:', error);
-      return null;
-    }
-  }
-
-  useEffect(() => {
-    console.log('🚀 🔧 NotificationProvider: Setting up...');
-
-    // Регистрация push токена
-    registerForPushNotificationsAsync().then(token => {
-      if (token) {
-        setExpoPushToken(token);
-        console.log('✅ Push token set successfully');
-      }
-    });
-
-    // Загрузка сохраненного счетчика
-    loadUnreadCount();
-
-    // 🔥 Подключаем WebSocket для уведомлений
-    console.log('🌐 🔌 Connecting to notifications WebSocket...');
-    connect();
-
-    // Обработчики push уведомлений
-    notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
-      console.log('📢 === PUSH NOTIFICATION RECEIVED ===');
-      setNotification(notification);
-
-      const notificationData = notification.request.content.data;
-      if (notificationData?.type === 'message' || notificationData?.message_type === 'chat') {
-        console.log('💬 Processing chat message notification');
-        incrementUnreadCount();
-
-        const senderId = notificationData?.sender_id || notificationData?.from_user_id;
-        if (senderId) {
-          incrementSenderCount(Number(senderId));
+          // Сохраняем текущие сообщения для сравнения в будущем
+          previousMessagesRef.current = [...messageArray];
         }
       }
-    });
+    } catch (error) {
+      console.error('Error processing WebSocket message:', error);
+    }
+  };
 
-    responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
-      console.log('👆 === NOTIFICATION RESPONSE ===');
-    });
+  const { connect, disconnect, sendMessage, isConnected } = useWebSocket(`/ws/notification/`, {
+    onOpen: () => {
+      console.log('Notification WebSocket connected');
+      // Запрашиваем начальные данные
+      sendMessage({ type: 'get_initial_data' });
+    },
+    onMessage: handleMessage,
+    onClose: () => {
+      console.log('Notification WebSocket closed');
+      // Не сбрасываем данные сразу, оставляем последние известные значения
+    },
+    onError: (error: any) => {
+      console.error('Notification WebSocket error:', error);
+    },
+  });
+
+  // Функция для принудительного обновления уведомлений
+  const refreshNotifications = () => {
+    console.log('Refreshing notifications...');
+    if (isConnected()) {
+      sendMessage({ type: 'get_initial_data' });
+    } else {
+      // Если нет соединения, пытаемся переподключиться
+      connect();
+    }
+  };
+
+  useEffect(() => {
+    // Подключаемся только если пользователь аутентифицирован
+    if (isAuthenticated) {
+      connect();
+    }
+    return () => {
+      disconnect();
+    };
+  }, [isAuthenticated]);
+
+  // Периодическое обновление для обеспечения актуальности данных
+  useEffect(() => {
+    let interval: NodeJS.Timeout | null = null;
+
+    if (isAuthenticated && isConnected()) {
+      // Обновляем данные каждые 30 секунд
+      interval = setInterval(() => {
+        refreshNotifications();
+      }, 30000);
+    }
 
     return () => {
-      console.log('🧹 NotificationProvider: Cleaning up...');
-      disconnect();
-      if (notificationListener.current) {
-        Notifications.removeNotificationSubscription(notificationListener.current);
-      }
-      if (responseListener.current) {
-        Notifications.removeNotificationSubscription(responseListener.current);
+      if (interval) {
+        clearInterval(interval);
       }
     };
-  }, []);
+  }, [isAuthenticated, isConnected()]);
+
+  const value = {
+    unreadCount,
+    messages,
+    senderCounts,
+    userStatuses,
+    connect,
+    disconnect,
+    refreshNotifications,
+  };
 
   return (
-    <NotificationContext.Provider
-      value={{
-        expoPushToken,
-        notification,
-        unreadCount,
-        senderCounts,
-        setUnreadCount: setUnreadCountWithSave,
-        incrementUnreadCount,
-        clearUnreadCount,
-        setSenderCount,
-        incrementSenderCount,
-        clearSenderCount,
-      }}
-    >
+    <NotificationContext.Provider value={value}>
       {children}
     </NotificationContext.Provider>
   );

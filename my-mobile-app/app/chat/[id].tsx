@@ -1,5 +1,4 @@
 import React, {useState, useEffect, useRef} from 'react';
-import { useNotifications } from '../../contexts/NotificationContext';
 
 import {
     View,
@@ -21,6 +20,7 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {MaterialIcons} from '@expo/vector-icons';
 import { useTheme } from '../../contexts/ThemeContext';
+import { useNotifications } from '../../contexts/NotificationContext';
 import {API_CONFIG} from '../../config';
 
 interface Message {
@@ -100,7 +100,7 @@ const formatTimestamp = (timestamp: number | string | undefined): string => {
 
 export default function ChatScreen() {
     const { theme } = useTheme();
-    const { clearSenderCount } = useNotifications();
+    const { userStatuses } = useNotifications();
     const {id: roomId} = useLocalSearchParams();
     const [messages, setMessages] = useState<Message[]>([]);
     const [messageText, setMessageText] = useState('');
@@ -118,7 +118,10 @@ export default function ChatScreen() {
 
     // Отладочная информация
     useEffect(() => {
-
+        console.log('=== CURRENT USER INFO ===');
+        console.log('Current Username:', currentUsername);
+        console.log('Current User ID:', currentUserId);
+        console.log('=== MESSAGES ===');
         messages.forEach((msg, index) => {
             console.log(`Message ${index}:`, {
                 id: msg.id,
@@ -463,38 +466,45 @@ export default function ChatScreen() {
     };
 
     // Компонент заголовка с информацией о пользователе
-    const ChatHeader = () => (
-        <TouchableOpacity
-            style={styles.headerUserInfo}
-            onPress={navigateToProfile}
-            activeOpacity={0.7}
-        >
-            <View style={styles.avatarContainer}>
-                <Image
-                    source={
-                         {uri: `${API_CONFIG.BASE_URL}${recipient?.avatar}`}
-
-                    }
-
-                    style={styles.avatar}
-                />
-                <View style={[
-                    styles.onlineIndicator,
-                    {backgroundColor: recipient?.is_online === 'online' ? theme.online : theme.offline}
-
-                ]}/>
-            </View>
-            <View style={styles.userInfo}>
-                <Text style={[styles.username, { color: theme.text }]}>{recipient?.username || 'Пользователь'}</Text>
-                <Text style={[
-                    styles.onlineStatus,
-                    {color: recipient?.is_online === 'online' ? theme.online : theme.offline}
-                ]}>
-                    {recipient?.is_online === 'online' ? 'в сети' : 'не в сети'}
-                </Text>
-            </View>
-        </TouchableOpacity>
-    );
+    const ChatHeader = () => {
+        // Получаем статус пользователя из контекста уведомлений (в реальном времени)
+        const isOnline = recipient?.id ? userStatuses.get(recipient.id) === 'online' : false;
+        
+        // Используем статус из контекста, если он есть, иначе используем статус из recipient
+        const userStatus = recipient?.id && userStatuses.has(recipient.id) 
+            ? isOnline 
+            : recipient?.is_online === 'online';
+            
+        return (
+            <TouchableOpacity
+                style={styles.headerUserInfo}
+                onPress={navigateToProfile}
+                activeOpacity={0.7}
+            >
+                <View style={styles.avatarContainer}>
+                    <Image
+                        source={
+                            {uri: `${API_CONFIG.BASE_URL}${recipient?.avatar}`}
+                        }
+                        style={styles.avatar}
+                    />
+                    <View style={[
+                        styles.onlineIndicator,
+                        {backgroundColor: userStatus ? theme.online : theme.offline}
+                    ]}/>
+                </View>
+                <View style={styles.userInfo}>
+                    <Text style={[styles.username, { color: theme.text }]}>{recipient?.username || 'Пользователь'}</Text>
+                    <Text style={[
+                        styles.onlineStatus,
+                        {color: userStatus ? theme.online : theme.offline}
+                    ]}>
+                        {userStatus ? 'в сети' : 'не в сети'}
+                    </Text>
+                </View>
+            </TouchableOpacity>
+        );
+    };
 
     // Рендер сообщения - исправленная логика с безопасным форматированием времени
     const renderMessage = ({item}: { item: Message }) => {

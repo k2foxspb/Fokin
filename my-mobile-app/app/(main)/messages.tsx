@@ -26,7 +26,7 @@ interface ChatPreview {
 
 export default function MessagesScreen() {
   const router = useRouter();
-  const { senderCounts } = useNotifications();
+  const { senderCounts, userStatuses } = useNotifications();
   const { theme } = useTheme();
   const [chats, setChats] = useState<ChatPreview[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -256,11 +256,13 @@ export default function MessagesScreen() {
                       style={styles.avatar}
                     />
                   )}
-                  {/* Online status indicator */}
+                  {/* Online status indicator - using real-time status from NotificationContext */}
                   <View style={[
                     styles.onlineIndicator,
                     { 
-                      backgroundColor: item.other_user.is_online === 'online' ? theme.online : theme.offline,
+                      backgroundColor: userStatuses.has(item.other_user.id) 
+                        ? userStatuses.get(item.other_user.id) === 'online' ? theme.online : theme.offline
+                        : item.other_user.is_online === 'online' ? theme.online : theme.offline,
                       borderColor: theme.background
                     }
                   ]} />
