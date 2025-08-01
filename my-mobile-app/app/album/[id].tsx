@@ -18,7 +18,7 @@ import {router, useLocalSearchParams} from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import {Ionicons} from '@expo/vector-icons';
-import {GestureDetector, Gesture} from 'react-native-gesture-handler';
+import {GestureDetector, Gesture, GestureHandlerRootView} from 'react-native-gesture-handler';
 import Animated, {
     useSharedValue,
     useAnimatedStyle,
@@ -228,28 +228,49 @@ export default function AlbumDetail() {
                 runOnJS(setZoomLevel)(2);
             }
         });
+    const showButtonsDelayed = useCallback(() => {
+        setTimeout(() => {
+            setButtonsVisible(true);
+        }, 300);
+    }, []);
 
     // Обработчик жестов перетаскивания
     const panGesture = Gesture.Pan()
-        .onUpdate((event) => {
-            if (scale.value > 1) {
-                translateX.value = event.translationX + lastTranslateX.value;
-                translateY.value = event.translationY + lastTranslateY.value;
-            }
-        })
-        .onEnd((event) => {
-            lastTranslateX.value = translateX.value;
-            lastTranslateY.value = translateY.value;
+    .onStart(() => {
+        if (scale.value <= 1.2) {
+            runOnJS(setButtonsVisible)(false);
+        }
+    })
+    .onUpdate((event) => {
+        if (scale.value > 1) {
+            translateX.value = event.translationX + lastTranslateX.value;
+            translateY.value = event.translationY + lastTranslateY.value;
+        }
+    })
+    .onEnd((event) => {
+        lastTranslateX.value = translateX.value;
+        lastTranslateY.value = translateY.value;
 
-            // Обработка свайпов для смены фотографий (только при масштабе 1x)
-            if (scale.value <= 1.2) {
-                if (event.translationX < -50) {
+        if (scale.value <= 1.2) {
+            const threshold = 50;
+            const velocity = Math.abs(event.velocityX);
+
+            if (Math.abs(event.translationX) > threshold || velocity > 500) {
+                if (event.translationX < -threshold || event.velocityX < -500) {
                     runOnJS(goToNextPhoto)();
-                } else if (event.translationX > 50) {
+                } else if (event.translationX > threshold || event.velocityX > 500) {
                     runOnJS(goToPreviousPhoto)();
                 }
+
+                // Вызываем функцию БЕЗ setTimeout внутри runOnJS
+                runOnJS(showButtonsDelayed)();
+            } else {
+                runOnJS(setButtonsVisible)(true);
             }
-        });
+        }
+    });
+
+
 
     // Комбинированный жест
     const combinedGesture = Gesture.Simultaneous(
@@ -418,7 +439,7 @@ export default function AlbumDetail() {
 
     useEffect(() => {
         if (id) {
-            console.log('Album ID from params:', id, typeof id);
+
             getCurrentUser();
             fetchAlbum();
         }
@@ -427,7 +448,7 @@ export default function AlbumDetail() {
     // Сброс масштабирования при смене фото
     useEffect(() => {
         resetZoom();
-        setButtonsVisible(true);
+
     }, [selectedPhoto, resetZoom]);
 
     const handlePhotoPress = (photo: Photo, index: number) => {
@@ -435,6 +456,8 @@ export default function AlbumDetail() {
         setSelectedPhoto(photo);
         setCurrentPhotoIndex(index);
         setModalVisible(true);
+        setButtonsVisible(true)
+
     };
 
     const closeModal = () => {
@@ -596,113 +619,116 @@ export default function AlbumDetail() {
                     transparent={true}
                     animationType="fade"
                     onRequestClose={closeModal}
-                    statusBarTranslucent={true}
-                >
-                    <View style={styles.modalContainer}>
-                        {/* Кнопки вверху */}
-                        {buttonsVisible && (
-                            <Animated.View
-                                style={[
-                                    styles.modalHeader,
-                                    {opacity: buttonsVisible ? 1 : 0}
-                                ]}
-                            >
-                                {/* Кнопка удаления слева - показываем только владельцу */}
-                                {isOwner && selectedPhoto && (
+                    statusBarTranslucent={true}>
+                    <GestureHandlerRootView style={{flex: 1}}>
+
+                        <View style={styles.modalContainer}>
+                            {/* Кнопки вверху */}
+                            {buttonsVisible && (
+                                <Animated.View
+                                    style={[
+                                        styles.modalHeader,
+                                        {opacity: buttonsVisible ? 1 : 0}
+                                    ]}
+                                >
+                                    {/* Кнопка удаления слева - показываем только владельцу */}
+                                    {isOwner && selectedPhoto && (
+                                        <TouchableOpacity
+                                            style={[styles.modalButton, styles.deleteButton]}
+                                            onPress={handleDeletePress}
+                                            disabled={deletingPhoto}
+                                            activeOpacity={0.7}
+                                        >
+                                            <Ionicons name="trash" size={24} color={theme.error}/>
+                                            <Text style={[styles.buttonText, {color: '#ffffff'}]}>Удалить</Text>
+                                        </TouchableOpacity>
+                                    )}
+
+                                    {/* Кнопка закрытия справа */}
                                     <TouchableOpacity
-                                        style={[styles.modalButton, styles.deleteButton]}
-                                        onPress={handleDeletePress}
-                                        disabled={deletingPhoto}
+                                        style={[
+                                            styles.modalButton,
+                                            !isOwner && styles.modalButtonCentered
+                                        ]}
+                                        onPress={closeModal}
                                         activeOpacity={0.7}
                                     >
-                                        <Ionicons name="trash" size={24} color={theme.error}/>
-                                        <Text style={[styles.buttonText, {color: '#ffffff'}]}>Удалить</Text>
+                                        <Ionicons name="close" size={24} color="white"/>
+                                        <Text style={styles.buttonText}>Закрыть</Text>
                                     </TouchableOpacity>
+                                </Animated.View>
+                            )}
+
+                            {/* Контент */}
+                            <View style={styles.modalContent}>
+                                {/* Изображение с поддержкой жестов */}
+                                {selectedPhoto && album && album.photos.length > 0 && (
+                                    <GestureDetector gesture={combinedGesture}>
+                                        <View style={styles.imageContainer}>
+                                            <Animated.Image
+                                                source={{uri: selectedPhoto.image_url}}
+                                                style={[styles.fullImage, animatedStyle]}
+                                                resizeMode="contain"
+                                            />
+
+                                            {/* Индикатор позиции фото */}
+                                            {buttonsVisible && (
+                                                <Animated.View
+                                                    style={[
+                                                        styles.photoIndicator,
+                                                        {opacity: buttonsVisible ? 1 : 0}
+                                                    ]}
+                                                >
+                                                    <Text style={styles.photoIndicatorText}>
+                                                        {currentPhotoIndex + 1} / {album.photos.length}
+                                                    </Text>
+                                                </Animated.View>
+                                            )}
+
+                                            {/* Индикатор масштабирования */}
+                                            {zoomLevel > 0 && buttonsVisible && (
+                                                <Animated.View style={styles.zoomIndicator}>
+                                                    <Text style={styles.zoomIndicatorText}>
+                                                        {zoomLevel === 1 ? '2x' : '3x'}
+                                                    </Text>
+                                                </Animated.View>
+                                            )}
+                                        </View>
+                                    </GestureDetector>
                                 )}
 
-                                {/* Кнопка закрытия справа */}
-                                <TouchableOpacity
-                                    style={[
-                                        styles.modalButton,
-                                        !isOwner && styles.modalButtonCentered
-                                    ]}
-                                    onPress={closeModal}
-                                    activeOpacity={0.7}
-                                >
-                                    <Ionicons name="close" size={24} color="white"/>
-                                    <Text style={styles.buttonText}>Закрыть</Text>
-                                </TouchableOpacity>
-                            </Animated.View>
-                        )}
+                                {/* Информация */}
+                                {buttonsVisible && selectedPhoto?.caption && (
+                                    <Animated.Text
+                                        style={[
+                                            styles.caption,
+                                            {opacity: buttonsVisible ? 1 : 0}
+                                        ]}
+                                    >
+                                        {selectedPhoto.caption}
+                                    </Animated.Text>
+                                )}
 
-                        {/* Контент */}
-                        <View style={styles.modalContent}>
-                            {/* Изображение с поддержкой жестов */}
-                            {selectedPhoto && album && album.photos.length > 0 && (
-                                <GestureDetector gesture={combinedGesture}>
-                                    <View style={styles.imageContainer}>
-                                        <Animated.Image
-                                            source={{uri: selectedPhoto.image_url}}
-                                            style={[styles.fullImage, animatedStyle]}
-                                            resizeMode="contain"
-                                        />
-
-                                        {/* Индикатор позиции фото */}
-                                        {buttonsVisible && (
-                                            <Animated.View
-                                                style={[
-                                                    styles.photoIndicator,
-                                                    {opacity: buttonsVisible ? 1 : 0}
-                                                ]}
-                                            >
-                                                <Text style={styles.photoIndicatorText}>
-                                                    {currentPhotoIndex + 1} / {album.photos.length}
-                                                </Text>
-                                            </Animated.View>
-                                        )}
-
-                                        {/* Индикатор масштабирования */}
-                                        {zoomLevel > 0 && buttonsVisible && (
-                                            <Animated.View style={styles.zoomIndicator}>
-                                                <Text style={styles.zoomIndicatorText}>
-                                                    {zoomLevel === 1 ? '2x' : '3x'}
-                                                </Text>
-                                            </Animated.View>
-                                        )}
-                                    </View>
-                                </GestureDetector>
-                            )}
-
-                            {/* Информация */}
-                            {buttonsVisible && selectedPhoto?.caption && (
-                                <Animated.Text
-                                    style={[
-                                        styles.caption,
-                                        {opacity: buttonsVisible ? 1 : 0}
-                                    ]}
-                                >
-                                    {selectedPhoto.caption}
-                                </Animated.Text>
-                            )}
-
-                            {buttonsVisible && selectedPhoto && (
-                                <Animated.Text
-                                    style={[
-                                        styles.photoDate,
-                                        {opacity: buttonsVisible ? 1 : 0}
-                                    ]}
-                                >
-                                    {new Date(selectedPhoto.uploaded_at).toLocaleDateString('ru-RU', {
-                                        day: '2-digit',
-                                        month: '2-digit',
-                                        year: 'numeric',
-                                        hour: '2-digit',
-                                        minute: '2-digit'
-                                    })}
-                                </Animated.Text>
-                            )}
+                                {buttonsVisible && selectedPhoto && (
+                                    <Animated.Text
+                                        style={[
+                                            styles.photoDate,
+                                            {opacity: buttonsVisible ? 1 : 0}
+                                        ]}
+                                    >
+                                        {new Date(selectedPhoto.uploaded_at).toLocaleDateString('ru-RU', {
+                                            day: '2-digit',
+                                            month: '2-digit',
+                                            year: 'numeric',
+                                            hour: '2-digit',
+                                            minute: '2-digit'
+                                        })}
+                                    </Animated.Text>
+                                )}
+                            </View>
                         </View>
-                    </View>
+                    </GestureHandlerRootView>
+
                 </Modal>
 
                 {/* Кастомное модальное окно подтверждения удаления */}
@@ -741,6 +767,9 @@ const createStyles = (theme: any) => StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: theme.background,
+    },
+    row: {
+        justifyContent: 'space-around',
     },
     header: {
         flexDirection: 'row',

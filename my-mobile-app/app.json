@@ -5,6 +5,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
+    "scheme": "fokin",
     "icon": "./assets/images/logo1024.png",
     "splash": {
       "image": "./assets/images/logo_white 192.png",
@@ -25,6 +26,15 @@
         "foregroundImage": "./assets/images/logo1024.png",
         "backgroundColor": "#222222"
       },
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.ACCESS_MEDIA_LOCATION"
+      ],
+      "package": "com.k2foxspb.fokinfun",
       "googleServicesFile": "./google-services.json"
     },
     "web": {
@@ -40,8 +50,6 @@
           "icon": "./assets/images/logo1024.png",
           "color": "#222222",
           "defaultChannel": "default"
-
-
         }
       ]
     ],
