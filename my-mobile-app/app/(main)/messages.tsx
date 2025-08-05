@@ -226,7 +226,7 @@ export default function MessagesScreen() {
                   pressed && [styles.chatItemPressed, { backgroundColor: theme.surfacePressed }]
                 ]}
                 onPress={() => {
-                  console.log('Chat pressed:', item);
+
                   router.push({
                     pathname: '/chat/[id]',
                     params: { id: item.id, userId: item.other_user.id }

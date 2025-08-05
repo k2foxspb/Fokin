@@ -18,7 +18,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.k2foxspb.fokinfun",
-      "googleServicesFile": "./GoogleService-Info.plist"
+
     },
     "android": {
       "package": "com.k2foxspb.fokinfun",

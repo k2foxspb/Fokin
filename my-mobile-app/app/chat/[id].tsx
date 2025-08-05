@@ -50,9 +50,7 @@ const formatTimestamp = (timestamp: number | string | undefined): string => {
         let date: Date;
 
         if (typeof timestamp === 'string') {
-            // Если это строка, пробуем несколько форматов
             if (timestamp.includes('.') && timestamp.includes(',')) {
-                // Формат "25.07.2025, 15:30:00" из Django
                 const cleanTimestamp = timestamp.replace(',', '');
                 const parts = cleanTimestamp.split(' ');
                 if (parts.length >= 2) {
@@ -63,10 +61,8 @@ const formatTimestamp = (timestamp: number | string | undefined): string => {
                     date = new Date(timestamp);
                 }
             } else if (timestamp.includes('-') && timestamp.includes('T')) {
-                // ISO формат
                 date = new Date(timestamp);
             } else {
-                // Пробуем парсить как число
                 const numTimestamp = parseFloat(timestamp);
                 if (!isNaN(numTimestamp)) {
                     date = new Date(numTimestamp < 1e10 ? numTimestamp * 1000 : numTimestamp);
@@ -75,14 +71,12 @@ const formatTimestamp = (timestamp: number | string | undefined): string => {
                 }
             }
         } else if (typeof timestamp === 'number') {
-            // Если timestamp в секундах (меньше 1e10), умножаем на 1000
             date = new Date(timestamp < 1e10 ? timestamp * 1000 : timestamp);
         } else {
             console.warn('Unknown timestamp format:', timestamp);
             return '--:--';
         }
 
-        // Проверяем валидность даты
         if (isNaN(date.getTime())) {
             console.warn('Invalid date from timestamp:', timestamp);
             return '--:--';
@@ -163,8 +157,6 @@ export default function ChatScreen() {
 
                     // Обработка сообщений чата
                     if (data.message) {
-                        console.log('Processing chat message:', data);
-
                         const newMessage: Message = {
                             id: data.id || Date.now(),
                             message: data.message,
@@ -173,21 +165,14 @@ export default function ChatScreen() {
                             sender_id: data.sender_id
                         };
 
-                        console.log('New message object:', newMessage);
-
                         setMessages(prev => {
-                            // Проверяем, нет ли уже такого сообщения
                             const exists = prev.some(msg => msg.id === newMessage.id);
                             if (!exists) {
-                                console.log('Adding new message to list');
                                 return [...prev, newMessage];
-                            } else {
-                                console.log('Message already exists, not adding');
                             }
                             return prev;
                         });
 
-                        // Скроллим вниз при получении нового сообщения
                         setTimeout(() => {
                             flatListRef.current?.scrollToEnd({animated: true});
                         }, 100);
@@ -200,14 +185,11 @@ export default function ChatScreen() {
                 setIsConnected(false);
             },
             onError: (error: any) => {
-                console.error('=== WebSocket ERROR ===');
-                console.error('Error:', error);
+                console.error('WebSocket ERROR:', error);
                 setIsConnected(false);
 
-                // Попытка переподключения через 3 секунды
                 setTimeout(() => {
                     if (!wsIsConnected()) {
-                        console.log('Attempting to reconnect...');
                         reconnect();
                     }
                 }, 3000);
@@ -237,16 +219,12 @@ export default function ChatScreen() {
             const token = await getToken();
             if (!token) return null;
 
-            console.log('Fetching current user from:', `${API_CONFIG.BASE_URL}/profile/api/profile/me/`);
-
             const response = await axios.get(
                 `${API_CONFIG.BASE_URL}/profile/api/profile/me/`,
                 {
                     headers: {'Authorization': `Token ${token}`}
                 }
             );
-
-            console.log('Current user response:', response.data);
 
             const userData = {
                 id: response.data.id,
@@ -255,21 +233,13 @@ export default function ChatScreen() {
 
             setCurrentUsername(userData.username);
             setCurrentUserId(userData.id);
-            console.log('Current user loaded:', userData.username, 'id:', userData.id);
 
             return userData;
         } catch (error) {
             console.error('Error fetching current user:', error);
-            if (axios.isAxiosError(error)) {
-                console.error('Response status:', error.response?.status);
-                console.error('Response data:', error.response?.data);
-                console.error('Request URL:', error.config?.url);
-            }
             if (axios.isAxiosError(error) && error.response?.status === 401) {
                 Alert.alert('Ошибка', 'Сессия истекла. Войдите снова.');
                 router.replace('/login');
-            } else {
-                Alert.alert('Ошибка', 'Не удалось загрузить данные пользователя');
             }
             return null;
         }
@@ -287,7 +257,6 @@ export default function ChatScreen() {
                     headers: {'Authorization': `Token ${token}`}
                 }
             );
-
 
             const recipientData = {
                 id: response.data.other_user.id,
@@ -327,17 +296,13 @@ export default function ChatScreen() {
             );
 
             if (response.data && response.data.messages) {
-
-                // Обрабатываем каждое сообщение для корректного формата timestamp
                 const processedMessages = response.data.messages.map((msg: any) => ({
                     ...msg,
-                    timestamp: msg.timestamp // Оставляем как есть, форматирование в UI
+                    timestamp: msg.timestamp
                 }));
 
                 setMessages(processedMessages);
-                console.log('Chat history loaded:', processedMessages.length, 'messages');
 
-                // Скроллим вниз после загрузки истории
                 setTimeout(() => {
                     flatListRef.current?.scrollToEnd({animated: false});
                 }, 100);
@@ -362,24 +327,17 @@ export default function ChatScreen() {
         const initializeChat = async () => {
             setIsLoading(true);
             try {
-                console.log('=== INITIALIZING CHAT ===');
-
-                // Получаем все данные последовательно
                 const currentUser = await fetchCurrentUser();
                 const recipientInfo = await fetchRecipientInfo();
                 await fetchChatHistory();
 
-                // Проверяем, что данные загружены
                 if (currentUser && recipientInfo) {
-                    console.log('All data loaded successfully, connecting to WebSocket...');
                     setIsDataLoaded(true);
 
-                    // Подключаемся к WebSocket только после загрузки всех данных
                     setTimeout(() => {
                         connect();
                     }, 100);
                 } else {
-                    console.error('Failed to load required data');
                     Alert.alert('Ошибка', 'Не удалось загрузить необходимые данные');
                 }
 
@@ -401,46 +359,22 @@ export default function ChatScreen() {
 
     // Отправка сообщения
     const handleSend = () => {
-
-
-        if (!messageText.trim()) {
-            console.log('Message is empty, aborting');
-            return;
-        }
-
-        if (!isConnected) {
-
-            Alert.alert('Ошибка', 'Нет соединения с сервером');
-            return;
-        }
-
-        if (!isDataLoaded) {
-
-            Alert.alert('Ошибка', 'Данные еще загружаются');
-            return;
-        }
-
-        if (!recipient?.id || !currentUserId) {
-
-            Alert.alert('Ошибка', 'Недостаточно данных для отправки сообщения');
+        if (!messageText.trim() || !isConnected || !isDataLoaded || !recipient?.id || !currentUserId) {
             return;
         }
 
         const timestamp = Math.floor(Date.now() / 1000);
 
-        // Формируем данные в том формате, который ожидает consumer
         const messageData = {
             message: messageText.trim(),
             timestamp: timestamp,
-            user1: currentUserId,      // ID текущего пользователя
-            user2: recipient.id        // ID получателя
+            user1: currentUserId,
+            user2: recipient.id
         };
-
 
         try {
             sendMessage(messageData);
             setMessageText('');
-            console.log('Message sent successfully');
         } catch (error) {
             console.error('Error sending message:', error);
             Alert.alert('Ошибка', 'Не удалось отправить сообщение');
@@ -456,14 +390,11 @@ export default function ChatScreen() {
 
     // Компонент заголовка с информацией о пользователе
     const ChatHeader = () => {
-        // Получаем статус пользователя из контекста уведомлений (в реальном времени)
         const isOnline = recipient?.id ? userStatuses.get(recipient.id) === 'online' : false;
-        
-        // Используем статус из контекста, если он есть, иначе используем статус из recipient
-        const userStatus = recipient?.id && userStatuses.has(recipient.id) 
-            ? isOnline 
+        const userStatus = recipient?.id && userStatuses.has(recipient.id)
+            ? isOnline
             : recipient?.is_online === 'online';
-            
+
         return (
             <TouchableOpacity
                 style={styles.headerUserInfo}
@@ -495,9 +426,8 @@ export default function ChatScreen() {
         );
     };
 
-    // Рендер сообщения - исправленная логика с безопасным форматированием времени
+    // Рендер сообщения
     const renderMessage = ({item}: { item: Message }) => {
-        // Определяем, является ли это моим сообщением
         let isMyMessage = false;
 
         if (item.sender_id !== undefined && currentUserId !== null) {
@@ -511,7 +441,6 @@ export default function ChatScreen() {
                 styles.messageContainer,
                 isMyMessage ? styles.myMessage : styles.otherMessage
             ]}>
-                {/* Показываем имя отправителя ТОЛЬКО для чужих сообщений */}
                 {!isMyMessage && (
                     <Text style={[styles.senderName, { color: theme.textSecondary }]}>{item.sender__username}</Text>
                 )}
@@ -609,7 +538,6 @@ export default function ChatScreen() {
                         color={messageText.trim() && isConnected && isDataLoaded ? "#fff" : theme.textSecondary}
                     />
                 </Pressable>
-
             </View>
         </KeyboardAvoidingView>
     );

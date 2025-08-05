@@ -174,15 +174,3 @@ export const checkNotificationSettings = async () => {
   }
 };
 
-export const sendTestNotification = async () => {
-  try {
-    await sendLocalNotification({
-      title: '🔔 Тестовое уведомление',
-      body: 'Это тестовое уведомление для проверки работы',
-      data: { type: 'test', timestamp: Date.now() },
-      channelId: 'default'
-    });
-  } catch (error) {
-    console.error('Error sending test notification:', error);
-  }
-};
