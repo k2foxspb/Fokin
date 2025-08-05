@@ -33,25 +33,21 @@ export default function MessagesScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  console.log('Component rendering. Current state:', { chats, isLoading, error });
-
   const fetchChats = async (showLoader = true) => {
-    console.log('fetchChats started, showLoader:', showLoader);
+
     if (showLoader) setIsLoading(true);
     setError(null);
 
     try {
       // Используем тот же ключ, что и в _layout.tsx
       const token = await AsyncStorage.getItem('userToken');
-      console.log('Token retrieved:', token ? 'Token exists' : 'No token');
 
       if (!token) {
-        console.log('No token found, redirecting to login');
         router.replace('/login');
         return;
       }
 
-      console.log('Making API request...');
+
       const response = await axios.get<ChatPreview[]>(
         `${API_CONFIG.BASE_URL}/chat/api/chats/list_preview/`,
         {
@@ -62,11 +58,11 @@ export default function MessagesScreen() {
         }
       );
 
-      console.log('API Response received:', response.data);
+
       setChats(response.data);
-      console.log('Chats state updated:', response.data);
+
     } catch (error) {
-      console.log('Error occurred:', error);
+
       if (axios.isAxiosError(error)) {
         if (error.response?.status === 401) {
           // Удаляем тот же ключ
@@ -79,7 +75,6 @@ export default function MessagesScreen() {
         setError('Произошла неизвестная ошибка');
       }
     } finally {
-      console.log('Setting loading states to false');
       setIsLoading(false);
       setIsRefreshing(false);
     }
@@ -182,10 +177,8 @@ export default function MessagesScreen() {
     }
   };
 
-  console.log('Before render. Loading:', isLoading, 'Error:', error, 'Chats:', chats);
 
   if (isLoading && !isRefreshing) {
-    console.log('Rendering loading state');
     return (
       <View style={[styles.centerContainer, { backgroundColor: theme.background }]}>
         <ActivityIndicator size="large" color={theme.primary} />
@@ -256,8 +249,7 @@ export default function MessagesScreen() {
                       style={styles.avatar}
                     />
                   )}
-                  {/* Online status indicator - using real-time status from NotificationContext */}
-                  <View style={[
+               <View style={[
                     styles.onlineIndicator,
                     { 
                       backgroundColor: userStatuses.has(item.other_user.id) 

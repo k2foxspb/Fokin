@@ -1,16 +1,18 @@
+
 import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { useWebSocket } from '../hooks/useWebSocket';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import { router } from 'expo-router';
-import { 
-  requestNotificationPermissions, 
-  registerForPushNotifications, 
-  sendLocalNotification,
+import {
+  requestNotificationPermissions,
+  registerForPushNotifications,
+  sendHighPriorityNotification,
   addNotificationListener,
-  addNotificationResponseListener
+  addNotificationResponseListener,
+  checkNotificationSettings
 } from '../services/notificationService';
-import { AppState, Platform } from 'react-native';
+import { AppState } from 'react-native';
 import { API_CONFIG } from '../config';
 
 interface NotificationContextType {
@@ -20,7 +22,13 @@ interface NotificationContextType {
   userStatuses: Map<number, string>;
   connect: () => void;
   disconnect: () => void;
-  refreshNotifications: () => void; // Добавляем метод для принудительного обновления
+  refreshNotifications: () => void;
+  requestPermissions: () => Promise<void>;
+  debugInfo: {
+    isWebSocketConnected: boolean;
+    hasPermission: boolean;
+    pushToken: string | null;
+  };
 }
 
 interface MessageType {
@@ -48,6 +56,12 @@ const NotificationContext = createContext<NotificationContextType>({
   connect: () => {},
   disconnect: () => {},
   refreshNotifications: () => {},
+  requestPermissions: async () => {},
+  debugInfo: {
+    isWebSocketConnected: false,
+    hasPermission: false,
+    pushToken: null,
+  },
 });
 
 export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -58,11 +72,13 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [hasNotificationPermission, setHasNotificationPermission] = useState<boolean>(false);
   const [pushToken, setPushToken] = useState<string | null>(null);
+  const [wsConnected, setWsConnected] = useState<boolean>(false);
+  const [isInitialized, setIsInitialized] = useState<boolean>(false);
   const appState = useRef(AppState.currentState);
-  // Исправляем TypeScript ошибки - добавляем null как начальное значение
   const notificationListener = useRef<Notifications.Subscription | null>(null);
   const responseListener = useRef<Notifications.Subscription | null>(null);
   const previousMessagesRef = useRef<MessageType[]>([]);
+  const previousUnreadCountRef = useRef<number>(0);
 
   // Проверяем аутентификацию при инициализации
   useEffect(() => {
@@ -73,31 +89,47 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     checkAuth();
   }, []);
 
-  // Инициализация уведомлений
-  useEffect(() => {
-    const initNotifications = async () => {
-      // Запрашиваем разрешение на отправку уведомлений
+  // Функция для запроса разрешений
+  const requestPermissions = async () => {
+    try {
       const hasPermission = await requestNotificationPermissions();
       setHasNotificationPermission(hasPermission);
 
       if (hasPermission) {
-        // Регистрируем устройство для push-уведомлений
         const token = await registerForPushNotifications();
         setPushToken(token);
       }
+    } catch (error) {
+      console.error('Error requesting permissions:', error);
+    }
+  };
 
-      // Добавляем слушатель для уведомлений, полученных когда приложение открыто
+  // Инициализация уведомлений
+  useEffect(() => {
+    const initNotifications = async () => {
+      await checkNotificationSettings();
+
+      const currentPermissions = await Notifications.getPermissionsAsync();
+
+      if (currentPermissions.status === 'granted') {
+        setHasNotificationPermission(true);
+
+        if (!pushToken) {
+          const token = await registerForPushNotifications();
+          setPushToken(token);
+        }
+      } else {
+        setHasNotificationPermission(false);
+      }
+
+      // Добавляем слушатели уведомлений
       notificationListener.current = addNotificationListener(notification => {
-        console.log('Notification received in foreground:', notification);
-        // Принудительно обновляем данные при получении уведомления
         if (isAuthenticated) {
           refreshNotifications();
         }
       });
 
-      // Добавляем слушатель для нажатий на уведомления
       responseListener.current = addNotificationResponseListener(response => {
-        console.log('Notification response received:', response);
         handleNotificationResponse(response);
       });
 
@@ -107,9 +139,6 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
           appState.current.match(/inactive|background/) &&
           nextAppState === 'active'
         ) {
-          // Приложение вернулось на передний план
-          console.log('App has come to the foreground!');
-          // Принудительно обновляем данные
           if (isAuthenticated) {
             refreshNotifications();
           }
@@ -118,7 +147,6 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       });
 
       return () => {
-        // Очищаем слушатели при размонтировании
         notificationListener.current?.remove();
         responseListener.current?.remove();
         subscription.remove();
@@ -130,17 +158,12 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
   }, [isAuthenticated]);
 
-  // Отдельный эффект для проверки запуска из уведомления
+  // Проверка запуска из уведомления
   useEffect(() => {
     const checkLaunchNotification = async () => {
-      // Проверяем, было ли приложение запущено из уведомления
       const lastNotificationResponse = await Notifications.getLastNotificationResponseAsync();
       if (lastNotificationResponse) {
-        console.log('App was opened from notification:', lastNotificationResponse);
-
-        // Даем приложению время инициализироваться перед навигацией
         setTimeout(() => {
-          // Обрабатываем уведомление, которое запустило приложение
           handleNotificationResponse(lastNotificationResponse);
         }, 1000);
       }
@@ -154,25 +177,19 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   // Обработка ответа на уведомление
   const handleNotificationResponse = (response: Notifications.NotificationResponse) => {
     const data = response.notification.request.content.data;
-    console.log('Notification data:', data);
 
-    // Обновляем данные
     if (isAuthenticated) {
       refreshNotifications();
     }
 
-    // Навигация к соответствующему экрану
     if (data && data.type === 'message_notification') {
-      console.log('Navigating to messages screen');
-
-      // Исправляем TypeScript ошибку - приводим к строке
       if (data.chatId) {
         router.push({
           pathname: '/chat/[id]',
           params: { id: String(data.chatId) }
         });
       } else {
-        router.push('/(tabs)/messages');
+        router.push('/(main)/messages');
       }
     }
   };
@@ -180,13 +197,10 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const handleMessage = (event: WebSocketMessageEvent) => {
     try {
       const data: NotificationData | UserStatusUpdate = JSON.parse(event.data);
-      console.log('WebSocket message received:', data);
 
       // Обработка обновления статуса пользователя
       if (data.type === 'user_status_update') {
         const statusUpdate = data as UserStatusUpdate;
-        console.log(`User ${statusUpdate.user_id} status changed to: ${statusUpdate.status}`);
-
         setUserStatuses(prevStatuses => {
           const newStatuses = new Map(prevStatuses);
           newStatuses.set(statusUpdate.user_id, statusUpdate.status);
@@ -198,45 +212,81 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       // Обработка уведомлений о сообщениях
       const notificationData = data as NotificationData;
       if (notificationData.type === 'initial_notification' || notificationData.type === 'messages_by_sender_update') {
-        console.log('Updating notification counts:', {
-          unreadCount: notificationData.unique_sender_count,
-          messages: notificationData.messages
-        });
-
+        const previousUnreadCount = previousUnreadCountRef.current;
         setUnreadCount(notificationData.unique_sender_count);
+        previousUnreadCountRef.current = notificationData.unique_sender_count;
 
-        // Извлекаем массив сообщений из структуры [dict, messages[]]
+        // Извлекаем массив сообщений
         if (Array.isArray(notificationData.messages) && notificationData.messages.length === 2) {
           const messageArray = notificationData.messages[1];
           setMessages(messageArray);
 
-          // Создаем Map для быстрого поиска количества сообщений по sender_id
+          // Создаем Map для поиска количества сообщений
           const newSenderCounts = new Map<number, number>();
           messageArray.forEach(message => {
             newSenderCounts.set(message.sender_id, message.count);
           });
           setSenderCounts(newSenderCounts);
 
-          // Проверяем, есть ли новые сообщения для отправки уведомления
-          if (previousMessagesRef.current.length > 0) {
-            const hasNewMessages = messageArray.some(newMsg => {
-              const prevMsg = previousMessagesRef.current.find(m => m.sender_id === newMsg.sender_id);
-              return !prevMsg || newMsg.count > prevMsg.count;
-            });
-
-            if (hasNewMessages && hasNotificationPermission && AppState.currentState !== 'active') {
-              // Отправляем уведомление только если приложение не активно
-              sendLocalNotification({
-                title: 'Новые сообщения',
-                body: `У вас ${notificationData.unique_sender_count} непрочитанных сообщений`,
-                data: { type: 'message_notification' }
-              }).catch(error => {
-                console.error('Failed to send notification:', error);
-              });
-            }
+          // Помечаем как инициализированный ПЕРЕД проверкой уведомлений
+          let isCurrentlyInitialized = isInitialized;
+          if (!isInitialized) {
+            setIsInitialized(true);
+            isCurrentlyInitialized = true;
           }
 
-          // Сохраняем текущие сообщения для сравнения в будущем
+          // Проверяем и отправляем уведомление
+          const checkAndSendNotification = async () => {
+            const currentPermissions = await Notifications.getPermissionsAsync();
+            const actuallyHasPermission = currentPermissions.status === 'granted';
+
+            if (actuallyHasPermission !== hasNotificationPermission) {
+              setHasNotificationPermission(actuallyHasPermission);
+            }
+
+            if (actuallyHasPermission && isCurrentlyInitialized) {
+              let shouldSendNotification = false;
+
+              if (notificationData.type === 'initial_notification') {
+                // Для initial_notification проверяем, есть ли изменения
+                if (previousMessagesRef.current.length > 0) {
+                  const hasChanges = messageArray.some(newMsg => {
+                    const prevMsg = previousMessagesRef.current.find(m => m.sender_id === newMsg.sender_id);
+                    return !prevMsg || newMsg.count > prevMsg.count;
+                  });
+
+                  shouldSendNotification = hasChanges || notificationData.unique_sender_count > previousUnreadCount;
+                }
+              } else {
+                // Для обновлений проверяем изменения
+                const unreadCountIncreased = notificationData.unique_sender_count > previousUnreadCount;
+
+                const hasNewMessagesFromSenders = messageArray.some(newMsg => {
+                  const prevMsg = previousMessagesRef.current.find(m => m.sender_id === newMsg.sender_id);
+                  return !prevMsg || newMsg.count > prevMsg.count;
+                });
+
+                shouldSendNotification = unreadCountIncreased || hasNewMessagesFromSenders;
+              }
+
+              if (shouldSendNotification) {
+                try {
+                  await sendHighPriorityNotification({
+                    title: '💌 Новые сообщения',
+                    body: `У вас ${notificationData.unique_sender_count} непрочитанных сообщений`,
+                    data: {
+                      type: 'message_notification',
+                      timestamp: Date.now()
+                    }
+                  });
+                } catch (error) {
+                  console.error('Failed to send notification:', error);
+                }
+              }
+            }
+          };
+
+          checkAndSendNotification();
           previousMessagesRef.current = [...messageArray];
         }
       }
@@ -247,33 +297,27 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   const { connect, disconnect, sendMessage, isConnected } = useWebSocket(`/wss/notification/`, {
     onOpen: () => {
-      console.log('Notification WebSocket connected');
-      // Запрашиваем начальные данные
+      setWsConnected(true);
       sendMessage({ type: 'get_initial_data' });
     },
     onMessage: handleMessage,
     onClose: () => {
-      console.log('Notification WebSocket closed');
-      // Не сбрасываем данные сразу, оставляем последние известные значения
+      setWsConnected(false);
     },
-    onError: (error: any) => {
-      console.error('Notification WebSocket error:', error);
+    onError: () => {
+      setWsConnected(false);
     },
   });
 
-  // Функция для принудительного обновления уведомлений
   const refreshNotifications = () => {
-    console.log('Refreshing notifications...');
     if (isConnected()) {
       sendMessage({ type: 'get_initial_data' });
     } else {
-      // Если нет соединения, пытаемся переподключиться
       connect();
     }
   };
 
   useEffect(() => {
-    // Подключаемся только если пользователь аутентифицирован
     if (isAuthenticated) {
       connect();
     }
@@ -282,12 +326,11 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     };
   }, [isAuthenticated]);
 
-  // Периодическое обновление для обеспечения актуальности данных
+  // Периодическое обновление
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
 
-    if (isAuthenticated && isConnected()) {
-      // Обновляем данные каждые 30 секунд
+    if (isAuthenticated && wsConnected) {
       interval = setInterval(() => {
         refreshNotifications();
       }, 30000);
@@ -298,7 +341,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         clearInterval(interval);
       }
     };
-  }, [isAuthenticated, isConnected()]);
+  }, [isAuthenticated, wsConnected]);
 
   const value = {
     unreadCount,
@@ -308,6 +351,12 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     connect,
     disconnect,
     refreshNotifications,
+    requestPermissions,
+    debugInfo: {
+      isWebSocketConnected: wsConnected,
+      hasPermission: hasNotificationPermission,
+      pushToken,
+    },
   };
 
   return (

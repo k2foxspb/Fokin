@@ -1,23 +1,23 @@
+
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
-// Настройка поведения уведомлений
+// Настройка поведения уведомлений для показа в активном приложении
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: true,
-    shouldShowBanner: true,  // Добавлено
-    shouldShowList: true,    // Добавлено
+    shouldShowBanner: true,
+    shouldShowList: true,
   }),
 });
 
 export const requestNotificationPermissions = async (): Promise<boolean> => {
   try {
     if (!Device.isDevice) {
-      console.log('Must use physical device for Push Notifications');
       return false;
     }
 
@@ -25,17 +25,20 @@ export const requestNotificationPermissions = async (): Promise<boolean> => {
     let finalStatus = existingStatus;
 
     if (existingStatus !== 'granted') {
-      const { status } = await Notifications.requestPermissionsAsync();
+      const { status } = await Notifications.requestPermissionsAsync({
+        ios: {
+          allowAlert: true,
+          allowBadge: true,
+          allowSound: true,
+          allowDisplayInCarPlay: true,
+          allowCriticalAlerts: true,
+          allowProvisional: false,
+        },
+      });
       finalStatus = status;
     }
 
-    if (finalStatus !== 'granted') {
-      console.log('Failed to get push token for push notification!');
-      return false;
-    }
-
-    console.log('Notification permissions granted');
-    return true;
+    return finalStatus === 'granted';
   } catch (error) {
     console.error('Error requesting notification permissions:', error);
     return false;
@@ -45,33 +48,41 @@ export const requestNotificationPermissions = async (): Promise<boolean> => {
 export const registerForPushNotifications = async (): Promise<string | null> => {
   try {
     if (!Device.isDevice) {
-      console.log('Must use physical device for Push Notifications');
       return null;
     }
 
-    // Проверяем разрешения
     const hasPermission = await requestNotificationPermissions();
     if (!hasPermission) {
       return null;
     }
 
-    // Получаем токен
     const token = await Notifications.getExpoPushTokenAsync({
       projectId: Constants.expoConfig?.extra?.eas?.projectId,
     });
 
-    console.log('Expo Push Token:', token.data);
-
-    // Настраиваем канал уведомлений для Android
+    // Настраиваем каналы уведомлений для Android
     if (Platform.OS === 'android') {
       await Notifications.setNotificationChannelAsync('default', {
-        name: 'default',
+        name: 'Основные уведомления',
         importance: Notifications.AndroidImportance.MAX,
         vibrationPattern: [0, 250, 250, 250],
         lightColor: '#FF231F7C',
         sound: 'default',
         enableVibrate: true,
         showBadge: true,
+        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+        bypassDnd: true,
+      });
+
+      await Notifications.setNotificationChannelAsync('messages', {
+        name: 'Сообщения',
+        importance: Notifications.AndroidImportance.HIGH,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#FF231F7C',
+        sound: 'default',
+        enableVibrate: true,
+        showBadge: true,
+        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
       });
     }
 
@@ -86,24 +97,58 @@ export const sendLocalNotification = async (notification: {
   title: string;
   body: string;
   data?: any;
+  channelId?: string;
 }) => {
   try {
-    console.log('Sending local notification:', notification);
+    const notificationContent: Notifications.NotificationContentInput = {
+      title: notification.title,
+      body: notification.body,
+      data: notification.data,
+      sound: 'default',
+      priority: Notifications.AndroidNotificationPriority.HIGH,
+      sticky: false,
+      autoDismiss: true,
+    };
+
+    if (Platform.OS === 'android') {
+      notificationContent.categoryIdentifier = notification.channelId || 'default';
+    }
 
     await Notifications.scheduleNotificationAsync({
-      content: {
-        title: notification.title,
-        body: notification.body,
-        data: notification.data,
-        sound: 'default',
-        priority: Notifications.AndroidNotificationPriority.HIGH,
-      },
-      trigger: null, // Показать немедленно
+      content: notificationContent,
+      trigger: null,
     });
-
-    console.log('Local notification sent successfully');
   } catch (error) {
     console.error('Error sending local notification:', error);
+    throw error;
+  }
+};
+
+export const sendHighPriorityNotification = async (notification: {
+  title: string;
+  body: string;
+  data?: any;
+}) => {
+  try {
+    const notificationContent: Notifications.NotificationContentInput = {
+      title: notification.title,
+      body: notification.body,
+      data: notification.data,
+      sound: 'default',
+      priority: Notifications.AndroidNotificationPriority.MAX,
+      sticky: true,
+    };
+
+    if (Platform.OS === 'android') {
+      notificationContent.categoryIdentifier = 'messages';
+    }
+
+    await Notifications.scheduleNotificationAsync({
+      content: notificationContent,
+      trigger: null,
+    });
+  } catch (error) {
+    console.error('Error sending high priority notification:', error);
     throw error;
   }
 };
@@ -114,4 +159,30 @@ export const addNotificationListener = (handler: (notification: Notifications.No
 
 export const addNotificationResponseListener = (handler: (response: Notifications.NotificationResponse) => void) => {
   return Notifications.addNotificationResponseReceivedListener(handler);
+};
+
+export const checkNotificationSettings = async () => {
+  try {
+    const settings = await Notifications.getPermissionsAsync();
+    if (Platform.OS === 'android') {
+      await Notifications.getNotificationChannelsAsync();
+    }
+    return settings;
+  } catch (error) {
+    console.error('Error checking notification settings:', error);
+    return null;
+  }
+};
+
+export const sendTestNotification = async () => {
+  try {
+    await sendLocalNotification({
+      title: '🔔 Тестовое уведомление',
+      body: 'Это тестовое уведомление для проверки работы',
+      data: { type: 'test', timestamp: Date.now() },
+      channelId: 'default'
+    });
+  } catch (error) {
+    console.error('Error sending test notification:', error);
+  }
 };

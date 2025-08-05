@@ -250,7 +250,7 @@ export default function Feed() {
   );
 }
 
-// Функция создания стилей вынесена вниз
+// Функция создания стилей
 const createStyles = (theme: any) => StyleSheet.create({
   container: {
     flex: 1,

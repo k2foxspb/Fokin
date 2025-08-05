@@ -138,17 +138,15 @@ export default function ChatScreen() {
         `/${API_CONFIG.WS_PROTOCOL}/private/${roomId}/`,
         {
             onOpen: () => {
-                console.log('=== WebSocket CONNECTED ===');
-                console.log('Room ID:', roomId);
+
                 setIsConnected(true);
             },
             onMessage: (event: any) => {
-                console.log('=== WebSocket MESSAGE RECEIVED ===');
-                console.log('Raw data:', event.data);
+
 
                 try {
                     const data = JSON.parse(event.data);
-                    console.log('Parsed data:', data);
+
 
                     // Игнорируем системные сообщения
                     if (data.type === 'messages_by_sender_update') {
@@ -329,7 +327,6 @@ export default function ChatScreen() {
             );
 
             if (response.data && response.data.messages) {
-                console.log('Raw messages from API:', response.data.messages);
 
                 // Обрабатываем каждое сообщение для корректного формата timestamp
                 const processedMessages = response.data.messages.map((msg: any) => ({
@@ -404,12 +401,7 @@ export default function ChatScreen() {
 
     // Отправка сообщения
     const handleSend = () => {
-        console.log('=== SENDING MESSAGE ===');
-        console.log('Message text:', messageText);
-        console.log('Is connected:', isConnected);
-        console.log('Is data loaded:', isDataLoaded);
-        console.log('Current user ID:', currentUserId);
-        console.log('Recipient ID:', recipient?.id);
+
 
         if (!messageText.trim()) {
             console.log('Message is empty, aborting');
@@ -417,21 +409,19 @@ export default function ChatScreen() {
         }
 
         if (!isConnected) {
-            console.log('Not connected, aborting');
+
             Alert.alert('Ошибка', 'Нет соединения с сервером');
             return;
         }
 
         if (!isDataLoaded) {
-            console.log('Data not loaded yet, aborting');
+
             Alert.alert('Ошибка', 'Данные еще загружаются');
             return;
         }
 
         if (!recipient?.id || !currentUserId) {
-            console.log('Missing recipient or current user ID, aborting');
-            console.log('Recipient:', recipient);
-            console.log('Current user ID:', currentUserId);
+
             Alert.alert('Ошибка', 'Недостаточно данных для отправки сообщения');
             return;
         }
@@ -446,7 +436,6 @@ export default function ChatScreen() {
             user2: recipient.id        // ID получателя
         };
 
-        console.log('Sending message with data:', JSON.stringify(messageData, null, 2));
 
         try {
             sendMessage(messageData);
@@ -516,17 +505,6 @@ export default function ChatScreen() {
         } else if (item.sender__username && currentUsername) {
             isMyMessage = item.sender__username === currentUsername;
         }
-
-        console.log('Rendering message:', {
-            messageId: item.id,
-            senderUsername: item.sender__username,
-            senderId: item.sender_id,
-            currentUserId: currentUserId,
-            currentUsername: currentUsername,
-            isMyMessage: isMyMessage,
-            timestamp: item.timestamp,
-            formattedTime: formatTimestamp(item.timestamp)
-        });
 
         return (
             <View style={[
