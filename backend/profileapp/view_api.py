@@ -1,6 +1,9 @@
+import json
 import logging
 
 from rest_framework import generics, permissions, status
+from rest_framework.authentication import TokenAuthentication
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -9,6 +12,76 @@ from authapp.models import CustomUser
 from chatapp.models import Message, PrivateMessage
 from chatapp.serializers import MessageSerializer
 from .serializers import UserProfileSerializer, UserListSerializer
+
+
+@api_view(['POST'])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
+def bulk_users_info(request):
+    """
+    Получает информацию о пользователях по их ID
+    """
+    try:
+        # Получаем данные из запроса
+        data = request.data
+        user_ids = data.get('user_ids', [])
+
+        # Валидация входных данных
+        if not isinstance(user_ids, list):
+            return Response(
+                {'error': 'user_ids должен быть массивом'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if not user_ids:
+            return Response(
+                {'error': 'user_ids не может быть пустым'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Ограничиваем количество запрашиваемых пользователей
+        if len(user_ids) > 100:
+            return Response(
+                {'error': 'Максимальное количество пользователей за раз: 100'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Валидация ID
+        try:
+            user_ids = [int(user_id) for user_id in user_ids]
+        except (ValueError, TypeError):
+            return Response(
+                {'error': 'Все ID пользователей должны быть числами'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Получаем пользователей из базы данных
+        users = CustomUser.objects.filter(id__in=user_ids).values(
+            'id',
+            'username',
+            'first_name',
+            'last_name'
+        )
+
+        # Преобразуем QuerySet в список
+        users_list = list(users)
+
+        # Логируем для отладки
+        print(f"Bulk users request: IDs {user_ids}, found {len(users_list)} users")
+
+        return Response(users_list, status=status.HTTP_200_OK)
+
+    except json.JSONDecodeError:
+        return Response(
+            {'error': 'Неверный формат JSON'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    except Exception as e:
+        print(f"Error in bulk_users_info: {str(e)}")
+        return Response(
+            {'error': 'Внутренняя ошибка сервера'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
 
 
 class UserProfileAPIView(generics.RetrieveAPIView):

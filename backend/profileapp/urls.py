@@ -1,7 +1,7 @@
 from django.urls import path
 from . import views
 from .apps import ProfileappConfig
-from .view_api import UserProfileAPIView, CurrentUserProfileAPIView, ChatHistoryView, UserListAPIView
+from .view_api import UserProfileAPIView, CurrentUserProfileAPIView, ChatHistoryView, UserListAPIView, bulk_users_info
 
 app_name = ProfileappConfig.name
 urlpatterns = [
@@ -13,6 +13,6 @@ urlpatterns = [
     path('api/profile/<str:username>/', UserProfileAPIView.as_view(), name='api_profile_user'),
 
     path('api/chat_history/<int:room_id>/', ChatHistoryView.as_view(), name='chat_history'),
-
+    path('api/users/bulk/', bulk_users_info, name='bulk_users_info'),
 
 ]
