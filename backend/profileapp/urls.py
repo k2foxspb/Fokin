@@ -14,5 +14,6 @@ urlpatterns = [
 
     path('api/chat_history/<int:room_id>/', ChatHistoryView.as_view(), name='chat_history'),
     path('api/users/bulk/', bulk_users_info, name='bulk_users_info'),
+    path('api/messages/last/', get_last_messages_by_senders, name='last_messages'),  # Новый URL
 
 ]

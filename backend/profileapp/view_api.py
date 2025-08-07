@@ -182,3 +182,51 @@ class ChatHistoryView(generics.ListAPIView):
         return Response({
             'messages': serializer.data
         })
+
+
+@api_view(['POST'])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
+def get_last_messages_by_senders(request):
+    """
+    Получает последние сообщения от указанных отправителей
+    """
+    try:
+        data = request.data
+        sender_ids = data.get('sender_ids', [])
+
+        if not isinstance(sender_ids, list):
+            return Response({'error': 'sender_ids должен быть массивом'}, status=400)
+
+        if not sender_ids:
+            return Response({'error': 'sender_ids не может быть пустым'}, status=400)
+
+        # Валидация ID
+        try:
+            sender_ids = [int(sender_id) for sender_id in sender_ids]
+        except (ValueError, TypeError):
+            return Response({'error': 'Все ID должны быть числами'}, status=400)
+
+        user = request.user
+        result = {}
+
+        # Получаем последнее сообщение от каждого отправителя
+        for sender_id in sender_ids:
+            last_message = PrivateMessage.objects.filter(
+                recipient=user,
+                sender_id=sender_id,
+                read=False
+            ).order_by('-timestamp').first()
+
+            if last_message:
+                result[str(sender_id)] = {
+                    'message': last_message.message,
+                    'timestamp': last_message.timestamp.isoformat()
+                }
+
+        print(f"Last messages API response: {result}")
+        return Response(result, status=200)
+
+    except Exception as e:
+        print(f"Error in get_last_messages_by_senders: {str(e)}")
+        return Response({'error': 'Внутренняя ошибка сервера'}, status=500)
