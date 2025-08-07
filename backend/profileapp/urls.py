@@ -1,7 +1,8 @@
 from django.urls import path
 from . import views
 from .apps import ProfileappConfig
-from .view_api import UserProfileAPIView, CurrentUserProfileAPIView, ChatHistoryView, UserListAPIView, bulk_users_info
+from .view_api import UserProfileAPIView, CurrentUserProfileAPIView, ChatHistoryView, UserListAPIView, bulk_users_info, \
+    get_last_messages_by_senders
 
 app_name = ProfileappConfig.name
 urlpatterns = [
