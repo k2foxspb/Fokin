@@ -221,7 +221,8 @@ def get_last_messages_by_senders(request):
             if last_message:
                 result[str(sender_id)] = {
                     'message': last_message.message,
-                    'timestamp': last_message.timestamp.isoformat()
+                    'timestamp': last_message.timestamp.isoformat(),
+                    'chat_id': last_message.room_id
                 }
 
         print(f"Last messages API response: {result}")
