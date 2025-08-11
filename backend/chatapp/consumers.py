@@ -210,29 +210,31 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
 
         # Вместо отправки индивидуального уведомления, мы просто запрашиваем обновление всех уведомлений
         # через стандартный обработчик notification
-        channel_layer = get_channel_layer()
-        new_message_data = {
-            'type': 'direct_message_notification',
-            'user_id': event['recipient__id'],
-            'data': {
-                'sender_id': event.get('sender_id'),
-                'sender_name': event['sender__username'],
-                'count': 1,  # Всегда 1 для индивидуальных сообщений
-                'last_message': event['message'],
-                'timestamp': event['timestamp'],
-                'message_id': event['id'],
-                'chat_id': int(self.room_name)
-            }
-        }
-
         try:
+            # Добавляем задержку перед отправкой уведомления
+            # (чтобы избежать гонки условий)
+            await asyncio.sleep(0.1)
+
+            channel_layer = get_channel_layer()
+            # Отправляем специальное уведомление для отдельного сообщения
             await channel_layer.group_send(
                 f"user_{event['recipient__id']}",
-                new_message_data
+                {
+                    # Используем отдельный тип для индивидуальных уведомлений
+                    "type": "separate_message_notification",
+                    "sender_id": event.get('sender_id'),
+                    "sender_name": event['sender__username'],
+                    "message": event['message'],
+                    "timestamp": event['timestamp'],
+                    "message_id": event['id'],
+                    "chat_id": int(self.room_name)
+                },
             )
-            print(f"✅ [DEBUG] Direct message notification sent to user_{event['recipient__id']}")
+            print(f"✅ [DEBUG] Separate message notification sent to user_{event['recipient__id']}")
         except Exception as e:
-            print(f"❌ [DEBUG] Error sending direct notification: {e}")
+            print(f"❌ [DEBUG] Error sending separate notification: {e}")
+            import traceback
+            traceback.print_exc()
 
     @sync_to_async
     def save_message(self, user1_id, user2_id, message, timestamp, user):
@@ -344,6 +346,37 @@ class NotificationConsumer(AsyncWebsocketConsumer):
         except Exception as e:
             print(f'Error connecting to notification: {e}')
             await self.close()
+
+    async def separate_message_notification(self, event):
+        """Обработчик для индивидуальных уведомлений о сообщениях"""
+        try:
+            print(f"🔔 [DEBUG] Processing separate message notification: {event}")
+
+            # Создаем сообщение в формате, понятном клиенту
+            message_data = {
+                'sender_id': event['sender_id'],
+                'sender_name': event['sender_name'],
+                'count': 1,  # Всегда 1 для отдельных сообщений
+                'last_message': event['message'],
+                'timestamp': event['timestamp'],
+                'message_id': event['message_id'],
+                'chat_id': event['chat_id']
+            }
+
+            # Формируем ответ с отдельным типом для нового сообщения
+            response = {
+                'type': 'individual_message',
+                'message': message_data
+            }
+
+            # Отправляем индивидуальное уведомление
+            await self.send(text_data=json.dumps(response))
+            print(f"✅ [DEBUG] Individual message notification sent: {response}")
+
+        except Exception as e:
+            print(f"❌ [DEBUG] Error in separate_message_notification: {e}")
+            import traceback
+            traceback.print_exc()
 
     async def direct_message_notification(self, event):
         """Отправка прямого уведомления о новом сообщении"""
