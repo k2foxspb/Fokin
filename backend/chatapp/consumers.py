@@ -211,18 +211,28 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
         # Вместо отправки индивидуального уведомления, мы просто запрашиваем обновление всех уведомлений
         # через стандартный обработчик notification
         channel_layer = get_channel_layer()
+        new_message_data = {
+            'type': 'direct_message_notification',
+            'user_id': event['recipient__id'],
+            'data': {
+                'sender_id': event.get('sender_id'),
+                'sender_name': event['sender__username'],
+                'count': 1,  # Всегда 1 для индивидуальных сообщений
+                'last_message': event['message'],
+                'timestamp': event['timestamp'],
+                'message_id': event['id'],
+                'chat_id': int(self.room_name)
+            }
+        }
+
         try:
             await channel_layer.group_send(
                 f"user_{event['recipient__id']}",
-                {
-                    "type": "notification",
-                    "user_id": event['recipient__id'],
-                },
+                new_message_data
             )
-            print(f"✅ [DEBUG] Notification update requested for user_{event['recipient__id']}")
+            print(f"✅ [DEBUG] Direct message notification sent to user_{event['recipient__id']}")
         except Exception as e:
-            print(f"❌ [DEBUG] Error sending notification update: {e}")
-
+            print(f"❌ [DEBUG] Error sending direct notification: {e}")
 
     @sync_to_async
     def save_message(self, user1_id, user2_id, message, timestamp, user):
@@ -286,7 +296,6 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
             logger.exception(f"Error saving message: {str(e)}")
             return None
 
-
     def get_or_create_room_by_users(self, user1, user2):
         """Находит или создает комнату для двух пользователей"""
         try:
@@ -335,6 +344,48 @@ class NotificationConsumer(AsyncWebsocketConsumer):
         except Exception as e:
             print(f'Error connecting to notification: {e}')
             await self.close()
+
+    async def direct_message_notification(self, event):
+        """Отправка прямого уведомления о новом сообщении"""
+        try:
+            user_id = event['user_id']
+            print(f"💬 [DEBUG] Sending direct message notification to user {user_id}")
+
+            # Данные сообщения уже готовы к отправке
+            message_data = event.get('data', {})
+
+            # Создаем структуру ответа
+            response_data = {
+                'type': 'new_message_notification',
+                'message': message_data
+            }
+
+            # Отправляем уведомление о новом сообщении
+            await self.send(text_data=json.dumps(response_data))
+            print(f"📨 [DEBUG] Direct notification sent: {response_data}")
+
+            # Обновляем общий список уведомлений для консистентности
+            await self.send_notification_update(user_id)
+        except Exception as e:
+            print(f"❌ [DEBUG] Error in direct_message_notification: {e}")
+            import traceback
+            traceback.print_exc()
+
+    async def send_notification_update(self, user_id):
+        """Отправляет обновленный список уведомлений"""
+        try:
+            unread_sender_count = await self.get_unique_senders_count(user_id)
+            messages_by_sender = await self.get_messages_by_sender(user_id)
+
+            response_data = {
+                'type': 'messages_by_sender_update',
+                'unique_sender_count': unread_sender_count,
+                'messages': messages_by_sender
+            }
+
+            await self.send(text_data=json.dumps(response_data))
+        except Exception as e:
+            print(f"❌ [DEBUG] Error sending notification update: {e}")
 
     async def send_initial_notification(self, unread_sender_count, messages_by_sender):
         print(f"📡 [DEBUG] Sending initial notification: count={unread_sender_count}")
