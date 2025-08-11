@@ -12,11 +12,11 @@ export const NotificationToast: React.FC = () => {
 
   useEffect(() => {
     if (messages.length > 0 && unreadCount > 0) {
-      // Формируем детальный список сообщений по отправителям
+      // Формируем детальный список всех сообщений
       const details = messages.map(msg => {
         const senderName = msg.sender_name || `Пользователь ${msg.sender_id}`;
 
-        // Показываем последнее сообщение вместо количества
+        // Показываем текст сообщения
         let messagePreview = msg.last_message || 'Новое сообщение';
 
         // Обрезаем длинные сообщения
@@ -24,10 +24,7 @@ export const NotificationToast: React.FC = () => {
           messagePreview = messagePreview.substring(0, 40) + '...';
         }
 
-        // Если сообщений больше одного, добавляем счетчик
-        const countInfo = msg.count > 1 ? ` (+${msg.count - 1})` : '';
-
-        return `${senderName}: ${messagePreview}${countInfo}`;
+        return `${senderName}: ${messagePreview}`;
       });
 
       setMessageDetails(details);
@@ -97,7 +94,7 @@ export const NotificationToast: React.FC = () => {
             ))}
           </ScrollView>
           <Text style={styles.totalCount}>
-            Всего: {messages.reduce((sum, msg) => sum + msg.count, 0)} непрочитанных
+            Всего: {messages.length} непрочитанных
           </Text>
         </View>
         <MaterialCommunityIcons name="close" size={20} color="#fff" />

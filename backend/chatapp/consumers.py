@@ -462,28 +462,31 @@ class NotificationConsumer(AsyncWebsocketConsumer):
                 print(
                     f"📝 [DEBUG] Message {i + 1}: sender={msg.sender_id}, text='{msg.message[:50]}...', timestamp={msg.timestamp}")
 
-            # Группируем по отправителям (берем первое = самое новое сообщение от каждого)
-            sender_dict = {}
+            # Преобразуем сообщения в список уведомлений, по одному на каждое сообщение
+            messages_data = []
 
             for message in unread_messages:
-                sender_id = message.sender_id
+                # Получаем информацию об отправителе
+                try:
+                    sender = CustomUser.objects.get(pk=message.sender_id)
+                    sender_name = f"{sender.first_name} {sender.last_name}"
+                except:
+                    sender_name = f"Пользователь {message.sender_id}"
 
-                if sender_id not in sender_dict:
-                    # Первое сообщение от этого отправителя (самое новое)
-                    sender_dict[sender_id] = {
-                        'sender_id': sender_id,
-                        'count': 1,
-                        'last_message': message.message,  # Текст сообщения
-                        'timestamp': message.timestamp.isoformat()
-                    }
-                    print(f"📤 [DEBUG] Added sender {sender_id} with message: '{message.message[:30]}...'")
-                else:
-                    # Увеличиваем счетчик для существующего отправителя
-                    sender_dict[sender_id]['count'] += 1
-                    print(f"🔢 [DEBUG] Incremented count for sender {sender_id} to {sender_dict[sender_id]['count']}")
+                # Создаем отдельное уведомление для каждого сообщения
+                message_data = {
+                    'sender_id': message.sender_id,
+                    'sender_name': sender_name,
+                    'count': 1,  # Каждое сообщение считается как отдельное
+                    'last_message': message.message,
+                    'timestamp': message.timestamp.isoformat(),
+                    'message_id': message.id
+                }
 
-            messages_data = list(sender_dict.values())
-            print(f"✅ [DEBUG] Final messages_data: {messages_data}")
+                messages_data.append(message_data)
+                print(f"📤 [DEBUG] Added message from {message.sender_id}: '{message.message[:30]}...'")
+
+            print(f"✅ [DEBUG] Final messages_data: {len(messages_data)} individual messages")
 
             return us_dict, messages_data
 
@@ -495,3 +498,4 @@ class NotificationConsumer(AsyncWebsocketConsumer):
             import traceback
             traceback.print_exc()
             return {'user': ''}, []
+
