@@ -301,7 +301,6 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
 class NotificationConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         logger.info(f"WebSocket connection attempt from {self.scope['client']}")
-        await self.accept()
         logger.info("WebSocket connection accepted")
 
         try:
