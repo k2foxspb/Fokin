@@ -352,11 +352,14 @@ class NotificationConsumer(AsyncWebsocketConsumer):
         try:
             print(f"🔔 [DEBUG] Processing separate message notification: {event}")
 
+            # Получаем актуальное количество непрочитанных сообщений от этого отправителя
+            sender_message_count = await self.get_sender_message_count(self.user_id, event['sender_id'])
+
             # Создаем сообщение в формате, понятном клиенту
             message_data = {
                 'sender_id': event['sender_id'],
                 'sender_name': event['sender_name'],
-                'count': 1,  # Всегда 1 для отдельных сообщений
+                'count': sender_message_count,  # Реальное количество непрочитанных сообщений
                 'last_message': event['message'],
                 'timestamp': event['timestamp'],
                 'message_id': event['message_id'],
@@ -599,6 +602,25 @@ class NotificationConsumer(AsyncWebsocketConsumer):
             return 0
 
     @database_sync_to_async
+    def get_sender_message_count(self, user_id, sender_id):
+        """Получает количество непрочитанных сообщений от конкретного отправителя"""
+        try:
+            user = CustomUser.objects.get(pk=user_id)
+            count = PrivateMessage.objects.filter(
+                recipient=user, 
+                sender_id=sender_id, 
+                read=False
+            ).count()
+            print(f"📊 [DEBUG] User {user_id} has {count} unread messages from sender {sender_id}")
+            return count
+        except CustomUser.DoesNotExist:
+            print(f"❌ [DEBUG] User {user_id} not found")
+            return 0
+        except Exception as e:
+            print(f"❌ [DEBUG] Error in get_sender_message_count: {e}")
+            return 0
+
+    @database_sync_to_async
     def get_messages_by_sender(self, user_id):
         try:
             user = CustomUser.objects.get(pk=user_id)
@@ -606,43 +628,57 @@ class NotificationConsumer(AsyncWebsocketConsumer):
 
             print(f"🔍 [DEBUG] Getting messages for user {user_id} ({user.username})")
 
-            # Получаем все непрочитанные сообщения, отсортированные по времени (новые первые)
+            # Получаем все непрочитанные сообщения, сгруппированные по отправителям
             unread_messages = PrivateMessage.objects.filter(
                 recipient=user,
                 read=False
-            ).order_by('-timestamp')
+            ).values('sender_id').annotate(
+                count=Count('id'),
+                last_timestamp=max('timestamp'),
+                last_message_text=max('message'),  # Получаем последнее сообщение (может быть неточно из-за max)
+                last_message_id=max('id'),
+                chat_id=max('room_id')
+            ).order_by('-last_timestamp')
 
-            total_count = unread_messages.count()
-            print(f"📊 [DEBUG] Total unread messages: {total_count}")
+            print(f"📊 [DEBUG] Found {len(unread_messages)} unique senders with messages")
 
-            # Создаем отдельное уведомление для каждого сообщения вместо группировки
-            all_messages = []
+            messages_by_sender = []
 
-            for message in unread_messages:
+            for sender_data in unread_messages:
+                sender_id = sender_data['sender_id']
+                message_count = sender_data['count']
+
+                print(f"📝 [DEBUG] Processing sender {sender_id} with {message_count} messages")
+
                 try:
-                    sender = CustomUser.objects.get(pk=message.sender_id)
+                    sender = CustomUser.objects.get(pk=sender_id)
                     sender_name = f"{sender.first_name} {sender.last_name}"
                 except Exception as e:
                     print(f"❌ [DEBUG] Error getting sender info: {e}")
-                    sender_name = f"Пользователь {message.sender_id}"
+                    sender_name = f"Пользователь {sender_id}"
 
-                # Создаем отдельную запись для каждого сообщения
+                # Получаем последнее сообщение от этого отправителя более точным способом
+                last_message = PrivateMessage.objects.filter(
+                    recipient=user,
+                    sender_id=sender_id,
+                    read=False
+                ).order_by('-timestamp').first()
+
                 message_data = {
-                    'sender_id': message.sender_id,
+                    'sender_id': sender_id,
                     'sender_name': sender_name,
-                    'count': 1,  # Всегда 1 для индивидуальных сообщений
-                    'last_message': message.message,
-                    'timestamp': message.timestamp.isoformat(),
-                    'message_id': message.id,
-                    'chat_id': message.room_id
+                    'count': message_count,  # Реальное количество сообщений от отправителя
+                    'last_message': last_message.message if last_message else '',
+                    'timestamp': last_message.timestamp.isoformat() if last_message else '',
+                    'message_id': last_message.id if last_message else None,
+                    'chat_id': last_message.room_id if last_message else None
                 }
 
-                all_messages.append(message_data)
-                print(f"📤 [DEBUG] Added message from {message.sender_id}: '{message.message[:30]}...'")
+                messages_by_sender.append(message_data)
+                print(f"📤 [DEBUG] Added sender {sender_id} with {message_count} messages: '{message_data['last_message'][:30]}...'")
 
-            print(f"✅ [DEBUG] Final all_messages: {len(all_messages)} individual messages")
-
-            return us_dict, all_messages
+            print(f"✅ [DEBUG] Final messages_by_sender: {len(messages_by_sender)} unique senders")
+            return us_dict, messages_by_sender
 
         except CustomUser.DoesNotExist:
             print(f"❌ [DEBUG] User {user_id} not found")
