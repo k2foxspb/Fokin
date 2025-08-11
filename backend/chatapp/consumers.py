@@ -205,25 +205,26 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
 
         print(f"Sending to client: {message_data}")
 
+        # Отправляем сообщение в WebSocket-соединение чата
         await self.send(text_data=json.dumps(message_data))
 
-        # Отправляем уведомление получателю
+        # Вместо отправки индивидуального уведомления, мы просто запрашиваем обновление всех уведомлений
+        # через стандартный обработчик notification
         channel_layer = get_channel_layer()
-        await channel_layer.group_send(
-            f"user_{event['recipient__id']}",
-            {
-                "type": "notification_message",  # Изменяем тип на новый
-                "user_id": event['recipient__id'],
-                "message": event['message'],
-                "sender_id": event.get('sender_id'),
-                "timestamp": event['timestamp'],
-            },
-        )
+        try:
+            await channel_layer.group_send(
+                f"user_{event['recipient__id']}",
+                {
+                    "type": "notification",
+                    "user_id": event['recipient__id'],
+                },
+            )
+            print(f"✅ [DEBUG] Notification update requested for user_{event['recipient__id']}")
+        except Exception as e:
+            print(f"❌ [DEBUG] Error sending notification update: {e}")
 
 
 @sync_to_async
-
-
 def save_message(self, user1_id, user2_id, message, timestamp, user):
     try:
         with transaction.atomic():
@@ -530,38 +531,34 @@ class NotificationConsumer(AsyncWebsocketConsumer):
             total_count = unread_messages.count()
             print(f"📊 [DEBUG] Total unread messages: {total_count}")
 
-            # Показываем первые несколько сообщений для отладки
-            for i, msg in enumerate(unread_messages[:3]):
-                print(
-                    f"📝 [DEBUG] Message {i + 1}: sender={msg.sender_id}, text='{msg.message[:50]}...', timestamp={msg.timestamp}")
-
-            # Преобразуем сообщения в список уведомлений, по одному на каждое сообщение
-            messages_data = []
+            # Создаем отдельное уведомление для каждого сообщения вместо группировки
+            all_messages = []
 
             for message in unread_messages:
-                # Получаем информацию об отправителе
                 try:
                     sender = CustomUser.objects.get(pk=message.sender_id)
                     sender_name = f"{sender.first_name} {sender.last_name}"
-                except:
+                except Exception as e:
+                    print(f"❌ [DEBUG] Error getting sender info: {e}")
                     sender_name = f"Пользователь {message.sender_id}"
 
-                # Создаем отдельное уведомление для каждого сообщения
+                # Создаем отдельную запись для каждого сообщения
                 message_data = {
                     'sender_id': message.sender_id,
                     'sender_name': sender_name,
-                    'count': 1,  # Каждое сообщение считается как отдельное
+                    'count': 1,  # Всегда 1 для индивидуальных сообщений
                     'last_message': message.message,
                     'timestamp': message.timestamp.isoformat(),
-                    'message_id': message.id
+                    'message_id': message.id,
+                    'chat_id': message.room_id
                 }
 
-                messages_data.append(message_data)
+                all_messages.append(message_data)
                 print(f"📤 [DEBUG] Added message from {message.sender_id}: '{message.message[:30]}...'")
 
-            print(f"✅ [DEBUG] Final messages_data: {len(messages_data)} individual messages")
+            print(f"✅ [DEBUG] Final all_messages: {len(all_messages)} individual messages")
 
-            return us_dict, messages_data
+            return us_dict, all_messages
 
         except CustomUser.DoesNotExist:
             print(f"❌ [DEBUG] User {user_id} not found")
