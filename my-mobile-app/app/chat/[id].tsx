@@ -112,18 +112,8 @@ export default function ChatScreen() {
 
     // Отладочная информация
     useEffect(() => {
-        console.log('=== CURRENT USER INFO ===');
-        console.log('Current Username:', currentUsername);
-        console.log('Current User ID:', currentUserId);
-        console.log('=== MESSAGES ===');
+
         messages.forEach((msg, index) => {
-            console.log(`Message ${index}:`, {
-                id: msg.id,
-                sender__username: msg.sender__username,
-                sender_id: msg.sender_id,
-                timestamp: msg.timestamp,
-                isMyMessage: msg.sender_id === currentUserId
-            });
         });
     }, [messages, currentUserId, currentUsername]);
 

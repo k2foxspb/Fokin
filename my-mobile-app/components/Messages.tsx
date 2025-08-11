@@ -1,20 +1,36 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Animated, Pressable } from 'react-native';
+import { View, Text, StyleSheet, Animated, Pressable, ScrollView } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNotifications } from '../contexts/NotificationContext';
 
 export const NotificationToast: React.FC = () => {
   const { messages, unreadCount } = useNotifications();
   const [visible, setVisible] = useState(false);
-  const [currentMessage, setCurrentMessage] = useState('');
+  const [messageDetails, setMessageDetails] = useState<string[]>([]);
   const [fadeAnim] = useState(new Animated.Value(0));
   const [slideAnim] = useState(new Animated.Value(50));
 
   useEffect(() => {
     if (messages.length > 0 && unreadCount > 0) {
-      // Показываем уведомление при получении новых сообщений
-      const totalMessages = messages.reduce((sum, msg) => sum + msg.count, 0);
-      setCurrentMessage(`У вас ${totalMessages} непрочитанных сообщений`);
+      // Формируем детальный список сообщений по отправителям
+      const details = messages.map(msg => {
+        const senderName = msg.sender_name || `Пользователь ${msg.sender_id}`;
+
+        // Показываем последнее сообщение вместо количества
+        let messagePreview = msg.last_message || 'Новое сообщение';
+
+        // Обрезаем длинные сообщения
+        if (messagePreview.length > 40) {
+          messagePreview = messagePreview.substring(0, 40) + '...';
+        }
+
+        // Если сообщений больше одного, добавляем счетчик
+        const countInfo = msg.count > 1 ? ` (+${msg.count - 1})` : '';
+
+        return `${senderName}: ${messagePreview}${countInfo}`;
+      });
+
+      setMessageDetails(details);
       showToast();
     }
   }, [messages, unreadCount]);
@@ -34,10 +50,10 @@ export const NotificationToast: React.FC = () => {
       }),
     ]).start();
 
-    // Автоматически скрываем через 3 секунды
+    // Автоматически скрываем через 5 секунд
     setTimeout(() => {
       hideToast();
-    }, 3000);
+    }, 5000);
   };
 
   const hideToast = () => {
@@ -71,7 +87,19 @@ export const NotificationToast: React.FC = () => {
     >
       <Pressable style={styles.toast} onPress={hideToast}>
         <MaterialCommunityIcons name="message-text" size={24} color="#fff" />
-        <Text style={styles.message}>{currentMessage}</Text>
+        <View style={styles.contentContainer}>
+          <Text style={styles.title}>Новые сообщения</Text>
+          <ScrollView style={styles.messagesContainer} showsVerticalScrollIndicator={false}>
+            {messageDetails.map((detail, index) => (
+              <Text key={index} style={styles.messageDetail}>
+                {detail}
+              </Text>
+            ))}
+          </ScrollView>
+          <Text style={styles.totalCount}>
+            Всего: {messages.reduce((sum, msg) => sum + msg.count, 0)} непрочитанных
+          </Text>
+        </View>
         <MaterialCommunityIcons name="close" size={20} color="#fff" />
       </Pressable>
     </Animated.View>
@@ -91,7 +119,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 15,
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 10,
     shadowColor: '#000',
     shadowOffset: {
@@ -101,10 +129,31 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
     elevation: 5,
+    maxHeight: 200,
   },
-  message: {
-    color: '#fff',
-    fontSize: 14,
+  contentContainer: {
     flex: 1,
+    gap: 5,
+  },
+  title: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  messagesContainer: {
+    maxHeight: 100,
+    flex: 0,
+  },
+  messageDetail: {
+    color: '#fff',
+    fontSize: 13,
+    opacity: 0.9,
+    marginBottom: 2,
+  },
+  totalCount: {
+    color: '#fff',
+    fontSize: 12,
+    fontStyle: 'italic',
+    opacity: 0.8,
   },
 });
