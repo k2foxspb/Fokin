@@ -2,11 +2,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { API_CONFIG } from '../config';
-interface MessageData {
-  message: string;
-  timestamp: string;
-  chat_id?: number;  // Опциональное поле для ID чата
-}
 
 interface UserInfo {
   id: number;
@@ -15,37 +10,8 @@ interface UserInfo {
   username: string;
 }
 
-
 // Кеш для хранения информации о пользователях
 const userCache = new Map<number, UserInfo>();
-export const getLastMessagesBySenders = async (senderIds: number[]): Promise<Map<number, MessageData>> => {
-
-  try {
-    const token = await AsyncStorage.getItem('userToken');
-    if (!token) {
-      throw new Error('No auth token');
-    }
-
-    const response = await axios.post(
-      `${API_CONFIG.BASE_URL}/profile/api/messages/last/`,
-      { sender_ids: senderIds },
-      { headers: { Authorization: `Token ${token}` } }
-    );
-
-    console.log('📨 Last messages API response:', response.data);
-
-    // Преобразуем ответ в Map
-    const result = new Map<number, MessageData>();
-    Object.entries(response.data).forEach(([senderId, messageData]: [string, any]) => {
-      result.set(parseInt(senderId), messageData);
-    });
-
-    return result;
-  } catch (error) {
-    console.error('❌ Error fetching last messages:', error);
-    return new Map();
-  }
-};
 
 export const getUsersByIds = async (userIds: number[]): Promise<Map<number, UserInfo>> => {
   try {
