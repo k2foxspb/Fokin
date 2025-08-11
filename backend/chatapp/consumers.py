@@ -212,90 +212,97 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
         await channel_layer.group_send(
             f"user_{event['recipient__id']}",
             {
-                "type": "notification",
+                "type": "notification_message",  # Изменяем тип на новый
                 "user_id": event['recipient__id'],
+                "message": event['message'],
+                "sender_id": event.get('sender_id'),
+                "timestamp": event['timestamp'],
             },
         )
 
-    @sync_to_async
-    def save_message(self, user1_id, user2_id, message, timestamp, user):
-        try:
-            with transaction.atomic():
-                user1 = CustomUser.objects.get(pk=user1_id)
-                user2 = CustomUser.objects.get(pk=user2_id)
 
-                # Безопасно получаем room_id из URL
-                try:
-                    room_id = int(self.room_name)
-                    print(f"Parsed room_id: {room_id}")
-                except ValueError:
-                    logger.error(f"Invalid room_name format: {self.room_name}")
-                    # Если room_name не число, попробуем найти или создать комнату по пользователям
-                    room = self.get_or_create_room_by_users(user1, user2)
-                    if not room:
-                        return None
-                    room_id = room.id
+@sync_to_async
 
-                try:
-                    # Пытаемся получить существующую комнату по ID
-                    room = PrivateChatRoom.objects.get(id=room_id)
-                    print(f"Found room: {room.id}, user1: {room.user1.id}, user2: {room.user2.id}")
 
-                    # Проверяем, что пользователи действительно принадлежат этой комнате
-                    if not ((room.user1 == user1 and room.user2 == user2) or
-                            (room.user1 == user2 and room.user2 == user1)):
-                        logger.error(f"Users {user1_id} and {user2_id} don't belong to room {room_id}")
-                        return None
+def save_message(self, user1_id, user2_id, message, timestamp, user):
+    try:
+        with transaction.atomic():
+            user1 = CustomUser.objects.get(pk=user1_id)
+            user2 = CustomUser.objects.get(pk=user2_id)
 
-                except PrivateChatRoom.DoesNotExist:
-                    logger.error(f"Chat room with id {room_id} not found")
-                    # Попробуем создать комнату, если её нет
-                    room = self.get_or_create_room_by_users(user1, user2)
-                    if not room:
-                        return None
+            # Безопасно получаем room_id из URL
+            try:
+                room_id = int(self.room_name)
+                print(f"Parsed room_id: {room_id}")
+            except ValueError:
+                logger.error(f"Invalid room_name format: {self.room_name}")
+                # Если room_name не число, попробуем найти или создать комнату по пользователям
+                room = self.get_or_create_room_by_users(user1, user2)
+                if not room:
+                    return None
+                room_id = room.id
 
-                # Определяем получателя
-                recipient = user2 if user.id == user1_id else user1
-                print(f"Recipient determined: {recipient.id}")
+            try:
+                # Пытаемся получить существующую комнату по ID
+                room = PrivateChatRoom.objects.get(id=room_id)
+                print(f"Found room: {room.id}, user1: {room.user1.id}, user2: {room.user2.id}")
 
-                # Создаем новое сообщение
-                new_message = PrivateMessage.objects.create(
-                    room=room,
-                    sender=user,
-                    recipient=recipient,
-                    message=message,
-                    timestamp=datetime.fromtimestamp(timestamp)
-                )
+                # Проверяем, что пользователи действительно принадлежат этой комнате
+                if not ((room.user1 == user1 and room.user2 == user2) or
+                        (room.user1 == user2 and room.user2 == user1)):
+                    logger.error(f"Users {user1_id} and {user2_id} don't belong to room {room_id}")
+                    return None
 
-                logger.info(f"Message saved: room={room.id}, sender={user.id}, recipient={recipient.id}")
-                print(f"Message created with ID: {new_message.id}")
+            except PrivateChatRoom.DoesNotExist:
+                logger.error(f"Chat room with id {room_id} not found")
+                # Попробуем создать комнату, если её нет
+                room = self.get_or_create_room_by_users(user1, user2)
+                if not room:
+                    return None
 
-                return new_message
+            # Определяем получателя
+            recipient = user2 if user.id == user1_id else user1
+            print(f"Recipient determined: {recipient.id}")
 
-        except CustomUser.DoesNotExist as e:
-            logger.error(f"User not found: user1_id={user1_id}, user2_id={user2_id}")
-            return None
-        except Exception as e:
-            logger.exception(f"Error saving message: {str(e)}")
-            return None
+            # Создаем новое сообщение
+            new_message = PrivateMessage.objects.create(
+                room=room,
+                sender=user,
+                recipient=recipient,
+                message=message,
+                timestamp=datetime.fromtimestamp(timestamp)
+            )
 
-    def get_or_create_room_by_users(self, user1, user2):
-        """Находит или создает комнату для двух пользователей"""
-        try:
-            # Ищем существующую комнату
-            room = PrivateChatRoom.objects.filter(
-                Q(user1=user1, user2=user2) | Q(user1=user2, user2=user1)
-            ).first()
+            logger.info(f"Message saved: room={room.id}, sender={user.id}, recipient={recipient.id}")
+            print(f"Message created with ID: {new_message.id}")
 
-            if not room:
-                # Создаем новую комнату
-                room = PrivateChatRoom.objects.create(user1=user1, user2=user2)
-                logger.info(f"Created new room: {room.id}")
+            return new_message
 
-            return room
-        except Exception as e:
-            logger.error(f"Error getting/creating room: {str(e)}")
-            return None
+    except CustomUser.DoesNotExist as e:
+        logger.error(f"User not found: user1_id={user1_id}, user2_id={user2_id}")
+        return None
+    except Exception as e:
+        logger.exception(f"Error saving message: {str(e)}")
+        return None
+
+
+def get_or_create_room_by_users(self, user1, user2):
+    """Находит или создает комнату для двух пользователей"""
+    try:
+        # Ищем существующую комнату
+        room = PrivateChatRoom.objects.filter(
+            Q(user1=user1, user2=user2) | Q(user1=user2, user2=user1)
+        ).first()
+
+        if not room:
+            # Создаем новую комнату
+            room = PrivateChatRoom.objects.create(user1=user1, user2=user2)
+            logger.info(f"Created new room: {room.id}")
+
+        return room
+    except Exception as e:
+        logger.error(f"Error getting/creating room: {str(e)}")
+        return None
 
 
 class NotificationConsumer(AsyncWebsocketConsumer):
@@ -340,6 +347,72 @@ class NotificationConsumer(AsyncWebsocketConsumer):
 
         print(f"📤 [DEBUG] Initial notification data being sent: {response_data}")
         await self.send(text_data=json.dumps(response_data))
+
+    async def notification_message(self, event):
+        """Обработчик для получения уведомлений о новых сообщениях"""
+        try:
+            print(f"🔔 [DEBUG] Individual message notification for user {self.user_id}")
+
+            # Создаем данные для одиночного сообщения
+            sender_id = event['sender_id']
+            message_text = event['message']
+            timestamp = event['timestamp']
+
+            try:
+                # Получаем информацию об отправителе
+                sender = await self.get_user_info(sender_id)
+                sender_name = f"{sender.first_name} {sender.last_name}" if sender else f"User {sender_id}"
+            except Exception as e:
+                print(f"❌ [DEBUG] Error getting sender info: {e}")
+                sender_name = f"User {sender_id}"
+
+            # Формируем сообщение
+            message_data = {
+                'sender_id': sender_id,
+                'sender_name': sender_name,
+                'count': 1,  # Всегда 1 для индивидуальных уведомлений
+                'last_message': message_text,
+                'timestamp': datetime.fromtimestamp(timestamp).isoformat() if isinstance(timestamp, int) else timestamp,
+                'message_id': f"temp_{timestamp}"  # Временный ID для индивидуальных уведомлений
+            }
+
+            # Отправляем уведомление о новом сообщении
+            response_data = {
+                'type': 'new_message_notification',
+                'message': message_data
+            }
+
+            print(f"📤 [DEBUG] Sending individual message notification: {response_data}")
+            await self.send(text_data=json.dumps(response_data))
+
+            # Обновляем общие данные для поддержания консистентности
+            unread_sender_count = await self.get_unique_senders_count(self.user_id)
+            messages_by_sender = await self.get_messages_by_sender(self.user_id)
+
+            update_data = {
+                'type': 'messages_by_sender_update',
+                'messages': messages_by_sender,
+                "unique_sender_count": unread_sender_count,
+            }
+
+            # Отправляем общий список после индивидуального уведомления
+            await self.send(text_data=json.dumps(update_data))
+
+        except Exception as e:
+            print(f"❌ [DEBUG] Error in notification_message: {e}")
+            import traceback
+            traceback.print_exc()
+
+    @database_sync_to_async
+    def get_user_info(self, user_id):
+        try:
+            return CustomUser.objects.get(pk=user_id)
+        except CustomUser.DoesNotExist:
+            print(f"❌ [DEBUG] User {user_id} not found")
+            return None
+        except Exception as e:
+            print(f"❌ [DEBUG] Error in get_user_info: {e}")
+            return None
 
     @database_sync_to_async
     def send_user_online(self, user_id):
@@ -498,4 +571,3 @@ class NotificationConsumer(AsyncWebsocketConsumer):
             import traceback
             traceback.print_exc()
             return {'user': ''}, []
-
