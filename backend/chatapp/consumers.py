@@ -10,7 +10,7 @@ from channels.generic.websocket import WebsocketConsumer, AsyncWebsocketConsumer
 from channels.layers import get_channel_layer
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
-from django.db.models import Q, Count
+from django.db.models import Q, Count, Max
 
 from authapp.models import CustomUser
 from .models import Room, PrivateChatRoom, PrivateMessage, Message
@@ -628,54 +628,56 @@ class NotificationConsumer(AsyncWebsocketConsumer):
 
             print(f"🔍 [DEBUG] Getting messages for user {user_id} ({user.username})")
 
-            # Получаем все непрочитанные сообщения, сгруппированные по отправителям
-            unread_messages = PrivateMessage.objects.filter(
+            # Получаем статистику по отправителям простым способом
+            sender_stats = PrivateMessage.objects.filter(
                 recipient=user,
                 read=False
             ).values('sender_id').annotate(
-                count=Count('id'),
-                last_timestamp=max('timestamp'),
-                last_message_text=max('message'),  # Получаем последнее сообщение (может быть неточно из-за max)
-                last_message_id=max('id'),
-                chat_id=max('room_id')
-            ).order_by('-last_timestamp')
+                message_count=Count('id')
+            )
 
-            print(f"📊 [DEBUG] Found {len(unread_messages)} unique senders with messages")
+            print(f"📊 [DEBUG] Found {len(sender_stats)} unique senders with messages")
 
             messages_by_sender = []
 
-            for sender_data in unread_messages:
-                sender_id = sender_data['sender_id']
-                message_count = sender_data['count']
+            for stats in sender_stats:
+                sender_id = stats['sender_id']
+                message_count = stats['message_count']
 
                 print(f"📝 [DEBUG] Processing sender {sender_id} with {message_count} messages")
 
                 try:
                     sender = CustomUser.objects.get(pk=sender_id)
-                    sender_name = f"{sender.first_name} {sender.last_name}"
+                    sender_name = f"{sender.first_name} {sender.last_name}".strip()
+                    if not sender_name:
+                        sender_name = sender.username or f"Пользователь {sender_id}"
                 except Exception as e:
                     print(f"❌ [DEBUG] Error getting sender info: {e}")
                     sender_name = f"Пользователь {sender_id}"
 
-                # Получаем последнее сообщение от этого отправителя более точным способом
+                # Получаем последнее сообщение от этого отправителя
                 last_message = PrivateMessage.objects.filter(
                     recipient=user,
                     sender_id=sender_id,
                     read=False
                 ).order_by('-timestamp').first()
 
-                message_data = {
-                    'sender_id': sender_id,
-                    'sender_name': sender_name,
-                    'count': message_count,  # Реальное количество сообщений от отправителя
-                    'last_message': last_message.message if last_message else '',
-                    'timestamp': last_message.timestamp.isoformat() if last_message else '',
-                    'message_id': last_message.id if last_message else None,
-                    'chat_id': last_message.room_id if last_message else None
-                }
+                if last_message:
+                    message_data = {
+                        'sender_id': sender_id,
+                        'sender_name': sender_name,
+                        'count': message_count,  # Реальное количество сообщений от отправителя
+                        'last_message': last_message.message,
+                        'timestamp': last_message.timestamp.isoformat(),
+                        'message_id': last_message.id,
+                        'chat_id': last_message.room_id
+                    }
 
-                messages_by_sender.append(message_data)
-                print(f"📤 [DEBUG] Added sender {sender_id} with {message_count} messages: '{message_data['last_message'][:30]}...'")
+                    messages_by_sender.append(message_data)
+                    print(f"📤 [DEBUG] Added sender {sender_id} with {message_count} messages: '{message_data['last_message'][:30]}...'")
+
+            # Сортируем по времени последнего сообщения (новые первые)
+            messages_by_sender.sort(key=lambda x: x['timestamp'], reverse=True)
 
             print(f"✅ [DEBUG] Final messages_by_sender: {len(messages_by_sender)} unique senders")
             return us_dict, messages_by_sender
