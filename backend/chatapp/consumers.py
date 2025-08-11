@@ -224,86 +224,86 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
             print(f"❌ [DEBUG] Error sending notification update: {e}")
 
 
-@sync_to_async
-def save_message(self, user1_id, user2_id, message, timestamp, user):
-    try:
-        with transaction.atomic():
-            user1 = CustomUser.objects.get(pk=user1_id)
-            user2 = CustomUser.objects.get(pk=user2_id)
+    @sync_to_async
+    def save_message(self, user1_id, user2_id, message, timestamp, user):
+        try:
+            with transaction.atomic():
+                user1 = CustomUser.objects.get(pk=user1_id)
+                user2 = CustomUser.objects.get(pk=user2_id)
 
-            # Безопасно получаем room_id из URL
-            try:
-                room_id = int(self.room_name)
-                print(f"Parsed room_id: {room_id}")
-            except ValueError:
-                logger.error(f"Invalid room_name format: {self.room_name}")
-                # Если room_name не число, попробуем найти или создать комнату по пользователям
-                room = self.get_or_create_room_by_users(user1, user2)
-                if not room:
-                    return None
-                room_id = room.id
+                # Безопасно получаем room_id из URL
+                try:
+                    room_id = int(self.room_name)
+                    print(f"Parsed room_id: {room_id}")
+                except ValueError:
+                    logger.error(f"Invalid room_name format: {self.room_name}")
+                    # Если room_name не число, попробуем найти или создать комнату по пользователям
+                    room = self.get_or_create_room_by_users(user1, user2)
+                    if not room:
+                        return None
+                    room_id = room.id
 
-            try:
-                # Пытаемся получить существующую комнату по ID
-                room = PrivateChatRoom.objects.get(id=room_id)
-                print(f"Found room: {room.id}, user1: {room.user1.id}, user2: {room.user2.id}")
+                try:
+                    # Пытаемся получить существующую комнату по ID
+                    room = PrivateChatRoom.objects.get(id=room_id)
+                    print(f"Found room: {room.id}, user1: {room.user1.id}, user2: {room.user2.id}")
 
-                # Проверяем, что пользователи действительно принадлежат этой комнате
-                if not ((room.user1 == user1 and room.user2 == user2) or
-                        (room.user1 == user2 and room.user2 == user1)):
-                    logger.error(f"Users {user1_id} and {user2_id} don't belong to room {room_id}")
-                    return None
+                    # Проверяем, что пользователи действительно принадлежат этой комнате
+                    if not ((room.user1 == user1 and room.user2 == user2) or
+                            (room.user1 == user2 and room.user2 == user1)):
+                        logger.error(f"Users {user1_id} and {user2_id} don't belong to room {room_id}")
+                        return None
 
-            except PrivateChatRoom.DoesNotExist:
-                logger.error(f"Chat room with id {room_id} not found")
-                # Попробуем создать комнату, если её нет
-                room = self.get_or_create_room_by_users(user1, user2)
-                if not room:
-                    return None
+                except PrivateChatRoom.DoesNotExist:
+                    logger.error(f"Chat room with id {room_id} not found")
+                    # Попробуем создать комнату, если её нет
+                    room = self.get_or_create_room_by_users(user1, user2)
+                    if not room:
+                        return None
 
-            # Определяем получателя
-            recipient = user2 if user.id == user1_id else user1
-            print(f"Recipient determined: {recipient.id}")
+                # Определяем получателя
+                recipient = user2 if user.id == user1_id else user1
+                print(f"Recipient determined: {recipient.id}")
 
-            # Создаем новое сообщение
-            new_message = PrivateMessage.objects.create(
-                room=room,
-                sender=user,
-                recipient=recipient,
-                message=message,
-                timestamp=datetime.fromtimestamp(timestamp)
-            )
+                # Создаем новое сообщение
+                new_message = PrivateMessage.objects.create(
+                    room=room,
+                    sender=user,
+                    recipient=recipient,
+                    message=message,
+                    timestamp=datetime.fromtimestamp(timestamp)
+                )
 
-            logger.info(f"Message saved: room={room.id}, sender={user.id}, recipient={recipient.id}")
-            print(f"Message created with ID: {new_message.id}")
+                logger.info(f"Message saved: room={room.id}, sender={user.id}, recipient={recipient.id}")
+                print(f"Message created with ID: {new_message.id}")
 
-            return new_message
+                return new_message
 
-    except CustomUser.DoesNotExist as e:
-        logger.error(f"User not found: user1_id={user1_id}, user2_id={user2_id}")
-        return None
-    except Exception as e:
-        logger.exception(f"Error saving message: {str(e)}")
-        return None
+        except CustomUser.DoesNotExist as e:
+            logger.error(f"User not found: user1_id={user1_id}, user2_id={user2_id}")
+            return None
+        except Exception as e:
+            logger.exception(f"Error saving message: {str(e)}")
+            return None
 
 
-def get_or_create_room_by_users(self, user1, user2):
-    """Находит или создает комнату для двух пользователей"""
-    try:
-        # Ищем существующую комнату
-        room = PrivateChatRoom.objects.filter(
-            Q(user1=user1, user2=user2) | Q(user1=user2, user2=user1)
-        ).first()
+    def get_or_create_room_by_users(self, user1, user2):
+        """Находит или создает комнату для двух пользователей"""
+        try:
+            # Ищем существующую комнату
+            room = PrivateChatRoom.objects.filter(
+                Q(user1=user1, user2=user2) | Q(user1=user2, user2=user1)
+            ).first()
 
-        if not room:
-            # Создаем новую комнату
-            room = PrivateChatRoom.objects.create(user1=user1, user2=user2)
-            logger.info(f"Created new room: {room.id}")
+            if not room:
+                # Создаем новую комнату
+                room = PrivateChatRoom.objects.create(user1=user1, user2=user2)
+                logger.info(f"Created new room: {room.id}")
 
-        return room
-    except Exception as e:
-        logger.error(f"Error getting/creating room: {str(e)}")
-        return None
+            return room
+        except Exception as e:
+            logger.error(f"Error getting/creating room: {str(e)}")
+            return None
 
 
 class NotificationConsumer(AsyncWebsocketConsumer):
