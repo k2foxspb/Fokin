@@ -301,6 +301,7 @@ export default function AlbumDetail() {
                     headers: {Authorization: `Token ${token}`}
                 }
             );
+            console.log('Current user:', response.data.username);
             setCurrentUser(response.data.username);
         } catch (error) {
             console.log('Error fetching current user:', error);
@@ -314,6 +315,8 @@ export default function AlbumDetail() {
                 router.replace('/(auth)/login');
                 return;
             }
+
+            console.log('Fetching album with ID:', id);
             const response = await axios.get(
                 `${API_CONFIG.BASE_URL}/photo/api/album/${id}/`,
                 {
@@ -328,7 +331,7 @@ export default function AlbumDetail() {
                 photo.image_url && photo.thumbnail_url
             );
 
-
+            console.log('Filtered photos:', filteredPhotos.length, 'from', response.data.photos.length);
 
             setAlbum({
                 ...response.data,
