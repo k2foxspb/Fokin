@@ -184,6 +184,17 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
                     self.room_name,
                     message_data
                 )
+                # Уведомляем об обновлении списка чатов для обоих пользователей
+                channel_layer = get_channel_layer()
+                await channel_layer.group_send(
+                    f"chat_list_{user1_id}",
+                    {"type": "chat_list_update"}
+                )
+                await channel_layer.group_send(
+                    f"chat_list_{user2_id}",
+                    {"type": "chat_list_update"}
+                )
+
             else:
                 logger.error("Failed to save message.")
                 await self.send(text_data=json.dumps({'error': 'Failed to save message.'}))
@@ -716,3 +727,106 @@ class NotificationConsumer(AsyncWebsocketConsumer):
             import traceback
             traceback.print_exc()
             return {'user': ''}, []
+
+
+class ChatListConsumer(AsyncWebsocketConsumer):
+    async def connect(self):
+        self.user = self.scope['user']
+
+        if not self.user.is_authenticated:
+            await self.close()
+            return
+
+        self.user_id = self.user.id
+        await self.channel_layer.group_add(f"chat_list_{self.user_id}", self.channel_name)
+        await self.accept()
+
+        # Отправляем начальные данные о чатах
+        await self.send_chat_list()
+
+    async def disconnect(self, close_code):
+        if hasattr(self, 'user_id'):
+            await self.channel_layer.group_discard(f"chat_list_{self.user_id}", self.channel_name)
+
+    async def receive(self, text_data):
+        try:
+            data = json.loads(text_data)
+            if data.get('type') == 'get_chat_list':
+                await self.send_chat_list()
+        except Exception as e:
+            print(f"Error processing chat list request: {e}")
+
+    async def send_chat_list(self):
+        """Отправляет список чатов пользователя"""
+        try:
+            chats = await self.get_user_chats(self.user_id)
+            await self.send(text_data=json.dumps({
+                'type': 'chat_list',
+                'chats': chats
+            }))
+        except Exception as e:
+            print(f"Error sending chat list: {e}")
+
+    async def chat_list_update(self, event):
+        """Обработчик для обновления списка чатов"""
+        await self.send_chat_list()
+
+    @database_sync_to_async
+    def get_user_chats(self, user_id):
+        """Получает все чаты пользователя с полной информацией"""
+        try:
+            user = CustomUser.objects.get(pk=user_id)
+
+            # Получаем все комнаты, где участвует пользователь
+            rooms = PrivateChatRoom.objects.filter(
+                Q(user1=user) | Q(user2=user)
+            ).select_related('user1', 'user2')
+
+            chats = []
+
+            for room in rooms:
+                # Определяем другого пользователя
+                other_user = room.user2 if room.user1 == user else room.user1
+
+                # Получаем последнее сообщение
+                last_message = PrivateMessage.objects.filter(
+                    room=room
+                ).order_by('-timestamp').first()
+
+                if not last_message:
+                    continue  # Пропускаем чаты без сообщений
+
+                # Подсчитываем непрочитанные сообщения от этого пользователя
+                unread_count = PrivateMessage.objects.filter(
+                    room=room,
+                    recipient=user,
+                    read=False
+                ).count()
+
+                chat_data = {
+                    'id': room.id,
+                    'other_user': {
+                        'id': other_user.id,
+                        'username': other_user.username,
+                        'first_name': other_user.first_name or '',
+                        'last_name': other_user.last_name or '',
+                        'avatar': other_user.avatar.url if other_user.avatar else None,
+                        'gender': other_user.gender,
+                        'is_online': other_user.is_online
+                    },
+                    'last_message': last_message.message,
+                    'last_message_time': last_message.timestamp.isoformat(),
+                    'unread_count': unread_count
+                }
+
+                chats.append(chat_data)
+
+            # Сортируем по времени последнего сообщения
+            chats.sort(key=lambda x: x['last_message_time'], reverse=True)
+
+            print(f"✅ [ChatList] Found {len(chats)} chats for user {user_id}")
+            return chats
+
+        except Exception as e:
+            print(f"❌ [ChatList] Error getting user chats: {e}")
+            return []
