@@ -454,6 +454,15 @@ class NotificationConsumer(AsyncWebsocketConsumer):
             # Отправляем индивидуальное уведомление
             await self.send(text_data=json.dumps(response))
             print(f"✅ [DEBUG] Individual message notification sent: {response}")
+            messages_by_sender = await self.get_messages_by_sender(self.user_id)
+            unread_sender_count = await self.get_unique_senders_count(self.user_id)
+            update_data = {
+                'type': 'messages_by_sender_update',
+                'messages': messages_by_sender,
+                "unique_sender_count": unread_sender_count,
+            }
+            await self.send(text_data=json.dumps(update_data))
+
 
         except Exception as e:
             print(f"❌ [DEBUG] Error in separate_message_notification: {e}")
