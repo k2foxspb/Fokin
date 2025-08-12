@@ -136,17 +136,19 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
             return
 
         await self.channel_layer.group_add(self.room_name, self.channel_name)
-        await self.mark_messages_as_read(self.user, self.room_name)
+        updated_count = await self.mark_messages_as_read(self.user, self.room_name)
 
         await self.accept()
-        channel_layer = get_channel_layer()
-        await channel_layer.group_send(
-            f"user_{self.user.id}",
-            {
-                "type": "notification",
-                "user_id": self.user.id,
-            },
-        )
+        if updated_count > 0:
+            channel_layer = get_channel_layer()
+            await channel_layer.group_send(
+                f"user_{self.user.id}",
+                {
+                    "type": "notification",
+                    "user_id": self.user.id,
+                },
+            )
+            print(f"🔔 [DEBUG] Sent notification update after marking {updated_count} messages as read")
 
     @sync_to_async
     def mark_messages_as_read(self, user, room_name):
