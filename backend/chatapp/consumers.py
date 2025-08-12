@@ -10,7 +10,7 @@ from channels.generic.websocket import WebsocketConsumer, AsyncWebsocketConsumer
 from channels.layers import get_channel_layer
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
-from django.db.models import Q, Count
+from django.db.models import Q, Count, Max
 
 from authapp.models import CustomUser
 from .push_notifications import PushNotificationService
@@ -209,17 +209,36 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
 
         print(f"Sending to client: {message_data}")
 
+        # Отправляем сообщение в WebSocket-соединение чата
         await self.send(text_data=json.dumps(message_data))
 
-        # Отправляем уведомление получателю
-        channel_layer = get_channel_layer()
-        await channel_layer.group_send(
-            f"user_{event['recipient__id']}",
-            {
-                "type": "notification",
-                "user_id": event['recipient__id'],
-            },
-        )
+        # Вместо отправки индивидуального уведомления, мы просто запрашиваем обновление всех уведомлений
+        # через стандартный обработчик notification
+        try:
+            # Добавляем задержку перед отправкой уведомления
+            # (чтобы избежать гонки условий)
+            await asyncio.sleep(0.1)
+
+            channel_layer = get_channel_layer()
+            # Отправляем специальное уведомление для отдельного сообщения
+            await channel_layer.group_send(
+                f"user_{event['recipient__id']}",
+                {
+                    # Используем отдельный тип для индивидуальных уведомлений
+                    "type": "separate_message_notification",
+                    "sender_id": event.get('sender_id'),
+                    "sender_name": event['sender__username'],
+                    "message": event['message'],
+                    "timestamp": event['timestamp'],
+                    "message_id": event['id'],
+                    "chat_id": int(self.room_name)
+                },
+            )
+            print(f"✅ [DEBUG] Separate message notification sent to user_{event['recipient__id']}")
+        except Exception as e:
+            print(f"❌ [DEBUG] Error sending separate notification: {e}")
+            import traceback
+            traceback.print_exc()
 
     @sync_to_async
     def save_message(self, user1_id, user2_id, message, timestamp, user):
@@ -355,6 +374,82 @@ class NotificationConsumer(AsyncWebsocketConsumer):
             print(f'Error connecting to notification: {e}')
             await self.close()
 
+    async def separate_message_notification(self, event):
+        """Обработчик для индивидуальных уведомлений о сообщениях"""
+        try:
+            print(f"🔔 [DEBUG] Processing separate message notification: {event}")
+
+            # Получаем актуальное количество непрочитанных сообщений от этого отправителя
+            sender_message_count = await self.get_sender_message_count(self.user_id, event['sender_id'])
+
+            # Создаем сообщение в формате, понятном клиенту
+            message_data = {
+                'sender_id': event['sender_id'],
+                'sender_name': event['sender_name'],
+                'count': sender_message_count,  # Реальное количество непрочитанных сообщений
+                'last_message': event['message'],
+                'timestamp': event['timestamp'],
+                'message_id': event['message_id'],
+                'chat_id': event['chat_id']
+            }
+
+            # Формируем ответ с отдельным типом для нового сообщения
+            response = {
+                'type': 'individual_message',
+                'message': message_data
+            }
+
+            # Отправляем индивидуальное уведомление
+            await self.send(text_data=json.dumps(response))
+            print(f"✅ [DEBUG] Individual message notification sent: {response}")
+
+        except Exception as e:
+            print(f"❌ [DEBUG] Error in separate_message_notification: {e}")
+            import traceback
+            traceback.print_exc()
+
+    async def direct_message_notification(self, event):
+        """Отправка прямого уведомления о новом сообщении"""
+        try:
+            user_id = event['user_id']
+            print(f"💬 [DEBUG] Sending direct message notification to user {user_id}")
+
+            # Данные сообщения уже готовы к отправке
+            message_data = event.get('data', {})
+
+            # Создаем структуру ответа
+            response_data = {
+                'type': 'new_message_notification',
+                'message': message_data
+            }
+
+            # Отправляем уведомление о новом сообщении
+            await self.send(text_data=json.dumps(response_data))
+            print(f"📨 [DEBUG] Direct notification sent: {response_data}")
+
+            # Обновляем общий список уведомлений для консистентности
+            await self.send_notification_update(user_id)
+        except Exception as e:
+            print(f"❌ [DEBUG] Error in direct_message_notification: {e}")
+            import traceback
+            traceback.print_exc()
+
+    async def send_notification_update(self, user_id):
+        """Отправляет обновленный список уведомлений"""
+        try:
+            unread_sender_count = await self.get_unique_senders_count(user_id)
+            messages_by_sender = await self.get_messages_by_sender(user_id)
+
+            response_data = {
+                'type': 'messages_by_sender_update',
+                'unique_sender_count': unread_sender_count,
+                'messages': messages_by_sender
+            }
+
+            await self.send(text_data=json.dumps(response_data))
+        except Exception as e:
+            print(f"❌ [DEBUG] Error sending notification update: {e}")
+
     async def send_initial_notification(self, unread_sender_count, messages_by_sender):
         print(f"📡 [DEBUG] Sending initial notification: count={unread_sender_count}")
         print(f"📋 [DEBUG] Messages data: {messages_by_sender}")
@@ -367,6 +462,72 @@ class NotificationConsumer(AsyncWebsocketConsumer):
 
         print(f"📤 [DEBUG] Initial notification data being sent: {response_data}")
         await self.send(text_data=json.dumps(response_data))
+
+    async def notification_message(self, event):
+        """Обработчик для получения уведомлений о новых сообщениях"""
+        try:
+            print(f"🔔 [DEBUG] Individual message notification for user {self.user_id}")
+
+            # Создаем данные для одиночного сообщения
+            sender_id = event['sender_id']
+            message_text = event['message']
+            timestamp = event['timestamp']
+
+            try:
+                # Получаем информацию об отправителе
+                sender = await self.get_user_info(sender_id)
+                sender_name = f"{sender.first_name} {sender.last_name}" if sender else f"User {sender_id}"
+            except Exception as e:
+                print(f"❌ [DEBUG] Error getting sender info: {e}")
+                sender_name = f"User {sender_id}"
+
+            # Формируем сообщение
+            message_data = {
+                'sender_id': sender_id,
+                'sender_name': sender_name,
+                'count': 1,  # Всегда 1 для индивидуальных уведомлений
+                'last_message': message_text,
+                'timestamp': datetime.fromtimestamp(timestamp).isoformat() if isinstance(timestamp, int) else timestamp,
+                'message_id': f"temp_{timestamp}"  # Временный ID для индивидуальных уведомлений
+            }
+
+            # Отправляем уведомление о новом сообщении
+            response_data = {
+                'type': 'new_message_notification',
+                'message': message_data
+            }
+
+            print(f"📤 [DEBUG] Sending individual message notification: {response_data}")
+            await self.send(text_data=json.dumps(response_data))
+
+            # Обновляем общие данные для поддержания консистентности
+            unread_sender_count = await self.get_unique_senders_count(self.user_id)
+            messages_by_sender = await self.get_messages_by_sender(self.user_id)
+
+            update_data = {
+                'type': 'messages_by_sender_update',
+                'messages': messages_by_sender,
+                "unique_sender_count": unread_sender_count,
+            }
+
+            # Отправляем общий список после индивидуального уведомления
+            await self.send(text_data=json.dumps(update_data))
+
+        except Exception as e:
+            print(f"❌ [DEBUG] Error in notification_message: {e}")
+            import traceback
+            traceback.print_exc()
+
+    @database_sync_to_async
+    def get_user_info(self, user_id):
+        try:
+            return CustomUser.objects.get(pk=user_id)
+        except CustomUser.DoesNotExist:
+            print(f"❌ [DEBUG] User {user_id} not found")
+            return None
+        except Exception as e:
+            print(f"❌ [DEBUG] Error in get_user_info: {e}")
+            return None
 
     @database_sync_to_async
     def send_user_online(self, user_id):
@@ -468,6 +629,25 @@ class NotificationConsumer(AsyncWebsocketConsumer):
             return 0
 
     @database_sync_to_async
+    def get_sender_message_count(self, user_id, sender_id):
+        """Получает количество непрочитанных сообщений от конкретного отправителя"""
+        try:
+            user = CustomUser.objects.get(pk=user_id)
+            count = PrivateMessage.objects.filter(
+                recipient=user, 
+                sender_id=sender_id, 
+                read=False
+            ).count()
+            print(f"📊 [DEBUG] User {user_id} has {count} unread messages from sender {sender_id}")
+            return count
+        except CustomUser.DoesNotExist:
+            print(f"❌ [DEBUG] User {user_id} not found")
+            return 0
+        except Exception as e:
+            print(f"❌ [DEBUG] Error in get_sender_message_count: {e}")
+            return 0
+
+    @database_sync_to_async
     def get_messages_by_sender(self, user_id):
         try:
             user = CustomUser.objects.get(pk=user_id)
@@ -475,44 +655,59 @@ class NotificationConsumer(AsyncWebsocketConsumer):
 
             print(f"🔍 [DEBUG] Getting messages for user {user_id} ({user.username})")
 
-            # Получаем все непрочитанные сообщения, отсортированные по времени (новые первые)
-            unread_messages = PrivateMessage.objects.filter(
+            # Получаем статистику по отправителям простым способом
+            sender_stats = PrivateMessage.objects.filter(
                 recipient=user,
                 read=False
-            ).order_by('-timestamp')
+            ).values('sender_id').annotate(
+                message_count=Count('id')
+            )
 
-            total_count = unread_messages.count()
-            print(f"📊 [DEBUG] Total unread messages: {total_count}")
+            print(f"📊 [DEBUG] Found {len(sender_stats)} unique senders with messages")
 
-            # Показываем первые несколько сообщений для отладки
-            for i, msg in enumerate(unread_messages[:3]):
-                print(
-                    f"📝 [DEBUG] Message {i + 1}: sender={msg.sender_id}, text='{msg.message[:50]}...', timestamp={msg.timestamp}")
+            messages_by_sender = []
 
-            # Группируем по отправителям (берем первое = самое новое сообщение от каждого)
-            sender_dict = {}
+            for stats in sender_stats:
+                sender_id = stats['sender_id']
+                message_count = stats['message_count']
 
-            for message in unread_messages:
-                sender_id = message.sender_id
+                print(f"📝 [DEBUG] Processing sender {sender_id} with {message_count} messages")
 
-                if sender_id not in sender_dict:
-                    # Первое сообщение от этого отправителя (самое новое)
-                    sender_dict[sender_id] = {
+                try:
+                    sender = CustomUser.objects.get(pk=sender_id)
+                    sender_name = f"{sender.first_name} {sender.last_name}".strip()
+                    if not sender_name:
+                        sender_name = sender.username or f"Пользователь {sender_id}"
+                except Exception as e:
+                    print(f"❌ [DEBUG] Error getting sender info: {e}")
+                    sender_name = f"Пользователь {sender_id}"
+
+                # Получаем последнее сообщение от этого отправителя
+                last_message = PrivateMessage.objects.filter(
+                    recipient=user,
+                    sender_id=sender_id,
+                    read=False
+                ).order_by('-timestamp').first()
+
+                if last_message:
+                    message_data = {
                         'sender_id': sender_id,
-                        'count': 1,
-                        'last_message': message.message,  # Текст сообщения
-                        'timestamp': message.timestamp.isoformat()
+                        'sender_name': sender_name,
+                        'count': message_count,  # Реальное количество сообщений от отправителя
+                        'last_message': last_message.message,
+                        'timestamp': last_message.timestamp.isoformat(),
+                        'message_id': last_message.id,
+                        'chat_id': last_message.room_id
                     }
-                    print(f"📤 [DEBUG] Added sender {sender_id} with message: '{message.message[:30]}...'")
-                else:
-                    # Увеличиваем счетчик для существующего отправителя
-                    sender_dict[sender_id]['count'] += 1
-                    print(f"🔢 [DEBUG] Incremented count for sender {sender_id} to {sender_dict[sender_id]['count']}")
 
-            messages_data = list(sender_dict.values())
-            print(f"✅ [DEBUG] Final messages_data: {messages_data}")
+                    messages_by_sender.append(message_data)
+                    print(f"📤 [DEBUG] Added sender {sender_id} with {message_count} messages: '{message_data['last_message'][:30]}...'")
 
-            return us_dict, messages_data
+            # Сортируем по времени последнего сообщения (новые первые)
+            messages_by_sender.sort(key=lambda x: x['timestamp'], reverse=True)
+
+            print(f"✅ [DEBUG] Final messages_by_sender: {len(messages_by_sender)} unique senders")
+            return us_dict, messages_by_sender
 
         except CustomUser.DoesNotExist:
             print(f"❌ [DEBUG] User {user_id} not found")
