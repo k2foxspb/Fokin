@@ -211,6 +211,17 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
                     message_data
                 )
                 await self.notify_chat_list_update(user1_id, user2_id)
+                recipient_id = str(recipient.id)
+                await self.channel_layer.group_send(
+                    f"notification_{recipient_id}",
+                    {
+                        "type": "notification",
+                        "user_id": recipient_id,
+                    }
+                )
+
+                # Отправляем push-уведомление (если это еще не делается)
+                await self.send_push_notification(message_instance)
 
 
             else:
@@ -629,8 +640,10 @@ class NotificationConsumer(AsyncWebsocketConsumer):
             print(f"🔔 [DEBUG] Notification event for user {user_id}")
             messages_by_sender = await self.get_messages_by_sender(user_id)
             print(f"📨 [DEBUG] Messages by sender result: {messages_by_sender}")
+            print(f"📨 [DEBUG] Unique senders count: {len(messages_by_sender)}")
 
             unread_sender_count = await self.get_unique_senders_count(self.user_id)
+            print(f"📨 [DEBUG] Unread sender count: {unread_sender_count}")
 
             response_data = {
                 'type': 'messages_by_sender_update',
