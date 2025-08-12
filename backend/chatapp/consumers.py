@@ -13,8 +13,8 @@ from django.db import transaction
 from django.db.models import Q, Count, Max
 
 from authapp.models import CustomUser
-from .push_notifications import PushNotificationService
 from .models import Room, PrivateChatRoom, PrivateMessage, Message
+from .push_notifications import PushNotificationService
 from .telegram import send_message
 
 logger = logging.getLogger(__name__)
