@@ -776,11 +776,11 @@ class ChatListConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         self.user = self.scope['user']
 
-        if not self.user.is_authenticated:
+        if self.user.is_anonymous:  # Изменено с if not self.user.is_authenticated
             await self.close()
             return
 
-        self.user_id = self.user.id
+        self.user_id = str(self.user.id)  # Преобразуем ID в строку для совместимости с JS
         await self.channel_layer.group_add(f"chat_list_{self.user_id}", self.channel_name)
         await self.accept()
 
