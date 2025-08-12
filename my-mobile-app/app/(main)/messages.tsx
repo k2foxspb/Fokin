@@ -10,6 +10,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { API_CONFIG } from '../../config';
 
 interface User {
+  gender: string;
   id: number;
   username: string;
   avatar: string | null;

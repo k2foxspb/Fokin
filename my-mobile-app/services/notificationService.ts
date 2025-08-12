@@ -7,13 +7,32 @@ import Constants from 'expo-constants';
 // Настройка поведения уведомлений для показа в активном приложении
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: true,
     shouldShowBanner: true,
     shouldShowList: true,
   }),
 });
+export const checkNotificationSettings = async () => {
+  try {
+    const settings = await Notifications.getPermissionsAsync();
+    if (Platform.OS === 'android') {
+      await Notifications.getNotificationChannelsAsync();
+    }
+    return settings;
+  } catch (error) {
+    console.error('Error checking notification settings:', error);
+    return null;
+  }
+};
+
+export const addNotificationListener = (handler: (notification: Notifications.Notification) => void): Notifications.Subscription => {
+  return Notifications.addNotificationReceivedListener(handler);
+};
+
+export const addNotificationResponseListener = (handler: (response: Notifications.NotificationResponse) => void): Notifications.Subscription => {
+  return Notifications.addNotificationResponseReceivedListener(handler);
+};
 
 export const requestNotificationPermissions = async (): Promise<boolean> => {
   try {
@@ -83,6 +102,8 @@ export const registerForPushNotifications = async (): Promise<string | null> => 
         enableVibrate: true,
         showBadge: true,
         lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+
+
       });
     }
 
@@ -130,47 +151,46 @@ export const sendHighPriorityNotification = async (notification: {
   data?: any;
 }) => {
   try {
+    // Создаем базовое содержимое уведомления
     const notificationContent: Notifications.NotificationContentInput = {
       title: notification.title,
       body: notification.body,
       data: notification.data,
       sound: 'default',
       priority: Notifications.AndroidNotificationPriority.MAX,
-      sticky: true,
     };
 
+    // Добавляем платформо-зависимые настройки
     if (Platform.OS === 'android') {
+      // Используем категорию как идентификатор канала
       notificationContent.categoryIdentifier = 'messages';
+
+      // Для Android добавляем цвет
+      if (notification.data?.sender_id) {
+        // Используем badge для группировки по отправителю
+        notificationContent.badge = notification.data.sender_id;
+      }
+    } else if (Platform.OS === 'ios') {
+      // Для iOS настраиваем категорию
+      notificationContent.categoryIdentifier = 'messages';
+
+      // Для iOS используем subtitle для дополнительной информации
+      if (notification.data?.message_count && notification.data.message_count > 1) {
+        notificationContent.subtitle = `+${notification.data.message_count - 1} сообщений`;
+      }
     }
 
-    await Notifications.scheduleNotificationAsync({
+    // Отправляем уведомление
+    const notificationId = await Notifications.scheduleNotificationAsync({
       content: notificationContent,
       trigger: null,
     });
+
+    console.log(`📱 Уведомление отправлено с ID: ${notificationId}`);
+
+    return notificationId;
   } catch (error) {
-    console.error('Error sending high priority notification:', error);
+    console.error('❌ Ошибка при отправке уведомления:', error);
     throw error;
   }
 };
-
-export const addNotificationListener = (handler: (notification: Notifications.Notification) => void) => {
-  return Notifications.addNotificationReceivedListener(handler);
-};
-
-export const addNotificationResponseListener = (handler: (response: Notifications.NotificationResponse) => void) => {
-  return Notifications.addNotificationResponseReceivedListener(handler);
-};
-
-export const checkNotificationSettings = async () => {
-  try {
-    const settings = await Notifications.getPermissionsAsync();
-    if (Platform.OS === 'android') {
-      await Notifications.getNotificationChannelsAsync();
-    }
-    return settings;
-  } catch (error) {
-    console.error('Error checking notification settings:', error);
-    return null;
-  }
-};
-

@@ -6,6 +6,7 @@ export type ThemeType = 'light' | 'dark';
 
 interface ThemeColors {
   // Основные цвета
+    surfacePressed: any;
   primary: string;
   background: string;
   surface: string;
@@ -46,7 +47,31 @@ interface ThemeContextType {
   setTheme: (theme: ThemeType) => void;
 }
 
-const lightTheme: ThemeColors = {
+const lightTheme: {
+    primary: string;
+    background: string;
+    surface: string;
+    text: string;
+    textSecondary: string;
+    border: string;
+    placeholder: string;
+    online: string;
+    offline: string;
+    success: string;
+    error: string;
+    warning: string;
+    card: string;
+    shadow: string;
+    overlay: string;
+    tabBarBackground: string;
+    tabBarBorder: string;
+    tabBarActive: string;
+    tabBarInactive: string;
+    tabBarBadge: string;
+    headerBackground: string;
+    headerText: string;
+    headerBorder: string
+} = {
   primary: '#007AFF',
   background: '#F2F2F7',
   surface: '#FFFFFF',
@@ -76,7 +101,31 @@ const lightTheme: ThemeColors = {
   headerBorder: '#E0E0E0',
 };
 
-const darkTheme: ThemeColors = {
+const darkTheme: {
+    primary: string;
+    background: string;
+    surface: string;
+    text: string;
+    textSecondary: string;
+    border: string;
+    placeholder: string;
+    online: string;
+    offline: string;
+    success: string;
+    error: string;
+    warning: string;
+    card: string;
+    shadow: string;
+    overlay: string;
+    tabBarBackground: string;
+    tabBarBorder: string;
+    tabBarActive: string;
+    tabBarInactive: string;
+    tabBarBadge: string;
+    headerBackground: string;
+    headerText: string;
+    headerBorder: string
+} = {
   primary: '#0A84FF',
   background: '#000000',
   surface: '#1C1C1E',
