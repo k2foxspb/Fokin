@@ -1,4 +1,24 @@
 from rest_framework import status
+from rest_framework.decorators import api_view, permission_classes
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def save_push_token(request):
+    """Сохраняет Expo Push Token пользователя"""
+    try:
+        push_token = request.data.get('pushToken')
+        if not push_token:
+            return Response({'error': 'Push token is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Сохраняем токен для текущего пользователя
+        request.user.expo_push_token = push_token
+        request.user.save()
+
+        return Response({'message': 'Push token saved successfully'}, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 from rest_framework.authtoken.models import Token
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response

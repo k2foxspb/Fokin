@@ -13,6 +13,7 @@ from django.db import transaction
 from django.db.models import Q, Count
 
 from authapp.models import CustomUser
+from .push_notifications import PushNotificationService
 from .models import Room, PrivateChatRoom, PrivateMessage, Message
 from .telegram import send_message
 
@@ -107,6 +108,9 @@ class ChatConsumer(WebsocketConsumer):
                 'timestamp': datetime.now().astimezone().strftime('%d.%m.%Y, %H:%M:%S'),
             }
         )
+
+        # Отправляем Push-уведомление с именем отправителя и текстом сообщения
+        await self.send_push_notification(other_user, self.user, message_text, room.id)
         Message.objects.create(user=self.user, room=self.room, content=message)
         # send_message(
         #     f'name: {self.user}\n'
@@ -293,6 +297,29 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
                 logger.info(f"Created new room: {room.id}")
 
             return room
+
+            @database_sync_to_async
+            def send_push_notification(self, recipient, sender, message_text, chat_id):
+                """Отправляет Push-уведомление о новом сообщении"""
+                try:
+                    # Получаем токен получателя
+                    if recipient.expo_push_token:
+                        sender_name = sender.get_full_name() or sender.username
+
+                        # Отправляем Push-уведомление
+                        PushNotificationService.send_message_notification(
+                            expo_tokens=[recipient.expo_push_token],
+                            sender_name=sender_name,
+                            message_text=message_text,
+                            chat_id=chat_id
+                        )
+
+                        logger.info(f"Push notification sent to {recipient.username} from {sender.username}")
+                    else:
+                        logger.info(f"No push token for user {recipient.username}")
+
+                except Exception as e:
+                    logger.error(f"Error sending push notification: {str(e)}")
         except Exception as e:
             logger.error(f"Error getting/creating room: {str(e)}")
             return None
