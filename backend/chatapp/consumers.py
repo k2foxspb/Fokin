@@ -184,16 +184,8 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
                     self.room_name,
                     message_data
                 )
-                # Уведомляем об обновлении списка чатов для обоих пользователей
-                channel_layer = get_channel_layer()
-                await channel_layer.group_send(
-                    f"chat_list_{user1_id}",
-                    {"type": "chat_list_update"}
-                )
-                await channel_layer.group_send(
-                    f"chat_list_{user2_id}",
-                    {"type": "chat_list_update"}
-                )
+                await self.notify_chat_list_update(user1_id, user2_id)
+
 
             else:
                 logger.error("Failed to save message.")
@@ -262,18 +254,15 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
                     print(f"Parsed room_id: {room_id}")
                 except ValueError:
                     logger.error(f"Invalid room_name format: {self.room_name}")
-                    # Если room_name не число, попробуем найти или создать комнату по пользователям
                     room = self.get_or_create_room_by_users(user1, user2)
                     if not room:
                         return None
                     room_id = room.id
 
                 try:
-                    # Пытаемся получить существующую комнату по ID
                     room = PrivateChatRoom.objects.get(id=room_id)
                     print(f"Found room: {room.id}, user1: {room.user1.id}, user2: {room.user2.id}")
 
-                    # Проверяем, что пользователи действительно принадлежат этой комнате
                     if not ((room.user1 == user1 and room.user2 == user2) or
                             (room.user1 == user2 and room.user2 == user1)):
                         logger.error(f"Users {user1_id} and {user2_id} don't belong to room {room_id}")
@@ -281,16 +270,13 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
 
                 except PrivateChatRoom.DoesNotExist:
                     logger.error(f"Chat room with id {room_id} not found")
-                    # Попробуем создать комнату, если её нет
                     room = self.get_or_create_room_by_users(user1, user2)
                     if not room:
                         return None
 
-                # Определяем получателя
                 recipient = user2 if user.id == user1_id else user1
                 print(f"Recipient determined: {recipient.id}")
 
-                # Создаем новое сообщение
                 new_message = PrivateMessage.objects.create(
                     room=room,
                     sender=user,
@@ -310,6 +296,26 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
         except Exception as e:
             logger.exception(f"Error saving message: {str(e)}")
             return None
+
+    # Добавьте этот метод после save_message:
+    async def notify_chat_list_update(self, user1_id, user2_id):
+        """Уведомляет об обновлении списков чатов"""
+        try:
+            channel_layer = get_channel_layer()
+
+            # Отправляем обновление списка чатов обоим пользователям
+            await channel_layer.group_send(
+                f"chat_list_{user1_id}",
+                {"type": "chat_list_update"}
+            )
+            await channel_layer.group_send(
+                f"chat_list_{user2_id}",
+                {"type": "chat_list_update"}
+            )
+
+            print(f"✅ [DEBUG] Chat list update sent to users {user1_id} and {user2_id}")
+        except Exception as e:
+            print(f"❌ [DEBUG] Error sending chat list update: {e}")
 
     def get_or_create_room_by_users(self, user1, user2):
         """Находит или создает комнату для двух пользователей"""
@@ -351,7 +357,6 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
 
         except Exception as e:
             logger.error(f"Error sending push notification: {str(e)}")
-
 
 
 class NotificationConsumer(AsyncWebsocketConsumer):
@@ -644,8 +649,8 @@ class NotificationConsumer(AsyncWebsocketConsumer):
         try:
             user = CustomUser.objects.get(pk=user_id)
             count = PrivateMessage.objects.filter(
-                recipient=user, 
-                sender_id=sender_id, 
+                recipient=user,
+                sender_id=sender_id,
                 read=False
             ).count()
             print(f"📊 [DEBUG] User {user_id} has {count} unread messages from sender {sender_id}")
@@ -711,7 +716,8 @@ class NotificationConsumer(AsyncWebsocketConsumer):
                     }
 
                     messages_by_sender.append(message_data)
-                    print(f"📤 [DEBUG] Added sender {sender_id} with {message_count} messages: '{message_data['last_message'][:30]}...'")
+                    print(
+                        f"📤 [DEBUG] Added sender {sender_id} with {message_count} messages: '{message_data['last_message'][:30]}...'")
 
             # Сортируем по времени последнего сообщения (новые первые)
             messages_by_sender.sort(key=lambda x: x['timestamp'], reverse=True)
