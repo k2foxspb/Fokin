@@ -150,9 +150,33 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
 
     @sync_to_async
     def mark_messages_as_read(self, user, room_name):
-        room = PrivateChatRoom.objects.get(id=int(room_name))
-        if room:
-            PrivateMessage.objects.filter(room_id=room.id, read=False).exclude(sender=user).update(read=True)
+        try:
+            room = PrivateChatRoom.objects.get(id=int(room_name))
+            if room:
+                # Получаем количество сообщений до обновления
+                unread_count_before = PrivateMessage.objects.filter(
+                    room_id=room.id,
+                    recipient=user,
+                    read=False
+                ).exclude(sender=user).count()
+
+                # Помечаем как прочитанные
+                updated_count = PrivateMessage.objects.filter(
+                    room_id=room.id,
+                    recipient=user,
+                    read=False
+                ).exclude(sender=user).update(read=True)
+
+                print(f"📖 [DEBUG] Marked {updated_count} messages as read in room {room_name} for user {user.id}")
+                print(f"📖 [DEBUG] Before: {unread_count_before}, After update: {updated_count}")
+
+                return updated_count
+        except PrivateChatRoom.DoesNotExist:
+            print(f"❌ [DEBUG] Room {room_name} not found")
+            return 0
+        except Exception as e:
+            print(f"❌ [DEBUG] Error in mark_messages_as_read: {e}")
+            return 0
 
     async def disconnect(self, close_code):
         await self.channel_layer.group_discard(self.room_name, self.channel_name)
