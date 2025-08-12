@@ -802,13 +802,17 @@ class ChatListConsumer(AsyncWebsocketConsumer):
     async def send_chat_list(self):
         """Отправляет список чатов пользователя"""
         try:
+            print(f"Getting chats for user_id: {self.user_id}, type: {type(self.user_id)}")
             chats = await self.get_user_chats(self.user_id)
+            print(f"Successfully retrieved {len(chats)} chats")
             await self.send(text_data=json.dumps({
                 'type': 'chat_list',
                 'chats': chats
             }))
         except Exception as e:
             print(f"Error sending chat list: {e}")
+            import traceback
+            traceback.print_exc()
 
     async def chat_list_update(self, event):
         """Обработчик для обновления списка чатов"""
@@ -818,6 +822,10 @@ class ChatListConsumer(AsyncWebsocketConsumer):
     def get_user_chats(self, user_id):
         """Получает все чаты пользователя с полной информацией"""
         try:
+            # Преобразуем ID обратно в число, если он строка
+            if isinstance(user_id, str):
+                user_id = int(user_id)
+
             user = CustomUser.objects.get(pk=user_id)
 
             # Получаем все комнаты, где участвует пользователь
