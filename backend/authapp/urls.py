@@ -5,7 +5,7 @@ from django.urls import path
 from authapp.apps import AuthappConfig
 from authapp.view_api import (
     LoginAPIView, RegisterAPIView, PasswordResetAPIView, LogoutAPIView,
-    VerifyEmailAPIView, ResendVerificationAPIView
+    VerifyEmailAPIView, ResendVerificationAPIView, update_push_token
 )
 from authapp.views import CustomLoginView, RegisterView, ProfileEditView, \
     EmailConfirmationSendView,ConfirmEmailView, EmailConfirmationFailedView,PrivacyPolicyView, \
@@ -46,5 +46,6 @@ urlpatterns = [
     path('privacy-policy', PrivacyPolicyView.as_view(), name="privacy_policy"),
     path('email-confirmed', EmailConfirmedView.as_view(), name="email_confirmed"),
     path('privacy-policy', PrivacyPolicyView.as_view(), name="privacy_policy"),
+    path('api/update-push-token/', update_push_token, name='update-push-token'),
 
 ]       

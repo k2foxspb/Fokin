@@ -44,6 +44,16 @@ User = get_user_model()
 def generate_verification_code(length=6):
     return ''.join(random.choices(string.digits, k=length))
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def update_push_token(request):
+    push_token = request.data.get('push_token')
+    if push_token:
+
+        request.user.expo_push_token = push_token
+        request.user.save()
+        return Response({'status': 'success'})
+    return Response({'error': 'No token provided'}, status=400)
 
 class LoginAPIView(APIView):
     permission_classes = (AllowAny,)

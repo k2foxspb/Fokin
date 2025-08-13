@@ -86,6 +86,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     )
     date_joined = models.DateTimeField("Дата регистрации", auto_now_add=True)
     last_joined = models.DateTimeField("<UNK> <UNK>", auto_now=True)
+    expo_push_token = models.CharField(max_length=255, blank=True, null=True)
     objects = UserManager()
     USERNAME_FIELD = "email"
     EMAIL_FIELD = "email"
