@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
+import React, { useEffect } from 'react';
+import { View, TouchableOpacity, Text, StyleSheet, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router, usePathname } from 'expo-router';
 import { useNotifications } from '../contexts/NotificationContext';
@@ -7,8 +7,36 @@ import { useTheme } from '../contexts/ThemeContext';
 
 export default function TabBar() {
   const pathname = usePathname();
-  const { unreadCount } = useNotifications();
+  const { unreadCount, requestPermissions, debugInfo } = useNotifications();
   const { theme } = useTheme();
+
+  // Запрашиваем разрешения при первом рендере TabBar
+  useEffect(() => {
+    const checkAndRequestPermissions = async () => {
+      if (!debugInfo.hasPermission) {
+        console.log('🔔 [TabBar] No notification permissions detected, requesting...');
+        try {
+          const granted = await requestPermissions();
+          if (!granted) {
+            // Показываем пользователю информацию о необходимости разрешений
+            setTimeout(() => {
+              Alert.alert(
+                'Уведомления отключены',
+                'Для получения уведомлений о новых сообщениях разрешите приложению отправлять уведомления в настройках устройства.',
+                [
+                  { text: 'Понятно', style: 'default' }
+                ]
+              );
+            }, 2000);
+          }
+        } catch (error) {
+          console.error('❌ [TabBar] Error requesting permissions:', error);
+        }
+      }
+    };
+
+    checkAndRequestPermissions();
+  }, [debugInfo.hasPermission, requestPermissions]);
 
   const tabs = [
     {
@@ -62,7 +90,11 @@ export default function TabBar() {
                 color={isActive ? theme.tabBarActive : theme.tabBarInactive}
               />
               {tab.name === 'messages' && unreadCount > 0 && (
-                <View style={styles.badge}>
+                <View style={[styles.badge, {
+                  // Делаем значок менее ярким если нет разрешений на уведомления
+                  backgroundColor: debugInfo.hasPermission ? theme.tabBarBadge : theme.tabBarInactive,
+                  opacity: debugInfo.hasPermission ? 1 : 0.7
+                }]}>
                   <Text style={styles.badgeText}>
                     {unreadCount > 99 ? '99+' : unreadCount}
                   </Text>

@@ -42,6 +42,17 @@ export const requestNotificationPermissions = async (): Promise<boolean> => {
 
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
+    if (Platform.OS === 'android') {
+        await Notifications.setNotificationChannelAsync('messages', {
+          name: 'Messages',
+          importance: Notifications.AndroidImportance.HIGH,
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: '#FF231F7C',
+          sound: 'default',
+          enableVibrate: true,
+          showBadge: true,
+        });
+      }
 
     if (existingStatus !== 'granted') {
       const { status } = await Notifications.requestPermissionsAsync({
@@ -166,10 +177,15 @@ export const sendHighPriorityNotification = async (notification: {
       notificationContent.categoryIdentifier = 'messages';
 
       // Для Android добавляем цвет
-      if (notification.data?.sender_id) {
+      if (notification.data?.senderId) {
         // Используем badge для группировки по отправителю
-        notificationContent.badge = notification.data.sender_id;
+        notificationContent.badge = notification.data.senderId
+;
       }
+      if (notification.data?.message_count > 1) {
+        notificationContent.title = `${notification.title} (${notification.data.message_count})`;
+      }
+
     } else if (Platform.OS === 'ios') {
       // Для iOS настраиваем категорию
       notificationContent.categoryIdentifier = 'messages';

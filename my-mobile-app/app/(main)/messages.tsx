@@ -1,5 +1,4 @@
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, FlatList, StyleSheet, Pressable, Text, Image, ActivityIndicator, RefreshControl } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import axios from 'axios';
@@ -7,6 +6,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNotifications } from '../../contexts/NotificationContext';
 import { useTheme } from '../../contexts/ThemeContext';
+import { NotificationPermissionManager } from '../../components/NotificationPermissionManager';
 import { API_CONFIG } from '../../config';
 
 interface User {
@@ -27,15 +27,17 @@ interface ChatPreview {
 
 export default function MessagesScreen() {
   const router = useRouter();
-  const { senderCounts, userStatuses } = useNotifications();
+  const { senderCounts, userStatuses, messages, debugInfo } = useNotifications();
   const { theme } = useTheme();
   const [chats, setChats] = useState<ChatPreview[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchChats = async (showLoader = true) => {
+  // Ref для отслеживания предыдущих сообщений из WebSocket
+  const previousMessagesRef = useRef<typeof messages>([]);
 
+  const fetchChats = async (showLoader = true) => {
     if (showLoader) setIsLoading(true);
     setError(null);
 
@@ -48,7 +50,6 @@ export default function MessagesScreen() {
         return;
       }
 
-
       const response = await axios.get<ChatPreview[]>(
         `${API_CONFIG.BASE_URL}/chat/api/chats/list_preview/`,
         {
@@ -59,11 +60,9 @@ export default function MessagesScreen() {
         }
       );
 
-
       setChats(response.data);
 
     } catch (error) {
-
       if (axios.isAxiosError(error)) {
         if (error.response?.status === 401) {
           // Удаляем тот же ключ
@@ -87,13 +86,107 @@ export default function MessagesScreen() {
   };
 
   useEffect(() => {
-    console.log('useEffect triggered');
+
     fetchChats();
   }, []);
+
+  // НОВОЕ: Обновляем список чатов при получении новых сообщений через WebSocket
+  useEffect(() => {
+    if (messages.length > 0) {
+
+
+      // Проверяем, изменились ли сообщения
+      const hasChanges = messages.some((newMsg, index) => {
+        const prevMsg = previousMessagesRef.current[index];
+        return !prevMsg ||
+               newMsg.sender_id !== prevMsg.sender_id ||
+               newMsg.count !== prevMsg.count ||
+               newMsg.last_message !== prevMsg.last_message ||
+               newMsg.timestamp !== prevMsg.timestamp;
+      }) || messages.length !== previousMessagesRef.current.length;
+
+      if (hasChanges) {
+        console.log('🔄 [Messages] Messages changed, updating chat list');
+
+        // Обновляем чаты с учетом данных из WebSocket
+        setChats(prevChats => {
+          return prevChats.map(chat => {
+            const wsMessage = messages.find(msg => msg.sender_id === chat.other_user.id);
+            if (wsMessage) {
+              // Создаем обновленный объект чата с данными из WebSocket
+              const updatedChat = {
+                ...chat,
+                unread_count: wsMessage.count || chat.unread_count
+              };
+
+              // Обновляем последнее сообщение если оно новее
+              if (wsMessage.last_message && wsMessage.last_message.trim() !== '') {
+                updatedChat.last_message = wsMessage.last_message;
+              }
+
+              // Обновляем время последнего сообщения
+              if (wsMessage.timestamp) {
+                // Конвертируем Unix timestamp в строку даты
+                let newTimestamp: string | number = wsMessage.timestamp;
+
+                // Если timestamp - это число (Unix время), конвертируем его
+                if (typeof wsMessage.timestamp === 'number' ||
+                   (typeof wsMessage.timestamp === 'string' && !isNaN(Number(wsMessage.timestamp)))) {
+                  const unixTime = Number(wsMessage.timestamp);
+                  // Если timestamp в секундах (меньше чем 10^10), конвертируем в миллисекунды
+                  const timestampMs = unixTime < 1e10 ? unixTime * 1000 : unixTime;
+                  newTimestamp = new Date(timestampMs).toISOString();
+                }
+
+                updatedChat.last_message_time = newTimestamp;
+              }
+
+              console.log(`📝 [Messages] Updated chat for user ${chat.other_user.id}:`, {
+                oldUnreadCount: chat.unread_count,
+                newUnreadCount: updatedChat.unread_count,
+                oldMessage: chat.last_message.substring(0, 20),
+                newMessage: updatedChat.last_message.substring(0, 20),
+                wsMessage: wsMessage
+              });
+
+              return updatedChat;
+            }
+            return chat;
+          }).sort((a, b) => {
+            // Сортируем по времени последнего сообщения (новые сверху)
+            const timeA = new Date(a.last_message_time).getTime();
+            const timeB = new Date(b.last_message_time).getTime();
+            return timeB - timeA;
+          });
+        });
+
+        // Сохраняем текущие сообщения для следующего сравнения
+        previousMessagesRef.current = [...messages];
+      }
+    }
+  }, [messages]);
 
   // Получаем количество непрочитанных сообщений из WebSocket данных
   const getUnreadCount = (userId: number) => {
     return senderCounts.get(userId) || 0;
+  };
+
+  // Функция для получения актуального последнего сообщения
+  const getLastMessage = (chat: ChatPreview) => {
+    const wsMessage = messages.find(msg => msg.sender_id === chat.other_user.id);
+    if (wsMessage && wsMessage.last_message && wsMessage.last_message.trim() !== '') {
+      return wsMessage.last_message;
+    }
+    return chat.last_message;
+  };
+
+  // Функция для получения актуального времени последнего сообщения
+  const getLastMessageTime = (chat: ChatPreview) => {
+    const wsMessage = messages.find(msg => msg.sender_id === chat.other_user.id);
+    if (wsMessage && wsMessage.timestamp) {
+      return wsMessage.timestamp;
+    }
+    return chat.last_message_time;
   };
 
   const formatDate = (timestamp: string | number) => {
@@ -178,7 +271,6 @@ export default function MessagesScreen() {
     }
   };
 
-
   if (isLoading && !isRefreshing) {
     return (
       <View style={[styles.centerContainer, { backgroundColor: theme.background }]}>
@@ -212,93 +304,101 @@ export default function MessagesScreen() {
           </Pressable>
         </View>
       ) : (
-        <FlatList
-          data={chats}
-          renderItem={({ item }) => {
-            // Используем данные из WebSocket для отображения актуального количества непрочитанных сообщений
-            const wsUnreadCount = getUnreadCount(item.other_user.id);
-            const displayUnreadCount = wsUnreadCount > 0 ? wsUnreadCount : item.unread_count;
+        <View style={{ flex: 1 }}>
+          {/* НОВОЕ: Добавляем менеджер разрешений уведомлений */}
+          <NotificationPermissionManager />
 
-            return (
-              <Pressable
-                style={({ pressed }) => [
-                  styles.chatItem,
-                  { borderBottomColor: theme.border },
-                  pressed && [styles.chatItemPressed, { backgroundColor: theme.surfacePressed }]
-                ]}
-                onPress={() => {
+          <FlatList
+            data={chats}
+            renderItem={({ item }) => {
+              // ОБНОВЛЕНО: Используем данные из WebSocket для отображения актуального количества непрочитанных сообщений
+              const wsUnreadCount = getUnreadCount(item.other_user.id);
+              const displayUnreadCount = wsUnreadCount > 0 ? wsUnreadCount : item.unread_count;
 
-                  router.push({
-                    pathname: '/chat/[id]',
-                    params: { id: item.id, userId: item.other_user.id }
-                  });
-                }}
-              >
-                <View style={styles.avatarContainer}>
-                  {item.other_user.avatar ? (
-                    <Image
-                      source={{ uri: `${API_CONFIG.BASE_URL}${item.other_user.avatar}` }}
-                      style={styles.avatar}
-                    />
-                  ) : (
-                    <Image
-                      source={
-                        item.other_user.gender === 'male'
-                          ? require('../../assets/avatar/male.png')
-                          : require('../../assets/avatar/female.png')
+              // НОВОЕ: Получаем актуальные данные сообщения
+              const currentLastMessage = getLastMessage(item);
+              const currentLastMessageTime = getLastMessageTime(item);
+
+              return (
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.chatItem,
+                    { borderBottomColor: theme.border },
+                    pressed && [styles.chatItemPressed, { backgroundColor: theme.surfacePressed }]
+                  ]}
+                  onPress={() => {
+                    router.push({
+                      pathname: '/chat/[id]',
+                      params: { id: item.id, userId: item.other_user.id }
+                    });
+                  }}
+                >
+                  <View style={styles.avatarContainer}>
+                    {item.other_user.avatar ? (
+                      <Image
+                        source={{ uri: `${API_CONFIG.BASE_URL}${item.other_user.avatar}` }}
+                        style={styles.avatar}
+                      />
+                    ) : (
+                      <Image
+                        source={
+                          item.other_user.gender === 'male'
+                            ? require('../../assets/avatar/male.png')
+                            : require('../../assets/avatar/female.png')
+                        }
+                        style={styles.avatar}
+                      />
+                    )}
+                    <View style={[
+                      styles.onlineIndicator,
+                      {
+                        backgroundColor: userStatuses.has(item.other_user.id)
+                          ? userStatuses.get(item.other_user.id) === 'online' ? theme.online : theme.offline
+                          : item.other_user.is_online === 'online' ? theme.online : theme.offline,
+                        borderColor: theme.background
                       }
-                      style={styles.avatar}
-                    />
+                    ]} />
+                  </View>
+                  <View style={styles.chatInfo}>
+                    <View style={styles.chatHeader}>
+                      <Text style={[styles.username, { color: theme.text }]} numberOfLines={1}>
+                        {item.other_user.username}
+                      </Text>
+                      <Text style={[styles.timestamp, { color: theme.textSecondary }]}>
+                        {formatDate(currentLastMessageTime)}
+                      </Text>
+                    </View>
+                    <Text style={[styles.lastMessage, { color: theme.textSecondary }]} numberOfLines={1}>
+                      {currentLastMessage}
+                    </Text>
+                  </View>
+                  {displayUnreadCount > 0 && (
+                    <View style={[styles.badge, { backgroundColor: theme.primary }]}>
+                      <Text style={[styles.badgeText, { color: theme.background }]}>
+                        {displayUnreadCount > 99 ? '99+' : displayUnreadCount}
+                      </Text>
+                    </View>
                   )}
-               <View style={[
-                    styles.onlineIndicator,
-                    { 
-                      backgroundColor: userStatuses.has(item.other_user.id) 
-                        ? userStatuses.get(item.other_user.id) === 'online' ? theme.online : theme.offline
-                        : item.other_user.is_online === 'online' ? theme.online : theme.offline,
-                      borderColor: theme.background
-                    }
-                  ]} />
-                </View>
-                <View style={styles.chatInfo}>
-                  <View style={styles.chatHeader}>
-                    <Text style={[styles.username, { color: theme.text }]} numberOfLines={1}>
-                      {item.other_user.username}
-                    </Text>
-                    <Text style={[styles.timestamp, { color: theme.textSecondary }]}>
-                      {formatDate(item.last_message_time)}
-                    </Text>
-                  </View>
-                  <Text style={[styles.lastMessage, { color: theme.textSecondary }]} numberOfLines={1}>
-                    {item.last_message}
-                  </Text>
-                </View>
-                {displayUnreadCount > 0 && (
-                  <View style={[styles.badge, { backgroundColor: theme.primary }]}>
-                    <Text style={[styles.badgeText, { color: theme.background }]}>
-                      {displayUnreadCount > 99 ? '99+' : displayUnreadCount}
-                    </Text>
-                  </View>
-                )}
-              </Pressable>
-            );
-          }}
-          keyExtractor={item => item.id.toString()}
-          refreshControl={
-            <RefreshControl
-              refreshing={isRefreshing}
-              onRefresh={onRefresh}
-              colors={[theme.primary]}
-              tintColor={theme.primary}
-            />
-          }
-          ListEmptyComponent={() => (
-            <View style={styles.emptyContainer}>
-              <MaterialCommunityIcons name="chat-outline" size={50} color={theme.textSecondary} />
-              <Text style={[styles.emptyText, { color: theme.textSecondary }]}>У вас пока нет чатов</Text>
-            </View>
-          )}
-        />
+                </Pressable>
+              );
+            }}
+            keyExtractor={item => item.id.toString()}
+            refreshControl={
+              <RefreshControl
+                refreshing={isRefreshing}
+                onRefresh={onRefresh}
+                colors={[theme.primary]}
+                tintColor={theme.primary}
+              />
+            }
+            ListEmptyComponent={() => (
+              <View style={styles.emptyContainer}>
+                <MaterialCommunityIcons name="chat-outline" size={50} color={theme.textSecondary} />
+                <Text style={[styles.emptyText, { color: theme.textSecondary }]}>У вас пока нет чатов</Text>
+              </View>
+            )}
+          />
+        </View>
       )}
     </View>
   );
