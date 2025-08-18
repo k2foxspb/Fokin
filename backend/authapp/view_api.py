@@ -23,6 +23,7 @@ from rest_framework.authtoken.models import Token
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.authtoken.models import Token
 from django.contrib.auth import authenticate, get_user_model
 from django.core.mail import send_mail
 from django.contrib.auth.tokens import default_token_generator

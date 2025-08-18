@@ -5,8 +5,8 @@ from django.urls import path
 from authapp.apps import AuthappConfig
 from authapp.view_api import (
     LoginAPIView, RegisterAPIView, PasswordResetAPIView, LogoutAPIView,
-    VerifyEmailAPIView, ResendVerificationAPIView, update_push_token, ActivateUserAPIView, 
-    UpdateUserStatusAPIView, ResetPasswordConfirmAPIView
+    VerifyEmailAPIView, ResendVerificationAPIView, update_push_token, save_push_token,
+    ActivateUserAPIView, UpdateUserStatusAPIView, ResetPasswordConfirmAPIView
 )
 from authapp.views import CustomLoginView, RegisterView, ProfileEditView, \
     EmailConfirmationSendView,ConfirmEmailView, EmailConfirmationFailedView,PrivacyPolicyView, \
@@ -26,6 +26,8 @@ urlpatterns = [
     path('api/resend-verification/', ResendVerificationAPIView.as_view(), name='api_resend_verification'),
     path('api/activate-user/', ActivateUserAPIView.as_view(), name='api_activate_user'),
     path('api/update-user-status/', UpdateUserStatusAPIView.as_view(), name='api_update_user_status'),
+    path('api/update-push-token/', update_push_token, name='api_update_push_token'),
+    path('api/save-push-token/', save_push_token, name='api_save_push_token'),
     
     # Web views
     path("login/", CustomLoginView.as_view(), name="login"),
