@@ -523,6 +523,74 @@ class UpdateUserStatusAPIView(APIView):
             )
 
 
+class ResetPasswordConfirmAPIView(APIView):
+    permission_classes = (AllowAny,)
+
+    def post(self, request):
+        print("RESET PASSWORD CONFIRM API - Received data:", request.data)
+
+        uid = request.data.get('uid')
+        token = request.data.get('token')
+        new_password = request.data.get('new_password')
+        confirm_password = request.data.get('confirm_password')
+
+        if not all([uid, token, new_password, confirm_password]):
+            return Response(
+                {'error': 'Все поля обязательны для заполнения'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if new_password != confirm_password:
+            return Response(
+                {'error': 'Пароли не совпадают'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if len(new_password) < 6:
+            return Response(
+                {'error': 'Пароль должен содержать минимум 6 символов'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            # Декодируем uid
+            user_id = force_str(urlsafe_base64_decode(uid))
+            user = User.objects.get(pk=user_id)
+            print(f"RESET PASSWORD CONFIRM API - Found user: {user.username}")
+
+        except (ValueError, User.DoesNotExist, TypeError, OverflowError):
+            print("RESET PASSWORD CONFIRM API - Invalid uid or user not found")
+            return Response(
+                {'error': 'Неверная ссылка для сброса пароля'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Проверяем токен
+        if not default_token_generator.check_token(user, token):
+            print("RESET PASSWORD CONFIRM API - Invalid token")
+            return Response(
+                {'error': 'Неверный или истекший токен для сброса пароля'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Устанавливаем новый пароль
+        try:
+            user.set_password(new_password)
+            user.save()
+            print(f"RESET PASSWORD CONFIRM API - Password reset successful for user: {user.username}")
+
+            return Response({
+                'message': 'Пароль успешно изменен'
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            print(f"RESET PASSWORD CONFIRM API - Error setting password: {str(e)}")
+            return Response(
+                {'error': f'Ошибка при изменении пароля: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
 class LogoutAPIView(APIView):
     permission_classes = (IsAuthenticated,)
 
