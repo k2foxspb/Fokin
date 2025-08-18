@@ -11,12 +11,29 @@ import {
 } from 'react-native';
 import axios, { AxiosError } from 'axios';
 import { Link } from "expo-router";
+import { router } from 'expo-router';
 import { API_CONFIG } from '../../config';
+import { useTheme } from '../../contexts/ThemeContext';
+
+interface Theme {
+  background: string;
+  surface: string;
+  primary: string;
+  text: string;
+  textSecondary: string;
+  border: string;
+  placeholder: string;
+  success: string;
+  error: string;
+}
 
 export default function ForgotPassword() {
+  const { theme } = useTheme();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
+
+  const styles = createStyles(theme);
 
   const validateEmail = (email: string) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -43,8 +60,18 @@ export default function ForgotPassword() {
       setEmailSent(true);
       Alert.alert(
         'Успех', 
-        'Инструкции по восстановлению пароля отправлены на ваш email',
-        [{ text: 'OK' }]
+        'Код восстановления пароля отправлен на ваш email',
+        [
+          { 
+            text: 'OK',
+            onPress: () => {
+              router.push({
+                pathname: '/(auth)/reset-password-with-code',
+                params: { email: email.trim() }
+              });
+            }
+          }
+        ]
       );
     } catch (error) {
       const axiosError = error as AxiosError<{ error?: string; email?: string[] }>;
@@ -71,24 +98,36 @@ export default function ForgotPassword() {
         <View style={styles.successContainer}>
           <Text style={styles.successTitle}>Письмо отправлено!</Text>
           <Text style={styles.successText}>
-            Мы отправили инструкции по восстановлению пароля на адрес:
+            Мы отправили код восстановления пароля на адрес:
           </Text>
           <Text style={styles.emailText}>{email}</Text>
           <Text style={styles.instructionText}>
-            Проверьте свою почту и следуйте инструкциям в письме для восстановления пароля.
+            Проверьте свою почту и введите полученный код в приложении для восстановления пароля.
           </Text>
           <Text style={styles.noteText}>
             Не получили письмо? Проверьте папку "Спам" или попробуйте еще раз.
           </Text>
-          
+
           <TouchableOpacity 
             style={styles.button} 
+            onPress={() => {
+              router.push({
+                pathname: '/(auth)/reset-password-with-code',
+                params: { email: email }
+              });
+            }}
+          >
+            <Text style={styles.buttonText}>Ввести код</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.button, { backgroundColor: 'transparent', borderWidth: 1, borderColor: theme.primary }]} 
             onPress={() => {
               setEmailSent(false);
               setEmail('');
             }}
           >
-            <Text style={styles.buttonText}>Отправить еще раз</Text>
+            <Text style={[styles.buttonText, { color: theme.primary }]}>Отправить еще раз</Text>
           </TouchableOpacity>
           
           <View style={styles.linkContainer}>
@@ -109,8 +148,9 @@ export default function ForgotPassword() {
       </Text>
       
       <TextInput
-        style={styles.input}
+        style={[styles.input, { color: theme.text }]}
         placeholder="Email адрес"
+        placeholderTextColor={theme.placeholder}
         value={email}
         onChangeText={setEmail}
         autoCapitalize="none"
@@ -139,6 +179,13 @@ export default function ForgotPassword() {
       </View>
       
       <View style={styles.linkContainer}>
+        <Text style={styles.linkText}>Уже есть код? </Text>
+        <Link href="/(auth)/reset-password-with-code" style={styles.link}>
+          Ввести код
+        </Link>
+      </View>
+
+      <View style={styles.linkContainer}>
         <Text style={styles.linkText}>Нет аккаунта? </Text>
         <Link href="/(auth)/register" style={styles.link}>
           Зарегистрироваться
@@ -148,45 +195,45 @@ export default function ForgotPassword() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: Theme) => StyleSheet.create({
   container: {
     flexGrow: 1,
     justifyContent: 'center',
     padding: 20,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: theme.background,
   },
   title: {
     fontSize: 28,
     fontWeight: 'bold',
     textAlign: 'center',
     marginBottom: 15,
-    color: '#333',
+    color: theme.text,
   },
   subtitle: {
     fontSize: 16,
     textAlign: 'center',
     marginBottom: 30,
-    color: '#666',
+    color: theme.textSecondary,
     lineHeight: 22,
   },
   input: {
-    backgroundColor: 'white',
+    backgroundColor: theme.surface,
     padding: 15,
     borderRadius: 8,
     marginBottom: 20,
     fontSize: 16,
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: theme.border,
   },
   button: {
-    backgroundColor: '#007AFF',
+    backgroundColor: theme.primary,
     padding: 15,
     borderRadius: 8,
     alignItems: 'center',
     marginBottom: 20,
   },
   disabledButton: {
-    backgroundColor: '#ccc',
+    backgroundColor: theme.textSecondary,
   },
   buttonText: {
     color: 'white',
@@ -200,11 +247,11 @@ const styles = StyleSheet.create({
   },
   linkText: {
     fontSize: 16,
-    color: '#666',
+    color: theme.textSecondary,
   },
   link: {
     fontSize: 16,
-    color: '#007AFF',
+    color: theme.primary,
     fontWeight: '500',
   },
   successContainer: {
@@ -213,33 +260,33 @@ const styles = StyleSheet.create({
   successTitle: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#4CAF50',
+    color: theme.success || theme.primary,
     marginBottom: 20,
     textAlign: 'center',
   },
   successText: {
     fontSize: 16,
-    color: '#333',
+    color: theme.text,
     textAlign: 'center',
     marginBottom: 10,
   },
   emailText: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#007AFF',
+    color: theme.primary,
     textAlign: 'center',
     marginBottom: 20,
   },
   instructionText: {
     fontSize: 16,
-    color: '#666',
+    color: theme.textSecondary,
     textAlign: 'center',
     lineHeight: 22,
     marginBottom: 15,
   },
   noteText: {
     fontSize: 14,
-    color: '#999',
+    color: theme.textSecondary,
     textAlign: 'center',
     fontStyle: 'italic',
     marginBottom: 30,

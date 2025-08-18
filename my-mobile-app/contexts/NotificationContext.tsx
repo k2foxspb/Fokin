@@ -4,6 +4,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import {router} from 'expo-router';
 import {AppState, Platform} from 'react-native';
+import axios from 'axios';
+import {API_CONFIG} from '../config';
 
 import {
     requestNotificationPermissions,
@@ -23,6 +25,7 @@ interface NotificationContextType {
     disconnect: () => void;
     refreshNotifications: () => void;
     requestPermissions: () => Promise<boolean>;
+    testNotification: () => Promise<void>;
     debugInfo: {
         isWebSocketConnected: boolean;
         hasPermission: boolean;
@@ -37,6 +40,8 @@ interface MessageType {
     last_message?: string;
     timestamp?: string;
     chat_id?: number;
+    message_id?: number;
+
 }
 
 interface NotificationData {
@@ -51,25 +56,42 @@ interface UserStatusUpdate {
     status: string;
 }
 
+const savePushTokenToServer = async (token: string) => {
+    try {
+        const userToken = await AsyncStorage.getItem('userToken');
+        if (!userToken) return;
+
+        const response = await axios.post(
+            `${API_CONFIG.BASE_URL}/chat/api/save-push-token/`,
+            {expo_push_token: token},
+            {headers: {'Authorization': `Token ${userToken}`}}
+        );
+
+        console.log('✅ [Notification] Push token saved to server');
+    } catch (error) {
+        console.error('❌ [Notification] Failed to save push token:', error);
+    }
+};
+
 const NotificationContext = createContext<NotificationContextType>({
     unreadCount: 0,
     messages: [],
     senderCounts: new Map(),
     userStatuses: new Map(),
-    connect: () => {
-    },
+    connect: async () => Promise.resolve(),
     disconnect: () => {
     },
     refreshNotifications: () => {
     },
-    requestPermissions: async () => {
-    },
+    requestPermissions: async () => false,
+    testNotification: async () => Promise.resolve(),
     debugInfo: {
         isWebSocketConnected: false,
         hasPermission: false,
         pushToken: null,
     },
 });
+
 
 export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({children}) => {
     const [unreadCount, setUnreadCount] = useState<number>(0);
@@ -90,6 +112,37 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
     const previousMessagesRef = useRef<MessageType[]>([]);
     const checkConnectionIntervalRef = useRef<NodeJS.Timeout | null>(null);
     const lastPingTimeRef = useRef<number>(Date.now());
+    const sentNotificationsCache = useRef<Set<string>>(new Set()); // Кеш отправленных уведомлений
+    useEffect(() => {
+        const checkNotificationChannels = async () => {
+            try {
+                if (Platform.OS === 'android') {
+                    const channels = await Notifications.getNotificationChannelsAsync();
+                    console.log('🔔 [Notification] Available channels:', channels);
+
+                    const messagesChannel = channels.find(ch => ch.id === 'messages');
+                    console.log('🔔 [Notification] Messages channel:', messagesChannel);
+
+                    if (!messagesChannel) {
+                        console.log('⚠️ [Notification] Messages channel not found, creating...');
+                        await Notifications.setNotificationChannelAsync('messages', {
+                            name: 'Сообщения',
+                            importance: Notifications.AndroidImportance.HIGH,
+                            sound: 'default',
+                            enableVibrate: true,
+                            showBadge: true,
+                        });
+                    }
+                }
+            } catch (error) {
+                console.error('❌ [Notification] Error checking channels:', error);
+            }
+        };
+
+        if (isAuthenticated && hasNotificationPermission) {
+            checkNotificationChannels();
+        }
+    }, [isAuthenticated, hasNotificationPermission]);
 
     // Проверяем аутентификацию при инициализации
     useEffect(() => {
@@ -101,7 +154,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
                 if (token) {
                     console.log('🔑 [Notification] User is authenticated');
                 } else {
-                    console.log('🔒 [Notification] User is not authenticated');
+                    // Убираем лог для неаутентифицированных пользователей
                 }
             } catch (error) {
                 console.error('❌ [Notification] Error checking auth:', error);
@@ -113,55 +166,42 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
     }, []);
 
     // ИСПРАВЛЕНО: Улучшенная функция для запроса разрешений
-    const requestPermissions = async () => {
+    const requestPermissions = async (): Promise<boolean> => {
         try {
             console.log('🔔 [Notification] Requesting notification permissions...');
-            console.log('🔔 [Notification] Current hasNotificationPermission state:', hasNotificationPermission);
 
             // Сначала проверяем текущие разрешения
             const currentPermissions = await Notifications.getPermissionsAsync();
             console.log('🔔 [Notification] Current permissions:', currentPermissions);
-            console.log('🔔 [Notification] Current permissions status:', currentPermissions.status);
 
             let hasPermission = currentPermissions.status === 'granted';
-            console.log('🔔 [Notification] Calculated hasPermission:', hasPermission);
+            console.log('🔔 [Notification] Current permission status:', hasPermission);
 
             if (!hasPermission) {
                 console.log('🔔 [Notification] Requesting new permissions...');
-                const newPermissions = await requestNotificationPermissions();
-                hasPermission = newPermissions;
-                console.log('🔔 [Notification] New permissions result:', hasPermission);
-
-                // ИСПРАВЛЕНИЕ: Проверяем еще раз после запроса
-                if (hasPermission) {
-                    const recheck = await Notifications.getPermissionsAsync();
-                    hasPermission = recheck.status === 'granted';
-                    console.log('🔔 [Notification] Recheck after request:', hasPermission);
-                }
-            } else {
-                console.log('🔔 [Notification] Permissions already exist, skipping request');
+                hasPermission = await requestNotificationPermissions();
+                console.log('🔔 [Notification] Permission request result:', hasPermission);
             }
 
-            console.log('🔔 [Notification] Setting hasNotificationPermission to:', hasPermission);
-
-            // ИСПРАВЛЕНИЕ: Принудительно обновляем состояние
+            // Обновляем состояние
             setHasNotificationPermission(hasPermission);
 
-            // ИСПРАВЛЕНИЕ: Используем immediate callback для проверки
+            // Если разрешения получены, регистрируем push token
             if (hasPermission) {
                 const token = await registerForPushNotifications();
-                setPushToken(token);
-                console.log('📱 [Notification] Push token registered:', token ? 'Yes' : 'No');
-
+                if (token) {
+                    setPushToken(token);
+                    await savePushTokenToServer(token);
+                    console.log('📱 [Notification] Push token registered and saved');
+                }
                 setIsInitialized(true);
-                console.log('✅ [Notification] Permissions granted, setting initialized to true');
-            } else {
-                console.log('⚠️ [Notification] Permission not granted');
             }
 
+            console.log('🔔 [Notification] Final permission state:', hasPermission);
             return hasPermission;
         } catch (error) {
             console.error('❌ [Notification] Error requesting permissions:', error);
+            setHasNotificationPermission(false);
             return false;
         }
     };
@@ -183,29 +223,31 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
                     canAskAgain: currentPermissions.canAskAgain
                 });
 
-                // ИСПРАВЛЕНИЕ: Принудительно устанавливаем состояние синхронно
+                // ИСПРАВЛЕНИЕ: Синхронизируем состояние разрешений
                 setHasNotificationPermission(permissionGranted);
-                console.log('🔔 [Notification] FORCED setting hasNotificationPermission to:', permissionGranted);
+                console.log('🔔 [Notification] Setting hasNotificationPermission to:', permissionGranted);
 
                 if (permissionGranted) {
                     console.log('✅ [Notification] Permissions already granted');
 
                     if (!pushToken) {
                         const token = await registerForPushNotifications();
-                        setPushToken(token);
+                        if (token) {
+                            setPushToken(token);
+                            await savePushTokenToServer(token);
+                        }
                         console.log('📱 [Notification] Push token:', token ? token.substring(0, 10) + '...' : 'None');
                     }
 
-                    // ИСПРАВЛЕНО: Устанавливаем инициализацию при наличии разрешений
                     setIsInitialized(true);
                     console.log('✅ [Notification] Setting initialized to true (permissions exist)');
 
                 } else if (currentPermissions.canAskAgain) {
                     console.log('🔔 [Notification] Can ask for permissions, requesting...');
-                    const granted = await requestPermissions();
-                    // Обновляем состояние после запроса
-                    setHasNotificationPermission(granted);
-                    console.log('🔔 [Notification] After request, setting hasNotificationPermission to:', granted);
+                    await requestPermissions();
+                    console.log('🔔 [Notification] Permission request completed');
+                } else {
+                    console.log('⚠️ [Notification] Cannot ask for permissions again');
                 }
 
                 // Добавляем слушатели уведомлений
@@ -314,29 +356,55 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
         }
     };
 
+    // Функция для тестирования уведомлений
+    const testNotification = async () => {
+        try {
+            console.log('🧪 [Notification] Testing notification...');
+            const testResult = await sendHighPriorityNotification({
+                title: "🧪 Тестовое уведомление",
+                body: "Если вы видите это, уведомления работают!",
+                data: {
+                    type: "test",
+                    timestamp: Date.now()
+                }
+            });
+            console.log('✅ [Notification] Test notification result:', testResult);
+        } catch (error) {
+            console.error('❌ [Notification] Test notification error:', error);
+        }
+    };
+
     // ИСПРАВЛЕНО: Упрощенная функция для отправки локального уведомления
     const sendNotificationWithUserData = async (messageArray: MessageType[]) => {
-        try {
-            console.log('📤 [Notification] ===== sendNotificationWithUserData CALLED =====');
-            console.log('📤 [Notification] messageArray:', JSON.stringify(messageArray, null, 2));
-            console.log('📤 [Notification] hasNotificationPermission:', hasNotificationPermission);
-            console.log('📤 [Notification] AppState.currentState:', AppState.currentState);
-            console.log('📤 [Notification] isInitialized:', isInitialized);
+        console.log('📤 [Notification] ===== sendNotificationWithUserData STARTED =====');
+        console.log('📤 [Notification] Function arguments:', {
+            messageArrayLength: messageArray?.length,
+            messageArray: JSON.stringify(messageArray, null, 2)
+        });
 
-            // ИСПРАВЛЕНО: Убрали проверку на isInitialized для показа уведомлений
+        try {
+            console.log('📤 [Notification] ===== INSIDE TRY BLOCK =====');
+            console.log('📤 [Notification] App current state:', AppState.currentState);
+            console.log('📤 [Notification] hasNotificationPermission:', hasNotificationPermission);
+
             if (!hasNotificationPermission) {
                 console.log('⚠️ [Notification] BLOCKED: No permission to show notifications');
-                // Попробуем запросить разрешения еще раз
+                console.log('🔔 [Notification] Attempting to request permissions...');
                 const granted = await requestPermissions();
+                console.log('🔔 [Notification] Permission request result:', granted);
                 if (!granted) {
+                    console.log('❌ [Notification] Still no permissions after request, RETURNING');
                     return;
                 }
+                console.log('✅ [Notification] Permissions granted, continuing with notification');
             }
 
             if (!messageArray || messageArray.length === 0) {
-                console.log('⚠️ [Notification] BLOCKED: No messages to show notification for');
+                console.log('⚠️ [Notification] BLOCKED: No messages to show notification for, RETURNING');
                 return;
             }
+
+            console.log('📤 [Notification] Passed all initial checks, continuing...');
 
             // Находим отправителя с наибольшим количеством новых сообщений
             const mostActiveMsg = messageArray.find(msg =>
@@ -353,11 +421,26 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
                 threshold: 2000
             });
 
-            // Уменьшим интервал для тестирования
-            if (currentTime - lastMessageTimestamp < 2000) {
-                console.log('⏱️ [Notification] BLOCKED: Too soon after previous notification');
+            // Уменьшаем интервал для тестирования
+            if (currentTime - lastMessageTimestamp < 500) {
+                console.log('⏱️ [Notification] BLOCKED: Too soon after previous notification, RETURNING');
                 return;
             }
+
+            console.log('⏱️ [Notification] Time check passed, continuing...');
+
+            // Создаем уникальный ключ для этого уведомления
+            const notificationKey = `${mostActiveMsg.sender_id}_${mostActiveMsg.message_id}_${mostActiveMsg.count}`;
+            console.log('🔑 [Notification] Notification key:', notificationKey);
+
+            // ВРЕМЕННО: Отключаем проверку кеша для тестирования
+            console.log('🔄 [Notification] Cache check temporarily disabled for testing');
+            /*
+            if (sentNotificationsCache.current.has(notificationKey)) {
+                console.log('🔄 [Notification] BLOCKED: Notification already sent for this message');
+                return;
+            }
+            */
 
             // Используем имя из данных WebSocket
             let senderInfo = mostActiveMsg.sender_name || `Пользователь ${mostActiveMsg.sender_id}`;
@@ -417,9 +500,28 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
 
             console.log('✅ [Notification] ===== NOTIFICATION SENT SUCCESSFULLY =====');
             console.log('✅ [Notification] Result ID:', notificationResult);
+
+            // ОТЛАДКА: Проверяем что уведомление создано
+            setTimeout(() => {
+                console.log('📋 [Notification] Notification should be visible now');
+                console.log('📋 [Notification] Check your device notification panel');
+            }, 1000);
+
+            // Добавляем в кеш отправленных уведомлений
+            sentNotificationsCache.current.add(notificationKey);
+
+            // Очищаем кеш от старых записей (оставляем только последние 50)
+            if (sentNotificationsCache.current.size > 50) {
+                const entries = Array.from(sentNotificationsCache.current);
+                sentNotificationsCache.current.clear();
+                entries.slice(-25).forEach(key => sentNotificationsCache.current.add(key));
+            }
         } catch (error) {
             console.error('❌ [Notification] ===== ERROR IN sendNotificationWithUserData =====');
             console.error('❌ [Notification] Error details:', error);
+            console.error('❌ [Notification] Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+        } finally {
+            console.log('📤 [Notification] ===== sendNotificationWithUserData FINISHED =====');
         }
     };
 
@@ -556,23 +658,44 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
 
                         // Определяем, нужно ли показать уведомление
                         const previousMsg = previousMessagesRef.current.find(m => m.sender_id === messageData.sender_id);
-                        const isNewOrUpdated = !previousMsg || messageData.count > previousMsg.count;
 
-                        console.log('🔔 [Notification] Notification check:', {
-                            previousMsg: previousMsg ? JSON.stringify(previousMsg, null, 2) : 'null',
-                            isNewOrUpdated,
-                            hasNotificationPermission,
-                            appState: AppState.currentState,
-                            previousMessagesLength: previousMessagesRef.current.length
+                        // ВРЕМЕННО: Принудительно показываем уведомления для тестирования
+                        const isNewOrUpdated = true; // Всегда true для тестирования
+
+                        console.log('🔔 [Notification] FORCED isNewOrUpdated = true for testing');
+
+                        console.log('🔔 [Notification] Message comparison:', {
+                            hasPreviousMsg: !!previousMsg,
+                            previousCount: previousMsg?.count || 0,
+                            newCount: messageData.count,
+                            countIncreased: messageData.count > (previousMsg?.count || 0),
+                            previousMessageId: previousMsg?.message_id || 0,
+                            newMessageId: messageData.message_id,
+                            messageIdChanged: messageData.message_id !== (previousMsg?.message_id || 0),
+                            previousTimestamp: previousMsg?.timestamp || 0,
+                            newTimestamp: messageData.timestamp,
+                            timestampChanged: messageData.timestamp !== (previousMsg?.timestamp || 0),
+                            previousLastMessage: previousMsg?.last_message?.substring(0, 20) || '',
+                            newLastMessage: messageData.last_message?.substring(0, 20) || '',
+                            finalResult: isNewOrUpdated
                         });
 
-                        // ИСПРАВЛЕНО: Убрали проверку isInitialized и проверяем состояние приложения
+
+                        // ИСПРАВЛЕНО: Показываем уведомления всегда для тестирования (независимо от состояния приложения)
+                        console.log('🔔 [Notification] Checking conditions: isNewOrUpdated =', isNewOrUpdated, 'hasNotificationPermission =', hasNotificationPermission);
                         if (isNewOrUpdated && hasNotificationPermission) {
                             console.log('📱 [Notification] ===== WILL CALL sendNotificationWithUserData =====');
                             console.log('📱 [Notification] Calling setTimeout...');
-                            setTimeout(() => {
+                            console.log('📱 [Notification] messageData:', JSON.stringify(messageData, null, 2));
+                            setTimeout(async () => {
                                 console.log('📱 [Notification] ===== setTimeout EXECUTED =====');
-                                sendNotificationWithUserData([messageData]);
+                                console.log('📱 [Notification] About to call sendNotificationWithUserData...');
+                                try {
+                                    await sendNotificationWithUserData([messageData]);
+                                    console.log('📱 [Notification] sendNotificationWithUserData completed');
+                                } catch (error) {
+                                    console.error('📱 [Notification] Error in sendNotificationWithUserData:', error);
+                                }
                             }, 300);
                         } else {
                             console.log('📱 [Notification] ===== NOTIFICATION BLOCKED =====');
@@ -694,6 +817,10 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
             console.log('✅ [Notification] WebSocket connected');
             setWsConnected(true);
             setReconnectAttempts(0);
+            // ИСПРАВЛЕНО: Сбрасываем кеши при переподключении для корректного сравнения
+            previousMessagesRef.current = [];
+            sentNotificationsCache.current.clear();
+            console.log('🔄 [Notification] Reset caches on reconnect');
             sendMessage({type: 'get_initial_data'});
             lastPingTimeRef.current = Date.now();
             setTimeout(async () => {
@@ -801,6 +928,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
         disconnect,
         refreshNotifications,
         requestPermissions,
+        testNotification,
         debugInfo: {
             isWebSocketConnected: wsConnected,
             hasPermission: hasNotificationPermission,

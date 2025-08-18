@@ -7,45 +7,39 @@ import { useTheme } from '../contexts/ThemeContext';
 import { setupAxiosInterceptors } from '../utils/axiosInterceptors';
 
 export default function Index() {
-  const [isLoading, setIsLoading] = useState(true);
   const { theme } = useTheme();
 
   useEffect(() => {
-    // Настраиваем axios interceptors
-    setupAxiosInterceptors();
-    checkAuthStatus();
-  }, []);
+    const initializeApp = async () => {
+      try {
+        // Настраиваем axios interceptors
+        setupAxiosInterceptors();
 
-  const checkAuthStatus = async () => {
-    try {
-      const token = await AsyncStorage.getItem('userToken');
-      
-      if (token) {
-        // Пользователь авторизован, перенаправляем на страницу новостей (feed)
-        router.replace('/(main)/feed');
-      } else {
-        // Пользователь не авторизован, перенаправляем на страницу авторизации
+        // Проверяем токен
+        const token = await AsyncStorage.getItem('userToken');
+
+        if (token) {
+          router.replace('/(main)/feed');
+        } else {
+          router.replace('/(auth)/login');
+        }
+
+      } catch (error) {
+        console.error('Ошибка при инициализации:', error);
         router.replace('/(auth)/login');
       }
-    } catch (error) {
-      console.error('Ошибка при проверке статуса авторизации:', error);
-      // В случае ошибки перенаправляем на страницу авторизации
-      router.replace('/(auth)/login');
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    };
 
-  if (isLoading) {
-    return (
-      <View style={[styles.container, { backgroundColor: theme.background }]}>
-        <ActivityIndicator size="large" color={theme.primary} />
-        <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Загрузка...</Text>
-      </View>
-    );
-  }
+    initializeApp();
+  }, []);
 
-  return null; // Этот компонент не должен отображаться, так как происходит перенаправление
+  // Показываем индикатор загрузки пока происходит перенаправление
+  return (
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
+      <ActivityIndicator size="large" color={theme.primary} />
+      <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Загрузка...</Text>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({

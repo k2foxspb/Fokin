@@ -61,6 +61,24 @@ export default function Feed() {
     // Создаем стили сразу, используя тему
     const styles = createStyles(theme);
 
+    // Проверка аутентификации при загрузке компонента
+    useEffect(() => {
+        const checkAuth = async () => {
+            try {
+                const token = await AsyncStorage.getItem('userToken');
+                if (!token) {
+                    router.replace('/(auth)/login');
+                    return;
+                }
+            } catch (error) {
+                console.error('Ошибка проверки токена:', error);
+                router.replace('/(auth)/login');
+            }
+        };
+
+        checkAuth();
+    }, []);
+
     // Запрос разрешений на уведомления при первом запуске
     useEffect(() => {
         const setupNotifications = async () => {

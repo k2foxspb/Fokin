@@ -3,6 +3,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import { Alert } from 'react-native';
 
+let isRedirecting = false;
+
 // Функция для настройки interceptors
 export const setupAxiosInterceptors = () => {
   // Request interceptor для добавления токена
@@ -25,28 +27,34 @@ export const setupAxiosInterceptors = () => {
       return response;
     },
     async (error) => {
-      if (error.response?.status === 401) {
-        // Удаляем токен из AsyncStorage
-        await AsyncStorage.removeItem('userToken');
-        await AsyncStorage.removeItem('userData');
+      if (error.response?.status === 401 && !isRedirecting) {
+        isRedirecting = true;
 
-        // Очищаем заголовок Authorization
-        delete axios.defaults.headers.common['Authorization'];
+        try {
+          // Удаляем токен из AsyncStorage
+          await AsyncStorage.removeItem('userToken');
+          await AsyncStorage.removeItem('userData');
 
-        // Показываем уведомление
-        Alert.alert(
-          'Сессия истекла',
-          'Ваша сессия истекла. Пожалуйста, войдите снова.',
-          [
-            {
-              text: 'OK',
-              onPress: () => router.replace('/(auth)/login'),
-            },
-          ]
-        );
+          // Очищаем заголовок Authorization
+          delete axios.defaults.headers.common['Authorization'];
 
-        // Перенаправляем на страницу входа
-        router.replace('/(auth)/login');
+          // Перенаправляем на страницу входа
+          router.replace('/(auth)/login');
+
+          // Показываем уведомление
+          setTimeout(() => {
+            Alert.alert(
+              'Сессия истекла',
+              'Ваша сессия истекла. Пожалуйста, войдите снова.'
+            );
+          }, 500);
+
+        } finally {
+          // Сбрасываем флаг через 2 секунды
+          setTimeout(() => {
+            isRedirecting = false;
+          }, 2000);
+        }
       }
 
       return Promise.reject(error);
