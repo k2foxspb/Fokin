@@ -6,7 +6,7 @@ from authapp.apps import AuthappConfig
 from authapp.view_api import (
     LoginAPIView, RegisterAPIView, PasswordResetAPIView, LogoutAPIView,
     VerifyEmailAPIView, ResendVerificationAPIView, update_push_token, save_push_token,
-    ActivateUserAPIView, UpdateUserStatusAPIView, ResetPasswordConfirmAPIView
+    ActivateUserAPIView, UpdateUserStatusAPIView, ResetPasswordConfirmAPIView, ResetPasswordWithCodeAPIView
 )
 from authapp.views import CustomLoginView, RegisterView, ProfileEditView, \
     EmailConfirmationSendView,ConfirmEmailView, EmailConfirmationFailedView,PrivacyPolicyView, \
@@ -21,6 +21,7 @@ urlpatterns = [
     path('api/register/', RegisterAPIView.as_view(), name='api_register'),
     path('api/password-reset/', PasswordResetAPIView.as_view(), name='api_password_reset'),
     path('api/reset-password-confirm/', ResetPasswordConfirmAPIView.as_view(), name='api_reset_password_confirm'),
+    path('api/reset-password-with-code/', ResetPasswordWithCodeAPIView.as_view(), name='api_reset_password_with_code'),
     path('api/logout/', LogoutAPIView.as_view(), name='api_logout'),
     path('api/verify-email/', VerifyEmailAPIView.as_view(), name='api_verify_email'),
     path('api/resend-verification/', ResendVerificationAPIView.as_view(), name='api_resend_verification'),

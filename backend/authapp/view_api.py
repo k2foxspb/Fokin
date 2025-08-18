@@ -257,18 +257,29 @@ class PasswordResetAPIView(APIView):
         token = default_token_generator.make_token(user)
         uid = urlsafe_base64_encode(force_bytes(user.pk))
 
-        # Формирование ссылки для сброса пароля
-        reset_url = f"{settings.FRONTEND_URL}/reset-password/{uid}/{token}/"
+        # Формирование данных для сброса пароля
+        # Вместо веб-ссылки отправляем код для мобильного приложения
+        reset_code = generate_verification_code(8)  # Генерируем 8-значный код
 
-        # Отправка email
+        # Сохраняем код и токен для пользователя
+        user.verification_code = reset_code
+        user.verification_code_expires = timezone.now() + timedelta(hours=2)  # Код действителен 2 часа
+        user.password_reset_token = token  # Дополнительно сохраняем токен Django
+        user.password_reset_uid = uid
+        user.save()
+
+        # Отправка email с кодом вместо ссылки
         subject = 'Восстановление пароля'
         message = f'''
         Здравствуйте, {user.username}!
 
         Вы запросили восстановление пароля для вашего аккаунта.
 
-        Для восстановления пароля перейдите по ссылке:
-        {reset_url}
+        Ваш код для восстановления пароля:
+        {reset_code}
+
+        Введите этот код в мобильном приложении для сброса пароля.
+        Код действителен в течение 2 часов.
 
         Если вы не запрашивали восстановление пароля, проигнорируйте это письмо.
 
@@ -520,6 +531,85 @@ class UpdateUserStatusAPIView(APIView):
             print(f"UPDATE USER STATUS API - Error: {str(e)}")
             return Response(
                 {'error': f'Ошибка при обновлении статуса: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class ResetPasswordWithCodeAPIView(APIView):
+    permission_classes = (AllowAny,)
+
+    def post(self, request):
+        print("RESET PASSWORD WITH CODE API - Received data:", request.data)
+
+        email = request.data.get('email')
+        reset_code = request.data.get('reset_code')
+        new_password = request.data.get('new_password')
+        confirm_password = request.data.get('confirm_password')
+
+        if not all([email, reset_code, new_password, confirm_password]):
+            return Response(
+                {'error': 'Все поля обязательны для заполнения'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if new_password != confirm_password:
+            return Response(
+                {'error': 'Пароли не совпадают'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if len(new_password) < 6:
+            return Response(
+                {'error': 'Пароль должен содержать минимум 6 символов'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            user = User.objects.get(email=email)
+            print(f"RESET PASSWORD WITH CODE API - Found user: {user.username}")
+
+        except User.DoesNotExist:
+            print("RESET PASSWORD WITH CODE API - User not found")
+            return Response(
+                {'error': 'Пользователь с таким email не найден'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Проверяем код сброса
+        if not user.verification_code or user.verification_code != reset_code:
+            print("RESET PASSWORD WITH CODE API - Invalid reset code")
+            return Response(
+                {'error': 'Неверный код для сброса пароля'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Проверяем срок действия кода
+        if not user.verification_code_expires or timezone.now() > user.verification_code_expires:
+            print("RESET PASSWORD WITH CODE API - Reset code expired")
+            return Response(
+                {'error': 'Срок действия кода истек. Запросите новый код.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Устанавливаем новый пароль
+        try:
+            user.set_password(new_password)
+            user.verification_code = None
+            user.verification_code_expires = None
+            user.password_reset_token = None
+            user.password_reset_uid = None
+            user.save()
+
+            print(f"RESET PASSWORD WITH CODE API - Password reset successful for user: {user.username}")
+
+            return Response({
+                'message': 'Пароль успешно изменен'
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            print(f"RESET PASSWORD WITH CODE API - Error setting password: {str(e)}")
+            return Response(
+                {'error': f'Ошибка при изменении пароля: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
