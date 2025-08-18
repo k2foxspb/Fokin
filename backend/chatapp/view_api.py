@@ -7,9 +7,10 @@ from django.db.models import Q, F, IntegerField, Case, When, Subquery, OuterRef,
 from .models import PrivateChatRoom, PrivateMessage, CustomUser
 from .serializers import ChatRoomSerializer, MessageSerializer, ChatPreviewSerializer
 
+
 class ChatViewSet(viewsets.GenericViewSet,
-                 mixins.RetrieveModelMixin,
-                 mixins.ListModelMixin):
+                  mixins.RetrieveModelMixin,
+                  mixins.ListModelMixin):
     permission_classes = [IsAuthenticated]
     serializer_class = ChatRoomSerializer
 
@@ -81,6 +82,20 @@ class ChatViewSet(viewsets.GenericViewSet,
     # ... остальные методы остаются без изменений ...
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def save_push_token(request):
+    try:
+        expo_push_token = request.data.get('expo_push_token')
+        if expo_push_token:
+            request.user.expo_push_token = expo_push_token
+            request.user.save()
+            return Response({'success': True})
+        return Response({'error': 'No token provided'}, status=400)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_room_info(request, room_id):
@@ -102,5 +117,3 @@ def get_room_info(request, room_id):
         })
     except PrivateChatRoom.DoesNotExist:
         return Response({'error': 'Room not found'}, status=404)
-
-

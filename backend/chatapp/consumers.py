@@ -127,6 +127,8 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
         super().__init__(*args, **kwargs)
         self.room_name = None
         self.user = None
+        # Трекинг активных пользователей
+        self.connected_users = set()
 
     async def connect(self):
         self.room_name = self.scope['url_route']['kwargs']['room_name']
@@ -155,6 +157,9 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
             self.channel_name
         )
 
+        # Добавляем пользователя в список активных
+        self.connected_users.add(self.user.id)
+
         await self.accept()
         await self.mark_messages_as_read()
 
@@ -178,6 +183,10 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
             logger.error(f"Error marking messages as read: {e}")
 
     async def disconnect(self, close_code):
+        # Удаляем пользователя из списка активных
+        if hasattr(self, 'user') and self.user:
+            self.connected_users.discard(self.user.id)
+
         if hasattr(self, 'room_group_name'):
             await self.channel_layer.group_discard(
                 self.room_group_name,
@@ -217,7 +226,7 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
                                 }
                             )
 
-                            # НОВОЕ: Отправляем уведомление получателю через NotificationConsumer
+                            # Отправляем уведомление получателю через NotificationConsumer
                             await self.channel_layer.group_send(
                                 f'notifications_{recipient_id}',
                                 {
@@ -234,8 +243,8 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
                             # Обновляем список чатов для обоих пользователей
                             await self.notify_chat_list_update([self.user.id, recipient_id])
 
-                            # Отправляем push-уведомление
-                            await self.send_push_notification(message_instance)
+                            # НОВОЕ: Отправляем push-уведомление
+                            await self.send_push_notification_if_needed(message_instance)
 
                     except get_user_model().DoesNotExist:
                         await self.send(text_data=json.dumps({
@@ -302,9 +311,77 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
             logger.error(f"Error getting/creating room: {e}")
             raise
 
-    async def send_push_notification(self, message_instance):
-        # Здесь будет логика отправки push-уведомлений
-        pass
+    async def send_push_notification_if_needed(self, message_instance):
+        """
+        НОВОЕ: Отправляем push-уведомление если получатель не в сети
+        """
+        try:
+            from .push_notifications import PushNotificationService
+
+            recipient = message_instance.recipient
+            sender = message_instance.sender
+
+            # Проверяем, есть ли у получателя push токен
+            if not hasattr(recipient, 'expo_push_token') or not recipient.expo_push_token:
+                logger.info(f"User {recipient.username} has no push token")
+                return
+
+            # Проверяем, подключен ли получатель к WebSocket (онлайн)
+            recipient_online = await self.is_user_online(recipient.id)
+
+            if not recipient_online:
+                logger.info(f"User {recipient.username} is offline, sending push notification")
+
+                # Отправляем push-уведомление в отдельном потоке
+                await database_sync_to_async(self._send_push_notification_sync)(
+                    recipient.expo_push_token,
+                    sender.username,
+                    message_instance.message,
+                    message_instance.room.id
+                )
+            else:
+                logger.info(f"User {recipient.username} is online, skipping push notification")
+
+        except Exception as e:
+            logger.error(f"Error in send_push_notification_if_needed: {e}")
+
+    def _send_push_notification_sync(self, push_token, sender_name, message_text, chat_id):
+        """
+        Синхронная функция для отправки push-уведомления
+        """
+        try:
+            from .push_notifications import PushNotificationService
+
+            PushNotificationService.send_message_notification(
+                expo_tokens=[push_token],
+                sender_name=sender_name,
+                message_text=message_text,
+                chat_id=chat_id
+            )
+            logger.info(f"Push notification sent successfully to {sender_name}")
+
+        except Exception as e:
+            logger.error(f"Error sending push notification: {e}")
+
+    async def is_user_online(self, user_id):
+        """
+        Проверяем, подключен ли пользователь к WebSocket
+        """
+        try:
+            # Проверяем через channel layer, есть ли активные соединения
+            # для этого пользователя в группе уведомлений
+            group_name = f'notifications_{user_id}'
+
+            # Простая проверка - если пользователь в нашем локальном списке
+            # (это работает только для одного воркера, для продакшена нужен Redis)
+            is_online = user_id in self.connected_users
+
+            logger.debug(f"User {user_id} online status: {is_online}")
+            return is_online
+
+        except Exception as e:
+            logger.error(f"Error checking user online status: {e}")
+            return False  # По умолчанию считаем offline для отправки push
 
 
 class NotificationConsumer(AsyncWebsocketConsumer):
@@ -312,6 +389,8 @@ class NotificationConsumer(AsyncWebsocketConsumer):
         super().__init__(*args, **kwargs)
         self.user_id = None
         self.notification_group_name = None
+        # Кеш для предотвращения дублирования уведомлений
+        self.previous_messages_cache = {}
 
     async def connect(self):
         await self.accept()
@@ -327,12 +406,14 @@ class NotificationConsumer(AsyncWebsocketConsumer):
                 token_obj = await database_sync_to_async(Token.objects.select_related('user').get)(key=token)
                 self.user_id = token_obj.user.id
 
-                # НОВОЕ: Подписываемся на группу уведомлений пользователя
+                # Подписываемся на группу уведомлений пользователя
                 self.notification_group_name = f'notifications_{self.user_id}'
                 await self.channel_layer.group_add(
                     self.notification_group_name,
                     self.channel_name
                 )
+
+                logger.info(f"User {self.user_id} connected to notifications")
 
                 # Отправляем начальные уведомления
                 unread_sender_count = await self.get_unique_senders_count(self.user_id)
@@ -342,6 +423,92 @@ class NotificationConsumer(AsyncWebsocketConsumer):
             except Token.DoesNotExist:
                 await self.close()
 
+    async def send_notification_update(self, unique_sender_count, messages_by_sender):
+        try:
+            # НОВОЕ: проверяем, изменились ли данные
+            current_messages_hash = hash(str(messages_by_sender))
+            previous_hash = self.previous_messages_cache.get('hash')
+
+            if previous_hash == current_messages_hash:
+                logger.debug(f"No changes in messages for user {self.user_id}, skipping update")
+                return
+
+            # Обновляем кеш
+            self.previous_messages_cache['hash'] = current_messages_hash
+            self.previous_messages_cache['messages'] = messages_by_sender
+
+            formatted_messages = []
+            for message in messages_by_sender:
+                user_info = await self.get_user_info(message['sender_id'])
+                formatted_message = {
+                    'sender_id': message['sender_id'],
+                    'sender_name': user_info.get('username', f"Пользователь {message['sender_id']}"),
+                    'count': message['count'],
+                    'last_message': message.get('last_message', ''),
+                    'timestamp': message.get('timestamp'),
+                    'message_id': message.get('message_id'),  # ДОБАВЛЕНО: ID сообщения
+                    'chat_id': message.get('chat_id')
+                }
+                formatted_messages.append(formatted_message)
+
+            await self.send(text_data=json.dumps({
+                'type': 'notification_update',
+                'unique_sender_count': unique_sender_count,
+                'messages': [{'user': self.user_id}, formatted_messages]
+            }))
+
+            logger.debug(f"Sent notification update to user {self.user_id}")
+
+        except Exception as e:
+            logger.error(f"Error in send_notification_update: {e}")
+
+    async def send_initial_notification(self, unique_sender_count, messages_by_sender):
+        try:
+            formatted_messages = []
+            for message in messages_by_sender:
+                user_info = await self.get_user_info(message['sender_id'])
+                formatted_message = {
+                    'sender_id': message['sender_id'],
+                    'sender_name': user_info.get('username', f"Пользователь {message['sender_id']}"),
+                    'count': message['count'],
+                    'last_message': message.get('last_message', ''),
+                    'timestamp': message.get('timestamp'),
+                    'message_id': message.get('message_id'),  # ДОБАВЛЕНО: ID сообщения
+                    'chat_id': message.get('chat_id')
+                }
+                formatted_messages.append(formatted_message)
+
+            await self.send(text_data=json.dumps({
+                'type': 'initial_notification',
+                'unique_sender_count': unique_sender_count,
+                'messages': [{'user': self.user_id}, formatted_messages]
+            }))
+
+            # Инициализируем кеш
+            self.previous_messages_cache['hash'] = hash(str(messages_by_sender))
+            self.previous_messages_cache['messages'] = messages_by_sender
+
+        except Exception as e:
+            logger.error(f"Error in send_initial_notification: {e}")
+
+    async def new_message_notification(self, event):
+        """
+        ОБНОВЛЕНО: Обработчик для новых уведомлений о сообщениях
+        """
+        try:
+            logger.info(f"Processing new message notification for user {self.user_id}")
+
+            # Получаем обновленные данные
+            unread_sender_count = await self.get_unique_senders_count(self.user_id)
+            messages_by_sender = await self.get_messages_by_sender(self.user_id)
+
+            # Отправляем обновленные уведомления (с проверкой дублирования)
+            await self.send_notification_update(unread_sender_count, messages_by_sender)
+
+        except Exception as e:
+            logger.error(f"Error sending new message notification: {e}")
+
+    # Остальные методы остаются без изменений...
     async def separate_message_notification(self):
         try:
             all_messages = await self.get_messages_by_sender(self.user_id)
@@ -378,68 +545,6 @@ class NotificationConsumer(AsyncWebsocketConsumer):
         except Exception as e:
             logger.error(f"Error in direct_message_notification: {e}")
 
-    async def send_notification_update(self, unique_sender_count, messages_by_sender):
-        try:
-            formatted_messages = []
-            for message in messages_by_sender:
-                user_info = await self.get_user_info(message['sender_id'])
-                formatted_message = {
-                    'sender_id': message['sender_id'],
-                    'sender_name': user_info.get('username', f"Пользователь {message['sender_id']}"),
-                    'count': message['count'],
-                    'last_message': message.get('last_message', ''),
-                    'timestamp': message.get('timestamp'),
-                    'chat_id': message.get('chat_id')
-                }
-                formatted_messages.append(formatted_message)
-
-            await self.send(text_data=json.dumps({
-                'type': 'notification_update',
-                'unique_sender_count': unique_sender_count,
-                'messages': [{'user': self.user_id}, formatted_messages]
-            }))
-        except Exception as e:
-            logger.error(f"Error in send_notification_update: {e}")
-
-    async def send_initial_notification(self, unique_sender_count, messages_by_sender):
-        try:
-            formatted_messages = []
-            for message in messages_by_sender:
-                user_info = await self.get_user_info(message['sender_id'])
-                formatted_message = {
-                    'sender_id': message['sender_id'],
-                    'sender_name': user_info.get('username', f"Пользователь {message['sender_id']}"),
-                    'count': message['count'],
-                    'last_message': message.get('last_message', ''),
-                    'timestamp': message.get('timestamp'),
-                    'chat_id': message.get('chat_id')
-                }
-                formatted_messages.append(formatted_message)
-
-            await self.send(text_data=json.dumps({
-                'type': 'initial_notification',
-                'unique_sender_count': unique_sender_count,
-                'messages': [{'user': self.user_id}, formatted_messages]
-            }))
-        except Exception as e:
-            logger.error(f"Error in send_initial_notification: {e}")
-
-    # НОВОЕ: Обработчик для новых уведомлений о сообщениях
-    async def new_message_notification(self, event):
-        """Обработчик для новых уведомлений о сообщениях"""
-        try:
-            logger.info(f"Processing new message notification for user {self.user_id}")
-
-            # Получаем обновленные данные
-            unread_sender_count = await self.get_unique_senders_count(self.user_id)
-            messages_by_sender = await self.get_messages_by_sender(self.user_id)
-
-            # Отправляем обновленные уведомления
-            await self.send_notification_update(unread_sender_count, messages_by_sender)
-
-        except Exception as e:
-            logger.error(f"Error sending new message notification: {e}")
-
     async def notification_message(self, event):
         try:
             message_type = event.get('message_type', 'notification')
@@ -448,24 +553,7 @@ class NotificationConsumer(AsyncWebsocketConsumer):
                 unread_sender_count = await self.get_unique_senders_count(self.user_id)
                 messages_by_sender = await self.get_messages_by_sender(self.user_id)
 
-                formatted_messages = []
-                for message in messages_by_sender:
-                    user_info = await self.get_user_info(message['sender_id'])
-                    formatted_message = {
-                        'sender_id': message['sender_id'],
-                        'sender_name': user_info.get('username', f"Пользователь {message['sender_id']}"),
-                        'count': message['count'],
-                        'last_message': message.get('last_message', ''),
-                        'timestamp': message.get('timestamp'),
-                        'chat_id': message.get('chat_id')
-                    }
-                    formatted_messages.append(formatted_message)
-
-                await self.send(text_data=json.dumps({
-                    'type': 'notification_update',
-                    'unique_sender_count': unread_sender_count,
-                    'messages': [{'user': self.user_id}, formatted_messages]
-                }))
+                await self.send_notification_update(unread_sender_count, messages_by_sender)
 
         except Exception as e:
             logger.error(f"Error in notification_message: {e}")
@@ -517,12 +605,13 @@ class NotificationConsumer(AsyncWebsocketConsumer):
             )
 
     async def disconnect(self, close_code):
-        # НОВОЕ: Отписываемся от группы уведомлений
-        if hasattr(self, 'notification_group_name'):
+        # Отписываемся от группы уведомлений
+        if hasattr(self, 'notification_group_name') and self.notification_group_name:
             await self.channel_layer.group_discard(
                 self.notification_group_name,
                 self.channel_name
             )
+            logger.info(f"User {self.user_id} disconnected from notifications")
 
         if self.user_id:
             await self.send_user_offline(self.user_id)
@@ -615,10 +704,17 @@ class NotificationConsumer(AsyncWebsocketConsumer):
                         'sender_id': sender_id,
                         'count': 0,
                         'last_message': message.message,
-                        'timestamp': message.timestamp.isoformat(),
+                        'timestamp': message.timestamp.timestamp(),  # ИСПРАВЛЕНО: Unix timestamp
+                        'message_id': message.id,  # ДОБАВЛЕНО: ID сообщения
                         'chat_id': message.room.id if message.room else None
                     }
                 senders_data[sender_id]['count'] += 1
+
+                # ИСПРАВЛЕНО: Обновляем на самое новое сообщение
+                if message.timestamp.timestamp() > senders_data[sender_id]['timestamp']:
+                    senders_data[sender_id]['last_message'] = message.message
+                    senders_data[sender_id]['timestamp'] = message.timestamp.timestamp()
+                    senders_data[sender_id]['message_id'] = message.id
 
             return list(senders_data.values())
 
