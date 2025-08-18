@@ -299,8 +299,12 @@ class VerifyEmailAPIView(APIView):
     permission_classes = (AllowAny,)
 
     def post(self, request):
+        print("VERIFY EMAIL API - Received data:", request.data)
+
         email = request.data.get('email')
         verification_code = request.data.get('verification_code')
+
+        print(f"VERIFY EMAIL API - Email: {email}, Code: {verification_code}")
 
         if not email or not verification_code:
             return Response(
@@ -310,14 +314,18 @@ class VerifyEmailAPIView(APIView):
 
         try:
             user = User.objects.get(email=email)
+            print(f"VERIFY EMAIL API - Found user: {user.username}, is_active: {user.is_active}")
         except User.DoesNotExist:
+            print(f"VERIFY EMAIL API - User with email {email} not found")
             return Response(
                 {'error': 'Пользователь с таким email не найден'},
                 status=status.HTTP_404_NOT_FOUND
             )
 
         # Проверяем код подтверждения
+        print(f"VERIFY EMAIL API - User verification_code: {user.verification_code}")
         if not user.verification_code or user.verification_code != verification_code:
+            print("VERIFY EMAIL API - Invalid verification code")
             return Response(
                 {'error': 'Неверный код подтверждения'},
                 status=status.HTTP_400_BAD_REQUEST
@@ -325,26 +333,34 @@ class VerifyEmailAPIView(APIView):
 
         # Проверяем срок действия кода
         if not user.verification_code_expires or timezone.now() > user.verification_code_expires:
+            print("VERIFY EMAIL API - Verification code expired")
             return Response(
                 {'error': 'Срок действия кода истек. Запросите новый код.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
         # Активируем пользователя
+        print("VERIFY EMAIL API - Activating user...")
         user.is_active = True
         user.verification_code = None
         user.verification_code_expires = None
         user.save()
 
+        print(f"VERIFY EMAIL API - User activated: is_active = {user.is_active}")
+
         # Создаем или получаем токен
         token, created = Token.objects.get_or_create(user=user)
         serializer = UserSerializer(user)
 
-        return Response({
+        response_data = {
             'token': token.key,
             'user': serializer.data,
-            'message': 'Email успешно подтвержден'
-        }, status=status.HTTP_200_OK)
+            'message': 'Email успешно подтвержден и пользователь активирован'
+        }
+
+        print("VERIFY EMAIL API - Sending response:", response_data)
+
+        return Response(response_data, status=status.HTTP_200_OK)
 
 
 class ResendVerificationAPIView(APIView):
@@ -405,6 +421,106 @@ class ResendVerificationAPIView(APIView):
         return Response({
             'message': 'Новый код подтверждения отправлен на ваш email'
         }, status=status.HTTP_200_OK)
+
+
+class ActivateUserAPIView(APIView):
+    permission_classes = (AllowAny,)
+
+    def post(self, request):
+        print("ACTIVATE USER API - Received data:", request.data)
+
+        email = request.data.get('email')
+
+        if not email:
+            return Response(
+                {'error': 'Email обязателен'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            user = User.objects.get(email=email)
+            print(f"ACTIVATE USER API - Found user: {user.username}, current is_active: {user.is_active}")
+
+            # Принудительно активируем пользователя
+            user.is_active = True
+            user.save()
+
+            print(f"ACTIVATE USER API - User activated: is_active = {user.is_active}")
+
+            # Обновляем пользователя из базы данных для подтверждения
+            user.refresh_from_db()
+            print(f"ACTIVATE USER API - Confirmed from DB: is_active = {user.is_active}")
+
+            serializer = UserSerializer(user)
+
+            return Response({
+                'user': serializer.data,
+                'message': 'Пользователь успешно активирован',
+                'is_active': user.is_active
+            }, status=status.HTTP_200_OK)
+
+        except User.DoesNotExist:
+            print(f"ACTIVATE USER API - User with email {email} not found")
+            return Response(
+                {'error': 'Пользователь с таким email не найден'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            print(f"ACTIVATE USER API - Error: {str(e)}")
+            return Response(
+                {'error': f'Ошибка при активации: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class UpdateUserStatusAPIView(APIView):
+    permission_classes = (AllowAny,)
+
+    def patch(self, request):
+        print("UPDATE USER STATUS API - Received data:", request.data)
+
+        email = request.data.get('email')
+        is_active = request.data.get('is_active', True)
+
+        if not email:
+            return Response(
+                {'error': 'Email обязателен'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            user = User.objects.get(email=email)
+            print(f"UPDATE USER STATUS API - Found user: {user.username}")
+            print(f"UPDATE USER STATUS API - Current is_active: {user.is_active}")
+            print(f"UPDATE USER STATUS API - Setting is_active to: {is_active}")
+
+            # Обновляем статус пользователя
+            User.objects.filter(email=email).update(is_active=is_active)
+
+            # Получаем обновленного пользователя
+            user.refresh_from_db()
+            print(f"UPDATE USER STATUS API - Updated is_active: {user.is_active}")
+
+            serializer = UserSerializer(user)
+
+            return Response({
+                'user': serializer.data,
+                'message': 'Статус пользователя обновлен',
+                'is_active': user.is_active
+            }, status=status.HTTP_200_OK)
+
+        except User.DoesNotExist:
+            print(f"UPDATE USER STATUS API - User with email {email} not found")
+            return Response(
+                {'error': 'Пользователь с таким email не найден'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            print(f"UPDATE USER STATUS API - Error: {str(e)}")
+            return Response(
+                {'error': f'Ошибка при обновлении статуса: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 class LogoutAPIView(APIView):

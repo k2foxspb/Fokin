@@ -27,7 +27,7 @@ interface ChatPreview {
 
 export default function MessagesScreen() {
   const router = useRouter();
-  const { senderCounts, userStatuses, messages, debugInfo } = useNotifications();
+  const { senderCounts, userStatuses, messages, debugInfo, testNotification, requestPermissions } = useNotifications();
   const { theme } = useTheme();
   const [chats, setChats] = useState<ChatPreview[]>([]);
   const [isLoading, setIsLoading] = useState(true);

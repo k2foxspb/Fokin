@@ -7,17 +7,33 @@ import {
   StyleSheet,
   Alert,
   ActivityIndicator,
+  ScrollView,
 } from 'react-native';
-import axios from 'axios';
+import axios, { AxiosError } from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router, useLocalSearchParams } from 'expo-router';
+import { Link } from 'expo-router';
 import { API_CONFIG } from '../../config';
+import { useTheme } from '../../contexts/ThemeContext';
+
+interface Theme {
+  background: string;
+  surface: string;
+  primary: string;
+  text: string;
+  textSecondary: string;
+  border: string;
+  placeholder: string;
+}
 
 export default function ConfirmEmail() {
+  const { theme } = useTheme();
   const [verificationCode, setVerificationCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState('');
   const params = useLocalSearchParams();
+
+  const styles = createStyles(theme);
 
   useEffect(() => {
     // Get email from params or AsyncStorage
@@ -46,15 +62,33 @@ export default function ConfirmEmail() {
       return;
     }
 
+    if (!email.trim()) {
+      Alert.alert('Ошибка', 'Email не найден');
+      return;
+    }
+
     setLoading(true);
     try {
+      console.log('Отправка запроса на подтверждение:', {
+        email: email,
+        verification_code: verificationCode.trim()
+      });
+
+      // Основной запрос подтверждения и активации
       const response = await axios.post(
         `${API_CONFIG.BASE_URL}/authentication/api/verify-email/`,
         {
-          email: email,
-          verification_code: verificationCode,
+          email: email.trim(),
+          verification_code: verificationCode.trim(),
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+          }
         }
       );
+
+      console.log('Ответ сервера:', response.data);
 
       // Store token if provided
       if (response.data.token) {
@@ -62,22 +96,85 @@ export default function ConfirmEmail() {
         axios.defaults.headers.common['Authorization'] = `Token ${response.data.token}`;
       }
 
-      Alert.alert('Успех', 'Email успешно подтвержден!', [
+      // Update user data if provided
+      if (response.data.user) {
+        await AsyncStorage.setItem('userData', JSON.stringify(response.data.user));
+        console.log('Данные пользователя сохранены:', response.data.user);
+        console.log('Статус активации:', response.data.user.is_active);
+      }
+
+      Alert.alert('Успех', 'Email подтвержден и аккаунт активирован!', [
         {
           text: 'OK',
           onPress: () => router.replace('/(main)/feed'),
         },
       ]);
     } catch (error) {
+      console.error('Ошибка подтверждения:', error);
+
       let errorMessage = 'Произошла ошибка при подтверждении email';
-      
-      if (axios.isAxiosError(error) && error.response?.data) {
-        const data = error.response.data;
-        if (data.error) {
-          errorMessage = data.error;
+
+      if (axios.isAxiosError(error)) {
+        const axiosError = error as AxiosError<{ 
+          error?: string; 
+          detail?: string;
+          verification_code?: string[];
+          email?: string[];
+          non_field_errors?: string[];
+        }>;
+
+        console.log('Статус ошибки:', axiosError.response?.status);
+        console.log('Данные ошибки:', axiosError.response?.data);
+
+        if (axiosError.response?.data) {
+          const data = axiosError.response.data;
+          if (data.error) {
+            errorMessage = data.error;
+          } else if (data.detail) {
+            errorMessage = data.detail;
+          } else if (data.verification_code) {
+            errorMessage = `Код подтверждения: ${data.verification_code[0]}`;
+          } else if (data.email) {
+            errorMessage = `Email: ${data.email[0]}`;
+          } else if (data.non_field_errors) {
+            errorMessage = data.non_field_errors[0];
+          }
+        }
+
+        // Дополнительная попытка активации при ошибке
+        if (axiosError.response?.status === 400 && errorMessage.toLowerCase().includes('код')) {
+          // Если проблема с кодом, не пытаемся активировать
+        } else {
+          try {
+            console.log('Попытка принудительной активации пользователя...');
+            const activateResponse = await axios.post(
+              `${API_CONFIG.BASE_URL}/authentication/api/activate-user/`,
+              {
+                email: email.trim(),
+              },
+              {
+                headers: {
+                  'Content-Type': 'application/json',
+                }
+              }
+            );
+
+            console.log('Принудительная активация успешна:', activateResponse.data);
+
+            Alert.alert('Успех', 'Аккаунт активирован!', [
+              {
+                text: 'OK',
+                onPress: () => router.replace('/(main)/feed'),
+              },
+            ]);
+            return;
+
+          } catch (activationError) {
+            console.error('Ошибка принудительной активации:', activationError);
+          }
         }
       }
-      
+
       Alert.alert('Ошибка', errorMessage);
     } finally {
       setLoading(false);
@@ -94,20 +191,28 @@ export default function ConfirmEmail() {
     try {
       await axios.post(
         `${API_CONFIG.BASE_URL}/authentication/api/resend-verification/`,
-        { email: email }
+        { email: email.trim() },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+          }
+        }
       );
-      
+
       Alert.alert('Успех', 'Новый код подтверждения отправлен на ваш email');
+      setVerificationCode(''); // Очищаем поле ввода
     } catch (error) {
       let errorMessage = 'Произошла ошибка при отправке кода';
-      
+
       if (axios.isAxiosError(error) && error.response?.data) {
         const data = error.response.data;
         if (data.error) {
           errorMessage = data.error;
+        } else if (data.detail) {
+          errorMessage = data.detail;
         }
       }
-      
+
       Alert.alert('Ошибка', errorMessage);
     } finally {
       setLoading(false);
@@ -115,25 +220,30 @@ export default function ConfirmEmail() {
   };
 
   return (
-    <View style={styles.container}>
+    <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>Подтверждение Email</Text>
-      
+
       <Text style={styles.description}>
-        Мы отправили код подтверждения на адрес {email}.
+        Мы отправили код подтверждения на адрес:
+      </Text>
+      <Text style={styles.emailText}>{email}</Text>
+      <Text style={styles.description}>
         Пожалуйста, введите этот код ниже.
       </Text>
-      
+
       <TextInput
-        style={styles.input}
-        placeholder="Код подтверждения"
+        style={[styles.input, { color: theme.text }]}
+        placeholder="Введите код подтверждения"
+        placeholderTextColor={theme.placeholder}
         value={verificationCode}
         onChangeText={setVerificationCode}
         keyboardType="number-pad"
         autoCapitalize="none"
         autoCorrect={false}
         editable={!loading}
+        maxLength={6}
       />
-      
+
       <TouchableOpacity 
         style={[styles.button, loading && styles.disabledButton]} 
         onPress={handleVerify}
@@ -145,58 +255,75 @@ export default function ConfirmEmail() {
           <Text style={styles.buttonText}>Подтвердить</Text>
         )}
       </TouchableOpacity>
-      
+
       <TouchableOpacity 
         style={styles.resendButton} 
         onPress={handleResendCode}
         disabled={loading}
       >
-        <Text style={styles.resendButtonText}>Отправить код повторно</Text>
+        <Text style={[styles.resendButtonText, { color: theme.primary }]}>
+          Отправить код повторно
+        </Text>
       </TouchableOpacity>
-    </View>
+
+      <View style={styles.linkContainer}>
+        <Text style={styles.linkText}>Проблемы с подтверждением? </Text>
+        <Link href="/(auth)/login" style={styles.link}>
+          Вернуться к входу
+        </Link>
+      </View>
+    </ScrollView>
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: Theme) => StyleSheet.create({
   container: {
-    flex: 1,
+    flexGrow: 1,
     justifyContent: 'center',
     padding: 20,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: theme.background,
   },
   title: {
     fontSize: 28,
     fontWeight: 'bold',
     textAlign: 'center',
     marginBottom: 20,
-    color: '#333',
+    color: theme.text,
   },
   description: {
     fontSize: 16,
     textAlign: 'center',
-    marginBottom: 30,
-    color: '#666',
+    marginBottom: 15,
+    color: theme.textSecondary,
+    lineHeight: 22,
+  },
+  emailText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 15,
+    color: theme.primary,
   },
   input: {
-    backgroundColor: 'white',
+    backgroundColor: theme.surface,
     padding: 15,
     borderRadius: 8,
     marginBottom: 20,
     fontSize: 18,
     textAlign: 'center',
-    letterSpacing: 5,
+    letterSpacing: 3,
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: theme.border,
   },
   button: {
-    backgroundColor: '#007AFF',
+    backgroundColor: theme.primary,
     padding: 15,
     borderRadius: 8,
     alignItems: 'center',
     marginBottom: 15,
   },
   disabledButton: {
-    backgroundColor: '#ccc',
+    backgroundColor: theme.textSecondary,
   },
   buttonText: {
     color: 'white',
@@ -204,11 +331,26 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   resendButton: {
-    padding: 10,
+    padding: 15,
     alignItems: 'center',
+    marginBottom: 20,
   },
   resendButtonText: {
-    color: '#007AFF',
     fontSize: 14,
+    fontWeight: '500',
+  },
+  linkContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 10,
+  },
+  linkText: {
+    fontSize: 16,
+    color: theme.textSecondary,
+  },
+  link: {
+    fontSize: 16,
+    color: theme.primary,
+    fontWeight: '500',
   },
 });

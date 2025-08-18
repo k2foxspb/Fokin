@@ -8,16 +8,28 @@ import {
     ActivityIndicator,
     RefreshControl,
     Alert,
-    ScrollView
+    Dimensions
 } from 'react-native';
 import {router} from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import {Ionicons} from '@expo/vector-icons';
+import {WebView} from 'react-native-webview';
 import {useTheme} from '../../contexts/ThemeContext';
-import {useNotifications} from '../../contexts/NotificationContext'; // Добавили импорт
+import {useNotifications} from '../../contexts/NotificationContext';
 import {API_CONFIG} from "../../config";
-import * as Notifications from 'expo-notifications';
+
+interface Theme {
+    background: string;
+    surface: string;
+    surfacePressed: string;
+    primary: string;
+    text: string;
+    textSecondary: string;
+    border: string;
+    borderLight: string;
+    error: string;
+}
 
 interface Category {
     id: number;
@@ -38,28 +50,6 @@ interface Article {
     loadError?: boolean;
 }
 
-const sendTestNotification = async () => {
-    try {
-        console.log('🧪 [Feed] Sending test notification...');
-
-        const testResult = await Notifications.scheduleNotificationAsync({
-            content: {
-                title: '🧪 Тестовое уведомление',
-                body: 'Это тест локального уведомления из Feed',
-                data: {test: true, timestamp: Date.now()},
-            },
-            trigger: null,
-        });
-
-        console.log('🧪 [Feed] Test notification sent:', testResult);
-        Alert.alert('Отправлено', `Тест уведомление ID: ${testResult}`);
-    } catch (error) {
-        console.error('❌ [Feed] Error sending test notification:', error);
-        Alert.alert('Ошибка', 'Не удалось отправить тестовое уведомление');
-    }
-};
-
-
 export default function Feed() {
     const {theme} = useTheme();
     const {requestPermissions, debugInfo} = useNotifications(); // Используем контекст
@@ -71,72 +61,24 @@ export default function Feed() {
     // Создаем стили сразу, используя тему
     const styles = createStyles(theme);
 
-    // Добавляем запрос разрешений при загрузке компонента
+    // Запрос разрешений на уведомления при первом запуске
     useEffect(() => {
-        const handleForceUpdatePermissions = async () => {
-            try {
-                console.log('🔔 [Feed] Force updating permissions...');
-
-                // Проверяем напрямую через Expo API
-                const permissions = await Notifications.getPermissionsAsync();
-                console.log('🔔 [Feed] Direct permissions check:', permissions);
-
-                if (permissions.status === 'granted') {
-                    // Принудительно обновляем контекст
-                    await requestPermissions();
-
-                    Alert.alert(
-                        'Результат',
-                        `Система: ${permissions.status}\nКонтекст: ${debugInfo.hasPermission}`,
-                        [{text: 'OK'}]
-                    );
-                } else {
-                    Alert.alert('Разрешения не предоставлены', `Статус: ${permissions.status}`);
-                }
-            } catch (error) {
-                console.error('❌ [Feed] Error checking permissions:', error);
-                Alert.alert('Ошибка', 'Не удалось проверить разрешения');
-            }
-        };
-
         const setupNotifications = async () => {
-            try {
-                console.log('🔔 [Feed] Checking notification permissions...');
-
-                if (!debugInfo.hasPermission) {
-                    console.log('🔔 [Feed] No permissions, requesting...');
-
-                    // Показываем диалог пользователю
-                    Alert.alert(
-                        'Уведомления',
-                        'Разрешите уведомления, чтобы получать информацию о новых сообщениях',
-                        [
-                            {
-                                text: 'Позже',
-                                style: 'cancel',
-                            },
-                            {
-                                text: 'Разрешить',
-                                onPress: async () => {
-                                    await requestPermissions();
-                                    console.log('🔔 [Feed] Permissions requested from feed');
-                                },
-                            },
-                        ]
-                    );
-                } else {
-                    console.log('🔔 [Feed] Permissions already granted');
-                }
-            } catch (error) {
-                console.error('❌ [Feed] Error setting up notifications:', error);
+            if (debugInfo && !debugInfo.hasPermission) {
+                Alert.alert(
+                    'Уведомления',
+                    'Разрешите уведомления, чтобы получать информацию о новых сообщениях',
+                    [
+                        { text: 'Позже', style: 'cancel' },
+                        { text: 'Разрешить', onPress: () => requestPermissions() }
+                    ]
+                );
             }
         };
 
-        // Задержка для завершения инициализации контекста
         const timer = setTimeout(setupNotifications, 2000);
-
         return () => clearTimeout(timer);
-    }, [debugInfo.hasPermission, requestPermissions]);
+    }, [debugInfo?.hasPermission, requestPermissions]);
 
     const fetchArticles = async () => {
         try {
@@ -177,6 +119,191 @@ export default function Feed() {
 
     const stripHtml = (html: string) => {
         return html.replace(/<[^>]*>/g, '');
+    };
+
+    // Компонент для рендеринга HTML контента
+    const HtmlRenderer = ({ html, theme }: { html: string; theme: Theme }) => {
+        const screenWidth = Dimensions.get('window').width - 70; // Увеличиваем отступы для безопасности
+
+        // Определяем цвета на основе темы
+        const isDarkTheme = theme.background === '#000000' || theme.background === '#121212' || theme.text === '#ffffff';
+        const textColor = isDarkTheme ? '#ffffff' : '#000000';
+        const backgroundColor = 'transparent';
+        const secondaryTextColor = isDarkTheme ? '#cccccc' : '#666666';
+        const primaryColor = theme.primary || '#007AFF';
+        const borderColor = isDarkTheme ? '#333333' : '#e0e0e0';
+        const codeBackgroundColor = isDarkTheme ? '#1e1e1e' : '#f5f5f5';
+
+        const htmlContent = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <style>
+                    * {
+                        box-sizing: border-box;
+                    }
+
+                    body {
+                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                        font-size: 16px;
+                        line-height: 1.6;
+                        color: ${textColor} !important;
+                        background-color: ${backgroundColor};
+                        margin: 0;
+                        padding: 8px;
+                        word-wrap: break-word;
+                        overflow-wrap: break-word;
+                        max-width: 100%;
+                    }
+
+                    p {
+                        margin: 0 0 12px 0;
+                        text-align: justify;
+                        color: ${textColor} !important;
+                    }
+
+                    h1, h2, h3, h4, h5, h6 {
+                        color: ${textColor} !important;
+                        margin: 16px 0 8px 0;
+                        font-weight: bold;
+                    }
+
+                    h1 { font-size: 24px; }
+                    h2 { font-size: 22px; }
+                    h3 { font-size: 20px; }
+                    h4 { font-size: 18px; }
+                    h5 { font-size: 16px; }
+                    h6 { font-size: 14px; }
+
+                    strong, b {
+                        font-weight: bold;
+                        color: ${textColor} !important;
+                    }
+
+                    em, i {
+                        font-style: italic;
+                        color: ${textColor} !important;
+                    }
+
+                    ul, ol {
+                        margin: 12px 0;
+                        padding-left: 20px;
+                    }
+
+                    li {
+                        margin: 4px 0;
+                        color: ${textColor} !important;
+                    }
+
+                    blockquote {
+                        border-left: 4px solid ${primaryColor};
+                        margin: 12px 0;
+                        padding: 8px 16px;
+                        background-color: ${isDarkTheme ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)'};
+                        font-style: italic;
+                        color: ${textColor} !important;
+                    }
+
+                    img {
+                        max-width: 100%;
+                        height: auto;
+                        border-radius: 8px;
+                        margin: 8px 0;
+                    }
+
+                    figure {
+                        margin: 16px 0;
+                        text-align: center;
+                    }
+
+                    figure img {
+                        max-width: 100%;
+                        height: auto;
+                        border-radius: 8px;
+                    }
+
+                    figcaption {
+                        color: ${secondaryTextColor} !important;
+                        font-size: 14px;
+                        margin-top: 8px;
+                        font-style: italic;
+                    }
+
+                    a {
+                        color: ${primaryColor} !important;
+                        text-decoration: none;
+                    }
+
+                    a:hover {
+                        text-decoration: underline;
+                    }
+
+                    pre {
+                        background-color: ${codeBackgroundColor};
+                        border: 1px solid ${borderColor};
+                        border-radius: 6px;
+                        padding: 12px;
+                        overflow-x: auto;
+                        font-family: 'Courier New', monospace;
+                        font-size: 14px;
+                        margin: 12px 0;
+                        color: ${textColor} !important;
+                    }
+
+                    code {
+                        background-color: ${codeBackgroundColor};
+                        border: 1px solid ${borderColor};
+                        border-radius: 3px;
+                        padding: 2px 4px;
+                        font-family: 'Courier New', monospace;
+                        font-size: 14px;
+                        color: ${textColor} !important;
+                    }
+
+                    table {
+                        width: 100%;
+                        border-collapse: collapse;
+                        margin: 16px 0;
+                    }
+
+                    th, td {
+                        border: 1px solid ${borderColor};
+                        padding: 8px 12px;
+                        text-align: left;
+                        color: ${textColor} !important;
+                    }
+
+                    th {
+                        background-color: ${codeBackgroundColor};
+                        font-weight: bold;
+                    }
+                </style>
+            </head>
+            <body>
+                ${html}
+            </body>
+            </html>
+        `;
+
+        return (
+            <WebView
+                source={{ html: htmlContent }}
+                style={{ 
+                    width: screenWidth, 
+                    height: 800, // Увеличенная высота для полного контента
+                    backgroundColor: 'transparent'
+                }}
+                scrollEnabled={true}
+                showsVerticalScrollIndicator={true}
+                showsHorizontalScrollIndicator={false}
+                onShouldStartLoadWithRequest={() => false}
+                javaScriptEnabled={false}
+                androidLayerType="software"
+                mixedContentMode="compatibility"
+                nestedScrollEnabled={true}
+            />
+        );
     };
 
     const toggleArticleExpansion = async (article: Article) => {
@@ -228,18 +355,6 @@ export default function Feed() {
         fetchArticles();
     }, []);
 
-    // Добавляем кнопку для ручного запроса разрешений (для отладки)
-    const handleManualPermissionRequest = async () => {
-        try {
-            await requestPermissions();
-            Alert.alert(
-                'Разрешения обновлены',
-                `Статус: ${debugInfo.hasPermission ? 'Разрешены' : 'Не разрешены'}`
-            );
-        } catch (error) {
-            Alert.alert('Ошибка', 'Не удалось запросить разрешения');
-        }
-    };
 
     const renderArticle = ({item}: { item: Article }) => {
         const isExpanded = expandedArticleIds.includes(item.id);
@@ -249,6 +364,7 @@ export default function Feed() {
                 style={[styles.articleItem, isExpanded && styles.expandedArticleItem]}
                 onPress={() => toggleArticleExpansion(item)}
                 activeOpacity={0.7}
+                disabled={isExpanded}
             >
                 <View style={styles.articleHeader}>
                     <View style={styles.categoryContainer}>
@@ -265,9 +381,18 @@ export default function Feed() {
                         borderBottomColor: theme.border
                     }]}>
                         {item.content ? (
-                            <Text style={[styles.articleContent, {color: theme.text}]}>
-                                {stripHtml(item.content)}
-                            </Text>
+                            <View style={styles.htmlContentContainer}>
+                                <TouchableOpacity 
+                                    style={styles.collapseButton}
+                                    onPress={() => toggleArticleExpansion(item)}
+                                >
+                                    <Text style={[styles.collapseButtonText, { color: theme.primary }]}>
+                                        Свернуть статью
+                                    </Text>
+                                    <Ionicons name="chevron-up-outline" size={16} color={theme.primary} />
+                                </TouchableOpacity>
+                                <HtmlRenderer html={item.content} theme={theme} />
+                            </View>
                         ) : (
                             <View>
                                 <Text style={[styles.articlePreamble, {color: theme.textSecondary}]}>
@@ -276,7 +401,7 @@ export default function Feed() {
                                 {item.isLoading ? (
                                     <ActivityIndicator style={styles.contentLoader} color={theme.primary}/>
                                 ) : item.loadError ? (
-                                    <Text style={[styles.noContentText, {color: theme.error}]}>
+                                    <Text style={[styles.noContentText, {color: theme.error || theme.textSecondary}]}>
                                         Не удалось загрузить полный текст статьи
                                     </Text>
                                 ) : (
@@ -301,7 +426,7 @@ export default function Feed() {
                         </Text>
                     </View>
 
-                    <View style={[styles.expandIndicator, {backgroundColor: theme.primary + '10'}]}>
+                    <View style={[styles.expandIndicator, {backgroundColor: `${theme.primary}10`}]}>
                         <Ionicons
                             name={isExpanded ? "chevron-up-outline" : "chevron-down-outline"}
                             size={20}
@@ -333,18 +458,6 @@ export default function Feed() {
                 <TouchableOpacity style={styles.refreshButton} onPress={fetchArticles}>
                     <Text style={styles.refreshButtonText}>Обновить</Text>
                 </TouchableOpacity>
-
-                {/* Временная кнопка для тестирования разрешений */}
-                {__DEV__ && (
-                    <TouchableOpacity
-                        style={[styles.refreshButton, {marginTop: 10, backgroundColor: theme.error}]}
-                        onPress={handleManualPermissionRequest}
-                    >
-                        <Text style={styles.refreshButtonText}>
-                            Запросить разрешения {debugInfo.hasPermission ? '✅' : '❌'}
-                        </Text>
-                    </TouchableOpacity>
-                )}
             </View>
         );
     }
@@ -366,34 +479,12 @@ export default function Feed() {
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={styles.listContainer}
             />
-            {
-                __DEV__ && (
-                    <TouchableOpacity
-                        style={[styles.refreshButton, {marginTop: 10, backgroundColor: 'green'}]}
-                        onPress={sendTestNotification}
-                    >
-                        <Text style={styles.refreshButtonText}>
-                            🧪 Тестовое уведомление
-                        </Text>
-                    </TouchableOpacity>
-                )
-            }
-            {/* Показываем статус разрешений в режиме разработки */}
-            {__DEV__ && (
-                <View style={styles.debugInfo}>
-                    <Text style={[styles.debugText, {color: theme.textSecondary}]}>
-                        🔔: {debugInfo.hasPermission ? '✅' : '❌'} |
-                        🔗: {debugInfo.isWebSocketConnected ? '✅' : '❌'} |
-                        📱: {debugInfo.pushToken ? '✅' : '❌'}
-                    </Text>
-                </View>
-            )}
         </View>
     );
 }
 
 // Функция создания стилей
-const createStyles = (theme: any) => StyleSheet.create({
+const createStyles = (theme: Theme) => StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: theme.background,
@@ -456,7 +547,7 @@ const createStyles = (theme: any) => StyleSheet.create({
         borderColor: theme.border,
     },
     expandedArticleItem: {
-        backgroundColor: theme.surfacePressed,
+        backgroundColor: theme.surface,
         borderColor: theme.primary,
         shadowOpacity: 0.15,
         shadowRadius: 8,
@@ -555,18 +646,23 @@ const createStyles = (theme: any) => StyleSheet.create({
         textAlign: 'center',
         marginVertical: 12,
     },
-    // Добавляем стили для отладочной информации
-    debugInfo: {
-        position: 'absolute',
-        bottom: 20,
-        left: 20,
-        right: 20,
-        padding: 8,
-        backgroundColor: 'rgba(0,0,0,0.7)',
+    htmlContentContainer: {
+        marginBottom: 15,
+        minHeight: 800,
+        overflow: 'visible',
+    },
+    collapseButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 8,
+        marginBottom: 12,
+        backgroundColor: 'transparent',
         borderRadius: 8,
     },
-    debugText: {
-        fontSize: 12,
-        textAlign: 'center',
+    collapseButtonText: {
+        fontSize: 14,
+        fontWeight: '600',
+        marginRight: 4,
     },
 });

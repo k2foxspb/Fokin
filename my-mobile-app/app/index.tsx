@@ -4,12 +4,15 @@ import { Text, View } from "react-native";
 import { router } from "expo-router";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../contexts/ThemeContext';
+import { setupAxiosInterceptors } from '../utils/axiosInterceptors';
 
 export default function Index() {
   const [isLoading, setIsLoading] = useState(true);
   const { theme } = useTheme();
 
   useEffect(() => {
+    // Настраиваем axios interceptors
+    setupAxiosInterceptors();
     checkAuthStatus();
   }, []);
 

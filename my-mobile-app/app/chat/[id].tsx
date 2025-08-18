@@ -42,7 +42,6 @@ interface User {
 // Функция для безопасного форматирования времени
 const formatTimestamp = (timestamp: number | string | undefined): string => {
     if (!timestamp) {
-        console.warn('Empty timestamp provided');
         return '--:--';
     }
 
@@ -73,12 +72,10 @@ const formatTimestamp = (timestamp: number | string | undefined): string => {
         } else if (typeof timestamp === 'number') {
             date = new Date(timestamp < 1e10 ? timestamp * 1000 : timestamp);
         } else {
-            console.warn('Unknown timestamp format:', timestamp);
             return '--:--';
         }
 
         if (isNaN(date.getTime())) {
-            console.warn('Invalid date from timestamp:', timestamp);
             return '--:--';
         }
 
@@ -87,7 +84,6 @@ const formatTimestamp = (timestamp: number | string | undefined): string => {
             minute: '2-digit'
         });
     } catch (error) {
-        console.error('Error formatting timestamp:', timestamp, error);
         return '--:--';
     }
 };
@@ -104,53 +100,34 @@ export default function ChatScreen() {
     const [isLoading, setIsLoading] = useState(true);
     const [isConnected, setIsConnected] = useState(false);
     const [isDataLoaded, setIsDataLoaded] = useState(false);
+    const [page, setPage] = useState(1);
+    const [hasMore, setHasMore] = useState(true);
+    const [isLoadingMore, setIsLoadingMore] = useState(false);
     const flatListRef = useRef<FlatList>(null);
     const router = useRouter();
 
     // Создаем стили с темой
     const styles = createStyles(theme);
 
-    // Отладочная информация
-    useEffect(() => {
-        console.log('=== CURRENT USER INFO ===');
-        console.log('Current Username:', currentUsername);
-        console.log('Current User ID:', currentUserId);
-        console.log('=== MESSAGES ===');
-        messages.forEach((msg, index) => {
-            console.log(`Message ${index}:`, {
-                id: msg.id,
-                sender__username: msg.sender__username,
-                sender_id: msg.sender_id,
-                timestamp: msg.timestamp,
-                isMyMessage: msg.sender_id === currentUserId
-            });
-        });
-    }, [messages, currentUserId, currentUsername]);
 
-    // WebSocket хук с дополнительной отладкой
+    // WebSocket хук
     const {connect, disconnect, sendMessage, isConnected: wsIsConnected, reconnect} = useWebSocket(
         `/${API_CONFIG.WS_PROTOCOL}/private/${roomId}/`,
         {
             onOpen: () => {
-
                 setIsConnected(true);
             },
             onMessage: (event: any) => {
-
-
                 try {
                     const data = JSON.parse(event.data);
 
-
                     // Игнорируем системные сообщения
                     if (data.type === 'messages_by_sender_update') {
-                        console.log('Ignoring system message');
                         return;
                     }
 
                     // Обработка ошибок от consumer
                     if (data.error) {
-                        console.error('WebSocket error:', data.error);
                         Alert.alert('Ошибка', data.error);
                         return;
                     }
@@ -168,24 +145,28 @@ export default function ChatScreen() {
                         setMessages(prev => {
                             const exists = prev.some(msg => msg.id === newMessage.id);
                             if (!exists) {
-                                return [...prev, newMessage];
+                                return [newMessage, ...prev]; // Добавляем в начало массива
                             }
                             return prev;
                         });
 
                         setTimeout(() => {
-                            flatListRef.current?.scrollToEnd({animated: true});
+                            if (flatListRef.current) {
+                                flatListRef.current.scrollToIndex({
+                                    index: 0,
+                                    animated: true
+                                });
+                            }
                         }, 100);
                     }
                 } catch (error) {
-                    console.error('Error parsing WebSocket message:', error);
+                    // Тихо игнорируем ошибки парсинга
                 }
             },
             onClose: () => {
                 setIsConnected(false);
             },
             onError: (error: any) => {
-                console.error('WebSocket ERROR:', error);
                 setIsConnected(false);
 
                 setTimeout(() => {
@@ -208,7 +189,6 @@ export default function ChatScreen() {
             }
             return token;
         } catch (error) {
-            console.error('Error getting token:', error);
             return null;
         }
     };
@@ -236,7 +216,6 @@ export default function ChatScreen() {
 
             return userData;
         } catch (error) {
-            console.error('Error fetching current user:', error);
             if (axios.isAxiosError(error) && error.response?.status === 401) {
                 Alert.alert('Ошибка', 'Сессия истекла. Войдите снова.');
                 router.replace('/login');
@@ -266,11 +245,9 @@ export default function ChatScreen() {
             };
 
             setRecipient(recipientData);
-            console.log('Recipient info loaded:', recipientData);
 
             return recipientData;
         } catch (error) {
-            console.error('Error fetching recipient info:', error);
             if (axios.isAxiosError(error) && error.response?.status === 401) {
                 Alert.alert('Ошибка', 'Сессия истекла. Войдите снова.');
                 router.replace('/login');
@@ -279,8 +256,8 @@ export default function ChatScreen() {
         }
     };
 
-    // Получение истории сообщений
-    const fetchChatHistory = async () => {
+    // Получение истории сообщений с пагинацией
+    const fetchChatHistory = async (pageNum: number = 1, limit: number = 15) => {
         try {
             const token = await getToken();
             if (!token) return;
@@ -291,6 +268,10 @@ export default function ChatScreen() {
                     headers: {
                         'Authorization': `Token ${token}`,
                         'Content-Type': 'application/json',
+                    },
+                    params: {
+                        page: pageNum,
+                        limit: limit
                     }
                 }
             );
@@ -301,14 +282,31 @@ export default function ChatScreen() {
                     timestamp: msg.timestamp
                 }));
 
-                setMessages(processedMessages);
+                if (pageNum === 1) {
+                    // Первая загрузка - заменяем все сообщения
+                    setMessages(processedMessages.reverse()); // Реверсируем для правильного порядка
+                    setPage(1);
+                } else {
+                    // Загрузка дополнительных сообщений - добавляем в начало
+                    setMessages(prev => [...processedMessages.reverse(), ...prev]);
+                }
 
-                setTimeout(() => {
-                    flatListRef.current?.scrollToEnd({animated: false});
-                }, 100);
+                // Проверяем, есть ли еще сообщения
+                setHasMore(processedMessages.length === limit);
+
+                if (pageNum === 1) {
+                    // Только при первой загрузке прокручиваем вниз
+                    setTimeout(() => {
+                        if (flatListRef.current && processedMessages.length > 0) {
+                            flatListRef.current.scrollToIndex({
+                                index: 0,
+                                animated: false
+                            });
+                        }
+                    }, 100);
+                }
             }
         } catch (error) {
-            console.error('Error loading chat history:', error);
             if (axios.isAxiosError(error) && error.response?.status === 401) {
                 Alert.alert('Ошибка', 'Сессия истекла. Войдите снова.');
                 router.replace('/login');
@@ -316,10 +314,24 @@ export default function ChatScreen() {
         }
     };
 
+    // Загрузка дополнительных сообщений
+    const loadMoreMessages = async () => {
+        if (!hasMore || isLoadingMore) return;
+
+        setIsLoadingMore(true);
+        const nextPage = page + 1;
+
+        try {
+            await fetchChatHistory(nextPage, 15);
+            setPage(nextPage);
+        } finally {
+            setIsLoadingMore(false);
+        }
+    };
+
     // Инициализация чата
     useEffect(() => {
         if (!roomId) {
-            console.error('Room ID is missing');
             router.back();
             return;
         }
@@ -342,7 +354,6 @@ export default function ChatScreen() {
                 }
 
             } catch (error) {
-                console.error('Error initializing chat:', error);
                 Alert.alert('Ошибка', 'Не удалось загрузить чат');
             } finally {
                 setIsLoading(false);
@@ -352,7 +363,6 @@ export default function ChatScreen() {
         initializeChat();
 
         return () => {
-            console.log('Cleaning up chat screen');
             disconnect();
         };
     }, [roomId]);
@@ -376,7 +386,6 @@ export default function ChatScreen() {
             sendMessage(messageData);
             setMessageText('');
         } catch (error) {
-            console.error('Error sending message:', error);
             Alert.alert('Ошибка', 'Не удалось отправить сообщение');
         }
     };
@@ -498,17 +507,29 @@ export default function ChatScreen() {
                 contentContainerStyle={styles.chatboxContent}
                 keyExtractor={(item, index) => `message-${item.id}-${index}`}
                 renderItem={renderMessage}
-                onContentSizeChange={() => {
-                    setTimeout(() => {
-                        flatListRef.current?.scrollToEnd({animated: true});
-                    }, 100);
-                }}
+                inverted
+                onEndReached={loadMoreMessages}
+                onEndReachedThreshold={0.1}
+                ListFooterComponent={
+                    isLoadingMore ? (
+                        <View style={styles.loadingMoreContainer}>
+                            <ActivityIndicator size="small" color={theme.primary} />
+                            <Text style={[styles.loadingMoreText, { color: theme.textSecondary }]}>
+                                Загрузка сообщений...
+                            </Text>
+                        </View>
+                    ) : null
+                }
                 ListEmptyComponent={
                     <View style={styles.emptyContainer}>
                         <Text style={[styles.emptyText, { color: theme.textSecondary }]}>Нет сообщений</Text>
                     </View>
                 }
                 showsVerticalScrollIndicator={false}
+                maintainVisibleContentPosition={{
+                    minIndexForVisible: 0,
+                    autoscrollToTopThreshold: 10
+                }}
             />
 
             <View style={styles.inputContainer}>
@@ -693,5 +714,15 @@ const createStyles = (theme: any) => StyleSheet.create({
         width: 44,
         height: 44,
         borderRadius: 22,
+    },
+    loadingMoreContainer: {
+        paddingVertical: 16,
+        alignItems: 'center',
+        flexDirection: 'row',
+        justifyContent: 'center',
+    },
+    loadingMoreText: {
+        marginLeft: 8,
+        fontSize: 14,
     },
 });

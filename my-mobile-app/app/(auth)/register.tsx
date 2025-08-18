@@ -19,6 +19,17 @@ import { Link } from "expo-router";
 import { API_CONFIG } from '../../config';
 import * as ImagePicker from 'expo-image-picker';
 import { Picker } from '@react-native-picker/picker';
+import { useTheme } from '../../contexts/ThemeContext';
+
+interface Theme {
+  background: string;
+  surface: string;
+  primary: string;
+  text: string;
+  textSecondary: string;
+  border: string;
+  placeholder: string;
+}
 
 interface RegisterResponse {
   token: string;
@@ -35,6 +46,7 @@ interface RegisterResponse {
 }
 
 export default function Register() {
+  const { theme } = useTheme();
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -49,6 +61,8 @@ export default function Register() {
   const [month, setMonth] = useState('1');
   const [year, setYear] = useState('2000');
   const [loading, setLoading] = useState(false);
+
+  const styles = createStyles(theme);
 
   const validateForm = () => {
     if (!username.trim()) {
@@ -113,7 +127,7 @@ export default function Register() {
     setShowDatePicker(false);
   };
   
-  const formatBirthday = (dateString) => {
+  const formatBirthday = (dateString: string) => {
     if (!dateString) return 'Выберите дату рождения';
     
     const [year, month, day] = dateString.split('-');
@@ -229,19 +243,23 @@ export default function Register() {
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>Регистрация</Text>
       
+      <Text style={styles.label}>Имя пользователя *</Text>
       <TextInput
-        style={styles.input}
-        placeholder="Имя пользователя"
+        style={[styles.input, { color: theme.text }]}
+        placeholder="Введите имя пользователя"
+        placeholderTextColor={theme.placeholder}
         value={username}
         onChangeText={setUsername}
         autoCapitalize="none"
         autoCorrect={false}
         editable={!loading}
       />
-      
+
+      <Text style={styles.label}>Email *</Text>
       <TextInput
-        style={styles.input}
-        placeholder="Email"
+        style={[styles.input, { color: theme.text }]}
+        placeholder="Введите email адрес"
+        placeholderTextColor={theme.placeholder}
         value={email}
         onChangeText={setEmail}
         autoCapitalize="none"
@@ -249,48 +267,54 @@ export default function Register() {
         keyboardType="email-address"
         editable={!loading}
       />
-      
+
+      <Text style={styles.label}>Имя *</Text>
       <TextInput
-        style={styles.input}
-        placeholder="Имя"
+        style={[styles.input, { color: theme.text }]}
+        placeholder="Введите ваше имя"
+        placeholderTextColor={theme.placeholder}
         value={firstName}
         onChangeText={setFirstName}
         autoCorrect={false}
         editable={!loading}
       />
-      
+
+      <Text style={styles.label}>Фамилия *</Text>
       <TextInput
-        style={styles.input}
-        placeholder="Фамилия"
+        style={[styles.input, { color: theme.text }]}
+        placeholder="Введите вашу фамилию"
+        placeholderTextColor={theme.placeholder}
         value={lastName}
         onChangeText={setLastName}
         autoCorrect={false}
         editable={!loading}
       />
       
+      <Text style={styles.label}>Пол *</Text>
       <View style={styles.pickerContainer}>
-        <Text style={styles.pickerLabel}>Пол:</Text>
         <Picker
           selectedValue={gender}
           onValueChange={(itemValue) => setGender(itemValue)}
-          style={styles.picker}
+          style={[styles.picker, { color: theme.text }]}
           enabled={!loading}
         >
           <Picker.Item label="Мужчина" value="male" />
           <Picker.Item label="Женщина" value="female" />
         </Picker>
       </View>
-      
+
+      <Text style={styles.label}>Дата рождения *</Text>
       <TouchableOpacity 
         style={styles.input}
         onPress={() => setShowDatePicker(true)}
         disabled={loading}
       >
-        <Text style={birthday ? styles.inputText : styles.placeholderText}>
-          {birthday ? formatBirthday(birthday) : 'Дата рождения'}
+        <Text style={birthday ? [styles.inputText, { color: theme.text }] : [styles.placeholderText, { color: theme.placeholder }]}>
+          {birthday ? formatBirthday(birthday) : 'Выберите дату рождения'}
         </Text>
       </TouchableOpacity>
-      
+
+      <Text style={styles.label}>Фото профиля</Text>
       <TouchableOpacity 
         style={styles.avatarContainer}
         onPress={pickImage}
@@ -308,11 +332,14 @@ export default function Register() {
             style={styles.avatar}
           />
         )}
+        <Text style={[styles.avatarHint, { color: theme.textSecondary }]}>Нажмите для выбора фото</Text>
       </TouchableOpacity>
-      
+
+      <Text style={styles.label}>Пароль *</Text>
       <TextInput
-        style={styles.input}
-        placeholder="Пароль"
+        style={[styles.input, { color: theme.text }]}
+        placeholder="Введите пароль (минимум 6 символов)"
+        placeholderTextColor={theme.placeholder}
         value={password}
         onChangeText={setPassword}
         secureTextEntry
@@ -320,10 +347,12 @@ export default function Register() {
         autoCorrect={false}
         editable={!loading}
       />
-      
+
+      <Text style={styles.label}>Подтвердите пароль *</Text>
       <TextInput
-        style={styles.input}
-        placeholder="Подтвердите пароль"
+        style={[styles.input, { color: theme.text }]}
+        placeholder="Повторите пароль"
+        placeholderTextColor={theme.placeholder}
         value={confirmPassword}
         onChangeText={setConfirmPassword}
         secureTextEntry
@@ -427,91 +456,78 @@ export default function Register() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: Theme) => StyleSheet.create({
   container: {
     flexGrow: 1,
     justifyContent: 'center',
     padding: 20,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: theme.background,
   },
   title: {
     fontSize: 28,
     fontWeight: 'bold',
     textAlign: 'center',
     marginBottom: 30,
-    color: '#333',
+    color: theme.text,
+  },
+  label: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 5,
+    color: theme.text,
   },
   input: {
-    backgroundColor: 'white',
+    backgroundColor: theme.surface,
     padding: 15,
     borderRadius: 8,
     marginBottom: 15,
     fontSize: 16,
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: theme.border,
   },
   inputText: {
     fontSize: 16,
-    color: '#333',
   },
   placeholderText: {
     fontSize: 16,
-    color: '#999',
   },
   pickerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'white',
+    backgroundColor: theme.surface,
     borderRadius: 8,
     marginBottom: 15,
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: theme.border,
     paddingHorizontal: 10,
   },
-  pickerLabel: {
-    fontSize: 16,
-    color: '#333',
-    marginRight: 10,
-  },
   picker: {
-    flex: 1,
     height: 50,
   },
   avatarContainer: {
     alignSelf: 'center',
     marginBottom: 20,
+    alignItems: 'center',
   },
   avatar: {
     width: 120,
     height: 120,
     borderRadius: 60,
     borderWidth: 2,
-    borderColor: '#007AFF',
+    borderColor: theme.primary,
   },
-  avatarPlaceholder: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: '#e1e1e1',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#ccc',
-  },
-  avatarPlaceholderText: {
-    color: '#666',
+  avatarHint: {
+    fontSize: 12,
+    marginTop: 8,
     textAlign: 'center',
-    padding: 10,
   },
   button: {
-    backgroundColor: '#007AFF',
+    backgroundColor: theme.primary,
     padding: 15,
     borderRadius: 8,
     alignItems: 'center',
     marginTop: 10,
   },
   disabledButton: {
-    backgroundColor: '#ccc',
+    backgroundColor: theme.textSecondary,
   },
   buttonText: {
     color: 'white',
@@ -525,11 +541,11 @@ const styles = StyleSheet.create({
   },
   linkText: {
     fontSize: 16,
-    color: '#666',
+    color: theme.textSecondary,
   },
   link: {
     fontSize: 16,
-    color: '#007AFF',
+    color: theme.primary,
     fontWeight: '500',
   },
   // Modal styles
@@ -540,7 +556,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
   },
   modalContent: {
-    backgroundColor: 'white',
+    backgroundColor: theme.surface,
     borderRadius: 10,
     padding: 20,
     width: '90%',
@@ -551,6 +567,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     textAlign: 'center',
     marginBottom: 20,
+    color: theme.text,
   },
   datePickerContainer: {
     flexDirection: 'row',
@@ -564,6 +581,7 @@ const styles = StyleSheet.create({
   datePickerLabel: {
     fontSize: 16,
     marginBottom: 5,
+    color: theme.text,
   },
   datePicker: {
     width: '100%',
@@ -581,10 +599,10 @@ const styles = StyleSheet.create({
     marginHorizontal: 5,
   },
   cancelButton: {
-    backgroundColor: '#ccc',
+    backgroundColor: theme.textSecondary,
   },
   confirmButton: {
-    backgroundColor: '#007AFF',
+    backgroundColor: theme.primary,
   },
   modalButtonText: {
     color: 'white',

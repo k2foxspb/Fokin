@@ -14,6 +14,17 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from "expo-router";
 import { Link } from "expo-router";
 import { API_CONFIG } from '../../config';
+import { useTheme } from '../../contexts/ThemeContext';
+
+interface Theme {
+  background: string;
+  surface: string;
+  primary: string;
+  text: string;
+  textSecondary: string;
+  border: string;
+  placeholder: string;
+}
 
 interface LoginResponse {
   token: string;
@@ -25,9 +36,12 @@ interface LoginResponse {
 }
 
 export default function Login() { // Убираем параметр navigation, т.к. используем router
+  const { theme } = useTheme();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const styles = createStyles(theme);
 
   const handleLogin = async () => {
     if (!username.trim() || !password.trim()) {
@@ -68,8 +82,9 @@ export default function Login() { // Убираем параметр navigation,
       <Text style={styles.title}>Вход в аккаунт</Text>
       
       <TextInput
-        style={styles.input}
+        style={[styles.input, { color: theme.text }]}
         placeholder="Имя пользователя"
+        placeholderTextColor={theme.placeholder}
         value={username}
         onChangeText={setUsername}
         autoCapitalize="none"
@@ -77,8 +92,9 @@ export default function Login() { // Убираем параметр navigation,
         editable={!loading}
       />
       <TextInput
-        style={styles.input}
+        style={[styles.input, { color: theme.text }]}
         placeholder="Пароль"
+        placeholderTextColor={theme.placeholder}
         value={password}
         onChangeText={setPassword}
         secureTextEntry
@@ -115,38 +131,38 @@ export default function Login() { // Убираем параметр navigation,
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: Theme) => StyleSheet.create({
   container: {
     flexGrow: 1,
     justifyContent: 'center',
     padding: 20,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: theme.background,
   },
   title: {
     fontSize: 28,
     fontWeight: 'bold',
     textAlign: 'center',
     marginBottom: 30,
-    color: '#333',
+    color: theme.text,
   },
   input: {
-    backgroundColor: 'white',
+    backgroundColor: theme.surface,
     padding: 15,
     borderRadius: 8,
     marginBottom: 15,
     fontSize: 16,
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: theme.border,
   },
   button: {
-    backgroundColor: '#007AFF',
+    backgroundColor: theme.primary,
     padding: 15,
     borderRadius: 8,
     alignItems: 'center',
     marginBottom: 20,
   },
   disabledButton: {
-    backgroundColor: '#ccc',
+    backgroundColor: theme.textSecondary,
   },
   buttonText: {
     color: 'white',
@@ -160,11 +176,11 @@ const styles = StyleSheet.create({
   },
   linkText: {
     fontSize: 16,
-    color: '#666',
+    color: theme.textSecondary,
   },
   link: {
     fontSize: 16,
-    color: '#007AFF',
+    color: theme.primary,
     fontWeight: '500',
   },
 });
