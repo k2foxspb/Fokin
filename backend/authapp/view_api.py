@@ -546,6 +546,11 @@ class ResetPasswordWithCodeAPIView(APIView):
         new_password = request.data.get('new_password')
         confirm_password = request.data.get('confirm_password')
 
+        # Очистка кода от управляющих символов Unicode
+        if reset_code:
+            import re
+            reset_code = re.sub(r'[\s\u200B-\u200D\u202A-\u202E\u2060-\u206F]', '', reset_code)
+
         if not all([email, reset_code, new_password, confirm_password]):
             return Response(
                 {'error': 'Все поля обязательны для заполнения'},
