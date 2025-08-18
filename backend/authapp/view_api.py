@@ -567,6 +567,8 @@ class ResetPasswordWithCodeAPIView(APIView):
         try:
             user = User.objects.get(email=email)
             print(f"RESET PASSWORD WITH CODE API - Found user: {user.username}")
+            print(f"RESET PASSWORD WITH CODE API - Stored code: '{user.verification_code}'")
+            print(f"RESET PASSWORD WITH CODE API - Received code: '{reset_code}'")
 
         except User.DoesNotExist:
             print("RESET PASSWORD WITH CODE API - User not found")
@@ -576,8 +578,15 @@ class ResetPasswordWithCodeAPIView(APIView):
             )
 
         # Проверяем код сброса
-        if not user.verification_code or user.verification_code != reset_code:
-            print("RESET PASSWORD WITH CODE API - Invalid reset code")
+        if not user.verification_code:
+            print("RESET PASSWORD WITH CODE API - No verification code stored")
+            return Response(
+                {'error': 'Код восстановления не найден. Запросите новый код.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if user.verification_code != reset_code:
+            print(f"RESET PASSWORD WITH CODE API - Code mismatch. Expected: '{user.verification_code}', Got: '{reset_code}'")
             return Response(
                 {'error': 'Неверный код для сброса пароля'},
                 status=status.HTTP_400_BAD_REQUEST
