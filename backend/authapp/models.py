@@ -69,6 +69,18 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         blank=True,
         null=True,
     )
+    password_reset_token = models.CharField(
+        "Токен для сброса пароля",
+        max_length=255,
+        blank=True,
+        null=True,
+    )
+    password_reset_uid = models.CharField(
+        "UID для сброса пароля",
+        max_length=255,
+        blank=True,
+        null=True,
+    )
     is_staff = models.BooleanField(
         "статус администратора",
         default=False,
