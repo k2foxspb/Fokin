@@ -17,7 +17,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.k2foxspb.fokinfun",
+      "bundleIdentifier": "com.k2foxspb.fokinfun"
 
     },
     "android": {
@@ -38,7 +38,6 @@
         "android.permission.RECEIVE_BOOT_COMPLETED",
         "android.permission.VIBRATE"
       ],
-      "package": "com.k2foxspb.fokinfun",
       "googleServicesFile": "./google-services.json"
     },
     "web": {
