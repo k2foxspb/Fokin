@@ -1,7 +1,6 @@
 {
   "cli": {
-    "version": ">= 5.2.0",
-    "appVersionSource": "remote"
+    "version": ">= 5.2.0"
   },
   "build": {
     "development": {
@@ -10,34 +9,19 @@
       "android": {
         "buildType": "apk",
         "gradleCommand": ":app:assembleDebug"
-      },
-      "env": {
-        "GOOGLE_SERVICES_JSON": "{{ GOOGLE_SERVICES_JSON }}"
       }
     },
     "preview": {
       "distribution": "internal",
-      "env": {
-        "GOOGLE_SERVICES_JSON": "{{ GOOGLE_SERVICES_JSON }}"
+      "android": {
+        "buildType": "apk"
       }
     },
     "production": {
       "autoIncrement": true,
-      "env": {
-        "NODE_ENV": "production",
-        "GOOGLE_SERVICES_JSON": "{{ GOOGLE_SERVICES_JSON }}"
-      },
       "android": {
         "buildType": "apk"
       }
-    }
-  },
-  "submit": {
-    "production": {
-      "android": {
-        "track": "production"
-      }
-
     }
   }
 }
