@@ -77,50 +77,112 @@ export const requestNotificationPermissions = async (): Promise<boolean> => {
 
 export const registerForPushNotifications = async (): Promise<string | null> => {
   try {
+    console.log('📱 [Push] Starting push token registration...');
+
     if (!Device.isDevice) {
+      console.log('⚠️ [Push] Not a physical device, skipping push registration');
       return null;
     }
 
     const hasPermission = await requestNotificationPermissions();
     if (!hasPermission) {
+      console.log('❌ [Push] No notification permissions');
       return null;
     }
 
-    const token = await Notifications.getExpoPushTokenAsync({
-      projectId: Constants.expoConfig?.extra?.eas?.projectId,
-    });
+    // Проверяем наличие projectId
+    const projectId = Constants.expoConfig?.extra?.eas?.projectId;
+    console.log('🔑 [Push] EAS Project ID:', projectId);
+
+    if (!projectId) {
+      console.error('❌ [Push] No EAS project ID found in Constants.expoConfig.extra.eas.projectId');
+      console.log('🔍 [Push] Full config check:', {
+        expoConfig: Constants.expoConfig,
+        extra: Constants.expoConfig?.extra,
+        eas: Constants.expoConfig?.extra?.eas
+      });
+      return null;
+    }
+
+    console.log('🔑 [Push] Attempting to get Expo push token...');
+
+    // Получаем токен с retry логикой
+    let token = null;
+    let attempts = 0;
+    const maxAttempts = 3;
+
+    while (attempts < maxAttempts && !token) {
+      try {
+        attempts++;
+        console.log(`🔄 [Push] Attempt ${attempts}/${maxAttempts} to get push token`);
+
+        const tokenResponse = await Notifications.getExpoPushTokenAsync({
+          projectId: projectId,
+        });
+
+        token = tokenResponse.data;
+        console.log('✅ [Push] Successfully got Expo push token:', token.substring(0, 20) + '...');
+        break;
+
+      } catch (tokenError) {
+        console.error(`❌ [Push] Attempt ${attempts} failed:`, tokenError);
+
+        if (tokenError?.message?.includes('Firebase')) {
+          console.error('🔥 [Push] Firebase error detected. This suggests FCM is required but not configured.');
+
+          if (Platform.OS === 'android') {
+            console.error('🤖 [Push] Android device detected. FCM credentials may be required for production.');
+            console.error('📖 [Push] See: https://docs.expo.dev/push-notifications/fcm-credentials/');
+
+            // Для development режима, можем попробовать без projectId
+            if (__DEV__ && attempts === maxAttempts) {
+              console.log('🚧 [Push] Attempting development fallback...');
+              try {
+                const fallbackToken = await Notifications.getExpoPushTokenAsync();
+                token = fallbackToken.data;
+                console.log('✅ [Push] Fallback token successful:', token.substring(0, 20) + '...');
+                break;
+              } catch (fallbackError) {
+                console.error('❌ [Push] Fallback also failed:', fallbackError);
+              }
+            }
+          }
+        }
+
+        if (attempts === maxAttempts) {
+          console.error('❌ [Push] All attempts failed. Cannot get push token.');
+          return null;
+        }
+
+        // Ждем перед следующей попыткой
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempts));
+      }
+    }
+
+    if (!token) {
+      console.error('❌ [Push] Failed to get push token after all attempts');
+      return null;
+    }
 
     // Настраиваем каналы уведомлений для Android
     if (Platform.OS === 'android') {
-      await Notifications.setNotificationChannelAsync('default', {
-        name: 'Основные уведомления',
-        importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#FF231F7C',
-        sound: 'default',
-        enableVibrate: true,
-        showBadge: true,
-        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-        bypassDnd: true,
-      });
-
-      await Notifications.setNotificationChannelAsync('messages', {
-        name: 'Сообщения',
-        importance: Notifications.AndroidImportance.HIGH,
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#FF231F7C',
-        sound: 'default',
-        enableVibrate: true,
-        showBadge: true,
-        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-
-
-      });
+      try {
+        await setupAndroidNotificationChannels();
+      } catch (channelError) {
+        console.error('⚠️ [Push] Error setting up notification channels:', channelError);
+        // Не критичная ошибка, продолжаем
+      }
     }
 
-    return token.data;
+    return token;
+
   } catch (error) {
-    console.error('Error getting push token:', error);
+    console.error('❌ [Push] Critical error in registerForPushNotifications:', error);
+    console.error('❌ [Push] Error details:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name
+    });
     return null;
   }
 };
@@ -154,6 +216,35 @@ export const sendLocalNotification = async (notification: {
     console.error('Error sending local notification:', error);
     throw error;
   }
+};
+
+const setupAndroidNotificationChannels = async () => {
+  console.log('📱 [Push] Setting up Android notification channels...');
+
+  await Notifications.setNotificationChannelAsync('default', {
+    name: 'Основные уведомления',
+    importance: Notifications.AndroidImportance.MAX,
+    vibrationPattern: [0, 250, 250, 250],
+    lightColor: '#FF231F7C',
+    sound: 'default',
+    enableVibrate: true,
+    showBadge: true,
+    lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+    bypassDnd: true,
+  });
+
+  await Notifications.setNotificationChannelAsync('messages', {
+    name: 'Сообщения',
+    importance: Notifications.AndroidImportance.HIGH,
+    vibrationPattern: [0, 250, 250, 250],
+    lightColor: '#FF231F7C',
+    sound: 'default',
+    enableVibrate: true,
+    showBadge: true,
+    lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+  });
+
+  console.log('✅ [Push] Android notification channels configured');
 };
 
 export const sendHighPriorityNotification = async (notification: {

@@ -22,6 +22,7 @@
     },
     "android": {
       "package": "com.k2foxspb.fokinfun",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/logo1024.png",
         "backgroundColor": "#222222"

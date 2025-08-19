@@ -342,8 +342,8 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
                     router.push({
                         pathname: '/chat/[id]',
                         params: {
-                            "id": data.chatId,
-                            "userId": data.senderId
+                            "id": String(data.chatId),
+                            "userId": String(data.senderId)
                         }
                     });
                 } else {
