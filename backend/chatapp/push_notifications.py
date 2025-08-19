@@ -25,7 +25,7 @@ class PushNotificationService:
 
         if not expo_tokens:
             logger.warning("No expo tokens provided")
-            return
+            return False
 
         logger.info(f"Attempting to send push notification to {len(expo_tokens)} tokens")
 
@@ -68,13 +68,15 @@ class PushNotificationService:
 
         if not messages:
             logger.warning("No valid messages to send")
-            return
+            return False
 
         logger.info(f"Sending {len(messages)} push notifications")
 
         try:
             # Отправляем уведомления батчами по 100 штук
             batch_size = 100
+            success_count = 0
+
             for i in range(0, len(messages), batch_size):
                 batch = messages[i:i + batch_size]
 
@@ -99,20 +101,42 @@ class PushNotificationService:
                     logger.info(f"Push notifications sent successfully: {len(batch)} messages")
 
                     # Проверяем на ошибки
-                    for i, receipt in enumerate(result.get('data', [])):
+                    for j, receipt in enumerate(result.get('data', [])):
                         if receipt.get('status') == 'error':
                             error_type = receipt.get('details', {}).get('error')
-                            logger.error(f"Push notification error for token {batch[i]['to']}: {error_type}")
+                            logger.error(f"Push notification error for token {batch[j]['to']}: {error_type}")
 
-                            # Если токен недействителен, можно его удалить из базы
+                            # Если токен недействителен, удаляем его из базы
                             if error_type in ['DeviceNotRegistered', 'InvalidCredentials']:
-                                cls._handle_invalid_token(batch[i]['to'])
+                                cls._handle_invalid_token(batch[j]['to'])
                         elif receipt.get('status') == 'ok':
-                            logger.info(f"Push notification sent successfully to token {batch[i]['to'][:20]}...")
+                            logger.info(f"Push notification sent successfully to token {batch[j]['to'][:20]}...")
+                            success_count += 1
                 else:
                     logger.error(f"Failed to send push notifications: {response.status_code} - {response.text}")
 
+            return success_count > 0
+
         except requests.exceptions.RequestException as e:
             logger.error(f"Network error sending push notifications: {str(e)}")
+            return False
         except Exception as e:
             logger.error(f"Error sending push notifications: {str(e)}")
+            return False
+
+    @classmethod
+    def _handle_invalid_token(cls, token: str):
+        """Обрабатывает недействительные токены"""
+        try:
+            # Импорт здесь, чтобы избежать циклических зависимостей
+            from authapp.models import CustomUser
+
+            # Находим пользователя с этим токеном и удаляем его
+            users = CustomUser.objects.filter(expo_push_token=token)
+            for user in users:
+                logger.info(f"Removing invalid push token for user {user.username}")
+                user.expo_push_token = None
+                user.save()
+
+        except Exception as e:
+            logger.error(f"Error handling invalid token {token}: {str(e)}")
