@@ -316,6 +316,9 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
         НОВОЕ: Отправляем push-уведомление если получатель не в сети
         """
         try:
+            logger.info(
+                f"🔔 [PUSH] Starting push notification check for message to {message_instance.recipient.username}")
+
             from .push_notifications import PushNotificationService
 
             recipient = message_instance.recipient
@@ -325,12 +328,15 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
             if not hasattr(recipient, 'expo_push_token') or not recipient.expo_push_token:
                 logger.info(f"User {recipient.username} has no push token")
                 return
+            logger.info(f"🔔 [PUSH] User {recipient.username} has push token: {recipient.expo_push_token[:20]}...")
 
             # Проверяем, подключен ли получатель к WebSocket (онлайн)
             recipient_online = await self.is_user_online(recipient.id)
+            logger.info(f"🔔 [PUSH] User {recipient.username} online status: {recipient_online}")
 
             if not recipient_online:
-                logger.info(f"User {recipient.username} is offline, sending push notification")
+                logger.info(f"🔔 [PUSH] User {recipient.username} is offline, sending push notification")
+
 
                 # Отправляем push-уведомление в отдельном потоке
                 await database_sync_to_async(self._send_push_notification_sync)(

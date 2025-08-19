@@ -1,4 +1,7 @@
+import logging
+
 from django.db.models.functions import Coalesce
+from django.http import JsonResponse
 from rest_framework import viewsets, status, mixins
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
@@ -6,6 +9,41 @@ from rest_framework.permissions import IsAuthenticated
 from django.db.models import Q, F, IntegerField, Case, When, Subquery, OuterRef, Count
 from .models import PrivateChatRoom, PrivateMessage, CustomUser
 from .serializers import ChatRoomSerializer, MessageSerializer, ChatPreviewSerializer
+
+logger = logging.getLogger(__name__)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def debug_push_tokens(request):
+    """Временный endpoint для проверки push токенов"""
+    try:
+        user = request.user
+        logger.info(f"🔍 [DEBUG] Checking push token for user {user.username}")
+
+        user_data = {
+            'user_id': user.id,
+            'username': user.username,
+            'has_push_token': bool(user.expo_push_token),
+            'token_preview': user.expo_push_token[:20] + '...' if user.expo_push_token else None,
+            'is_active': user.is_active,
+        }
+
+        # Проверим всех пользователей с токенами
+        users_with_tokens = CustomUser.objects.filter(
+            expo_push_token__isnull=False
+        ).exclude(expo_push_token='').count()
+
+        logger.info(f"🔍 [DEBUG] Total users with push tokens: {users_with_tokens}")
+
+        return JsonResponse({
+            'current_user': user_data,
+            'total_users_with_tokens': users_with_tokens,
+        })
+
+    except Exception as e:
+        logger.error(f"❌ [DEBUG] Error in debug_push_tokens: {e}")
+        return JsonResponse({'error': str(e)}, status=500)
 
 
 class ChatViewSet(viewsets.GenericViewSet,

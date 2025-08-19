@@ -22,6 +22,7 @@ urlpatterns = [
     path('dialogs/', user_dialog_list, name='user_dialogs'),
     path('api/room/<int:room_id>/info/', get_room_info, name='get_room_info'),
     path('api/save-push-token/', save_push_token, name='save_push_token'),
+    path('api/debug-push-tokens/', views.debug_push_tokens, name='debug_push_tokens'),
 
 
 ]
