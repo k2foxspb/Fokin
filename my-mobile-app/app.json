@@ -36,8 +36,8 @@
         "android.permission.WAKE_LOCK",
         "android.permission.RECEIVE_BOOT_COMPLETED",
         "android.permission.VIBRATE"
-      ],
-      "googleServicesFile": "./google-services.json"
+      ]
+
     },
     "web": {
       "favicon": "./assets/images/logo1024.png",
@@ -46,7 +46,6 @@
     "plugins": [
       "expo-router",
       "expo-dev-client",
-
       [
         "expo-notifications",
         {
