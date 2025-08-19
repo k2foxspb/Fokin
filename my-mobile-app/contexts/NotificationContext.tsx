@@ -60,7 +60,7 @@ const savePushTokenToServer = async (token: string) => {
     try {
         const userToken = await AsyncStorage.getItem('userToken');
         if (!userToken) return;
-
+        console.log('🔔 [PRODUCTION] Saving token to server:', token.substring(0, 20) + '...');
         const response = await axios.post(
             `${API_CONFIG.BASE_URL}/chat/api/save-push-token/`,
             {expo_push_token: token},

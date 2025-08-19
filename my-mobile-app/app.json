@@ -37,7 +37,8 @@
         "android.permission.RECEIVE_BOOT_COMPLETED",
         "android.permission.VIBRATE",
         "android.permission.INTERNET",
-        "android.permission.ACCESS_NETWORK_STATE"
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.USE_FULL_SCREEN_INTENT"
       ]
     },
     "plugins": [
@@ -54,10 +55,19 @@
         {
           "icon": "./assets/images/logo1024.png",
           "color": "#222222",
-          "defaultChannel": "default"
+          "defaultChannel": "messages",
+          "androidMode": "default",
+          "androidCollapsedTitle": "Новые сообщения"
         }
       ]
     ],
+    "notification": {
+      "icon": "./assets/images/logo1024.png",
+      "color": "#222222",
+      "androidMode": "default",
+      "androidCollapsedTitle": "Новые сообщения",
+      "iosDisplayInForeground": true
+    },
     "extra": {
       "eas": {
         "projectId": "7a408a11-ebbd-48ac-8f31-e0eb0f1bf1d7"
