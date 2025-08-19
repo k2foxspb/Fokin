@@ -3,7 +3,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
 from .apps import ChatappConfig
-from .view_api import ChatViewSet, get_room_info, save_push_token
+from .view_api import ChatViewSet, get_room_info, save_push_token, debug_push_tokens
 from .views import IndexView, room_view, get_private_room, private_chat_view, get_chat_history, \
     user_dialog_list
 
@@ -22,7 +22,7 @@ urlpatterns = [
     path('dialogs/', user_dialog_list, name='user_dialogs'),
     path('api/room/<int:room_id>/info/', get_room_info, name='get_room_info'),
     path('api/save-push-token/', save_push_token, name='save_push_token'),
-    path('api/debug-push-tokens/', views.debug_push_tokens, name='debug_push_tokens'),
+    path('api/debug-push-tokens/', debug_push_tokens, name='debug_push_tokens'),
 
 
 ]
