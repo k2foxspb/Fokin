@@ -22,7 +22,6 @@
     },
     "android": {
       "package": "com.k2foxspb.fokinfun",
-
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/logo1024.png",
         "backgroundColor": "#222222"
@@ -47,8 +46,7 @@
     "plugins": [
       "expo-router",
       "expo-dev-client",
-      "@react-native-firebase/app",
-      "@react-native-firebase/messaging",
+
       [
         "expo-notifications",
         {
