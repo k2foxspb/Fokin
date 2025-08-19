@@ -13,6 +13,40 @@ from .serializers import ChatRoomSerializer, MessageSerializer, ChatPreviewSeria
 logger = logging.getLogger(__name__)
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def test_push_notification(request):
+    """Тестовая отправка push уведомления"""
+    try:
+        user = request.user
+        if not user.expo_push_token:
+            return JsonResponse({'error': 'No push token'}, status=400)
+
+        logger.info(f"🧪 [TEST] Sending test push to {user.username}")
+        logger.info(f"🧪 [TEST] Token: {user.expo_push_token}")
+
+        from .push_notifications import PushNotificationService
+
+        result = PushNotificationService.send_message_notification(
+            expo_tokens=[user.expo_push_token],
+            sender_name="Test System",
+            message_text="Это тестовое уведомление для проверки push notifications",
+            chat_id=999
+        )
+
+        logger.info(f"🧪 [TEST] Push notification result: {result}")
+
+        return JsonResponse({
+            'success': True,
+            'message': 'Test notification sent',
+            'token_preview': user.expo_push_token[:30] + '...'
+        })
+
+    except Exception as e:
+        logger.error(f"❌ [TEST] Error sending test push: {e}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def debug_push_tokens(request):

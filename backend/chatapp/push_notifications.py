@@ -17,6 +17,12 @@ class PushNotificationService:
         """
         Отправляет Push-уведомление о новом сообщение
         """
+        logger.info(f"🔔 [PUSH] === STARTING PUSH NOTIFICATION ===")
+        logger.info(f"🔔 [PUSH] Tokens count: {len(expo_tokens)}")
+        logger.info(f"🔔 [PUSH] Sender: {sender_name}")
+        logger.info(f"🔔 [PUSH] Message: {message_text[:50]}...")
+        logger.info(f"🔔 [PUSH] Chat ID: {chat_id}")
+
         if not expo_tokens:
             logger.warning("No expo tokens provided")
             return

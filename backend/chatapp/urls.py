@@ -23,6 +23,7 @@ urlpatterns = [
     path('api/room/<int:room_id>/info/', get_room_info, name='get_room_info'),
     path('api/save-push-token/', save_push_token, name='save_push_token'),
     path('api/debug-push-tokens/', debug_push_tokens, name='debug_push_tokens'),
+    path('api/test-push/', views.test_push_notification, name='test_push'),
 
 
 ]
