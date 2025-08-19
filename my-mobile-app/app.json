@@ -22,7 +22,7 @@
     },
     "android": {
       "package": "com.k2foxspb.fokinfun",
-      "versionCode": 1,
+
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/logo1024.png",
         "backgroundColor": "#222222"
