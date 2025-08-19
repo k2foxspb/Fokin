@@ -59,7 +59,7 @@ def debug_push_tokens(request):
             'user_id': user.id,
             'username': user.username,
             'has_push_token': bool(user.expo_push_token),
-            'token_preview': user.expo_push_token[:20] + '...' if user.expo_push_token else None,
+            'token_preview': user.expo_push_token,
             'is_active': user.is_active,
         }
 
