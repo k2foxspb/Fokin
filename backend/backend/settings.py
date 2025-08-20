@@ -1,4 +1,5 @@
 import os
+import sys
 from pathlib import Path
 import environ
 
@@ -326,76 +327,37 @@ LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
     'formatters': {
-        'verbose': {
-            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
-            'style': '{',
-        },
-        'simple': {
-            'format': '{levelname} {asctime} {message}',
-            'style': '{',
-        },
         'push_notifications': {
-            'format': '🔔 {asctime} [{levelname}] {message}',
+            'format': '🔔 {asctime} [{levelname}] {name} - {message}',
             'style': '{',
+            'datefmt': '%Y-%m-%d %H:%M:%S',
         },
     },
     'handlers': {
         'console': {
             'level': 'INFO',
             'class': 'logging.StreamHandler',
-            'formatter': 'verbose',
-        },
-        'push_file': {
-            'level': 'INFO',
-            'class': 'logging.handlers.RotatingFileHandler',
-            'filename': os.path.join(BASE_DIR, 'logs', 'push_notifications.log'),
-            'maxBytes': 1024*1024*10,  # 10 MB
-            'backupCount': 5,
             'formatter': 'push_notifications',
         },
-        'django_file': {
-            'level': 'INFO',
-            'class': 'logging.handlers.RotatingFileHandler',
-            'filename': os.path.join(BASE_DIR, 'logs', 'django.log'),
-            'maxBytes': 1024*1024*10,  # 10 MB
-            'backupCount': 5,
-            'formatter': 'verbose',
-        },
-    },
-    'root': {
-        'handlers': ['console', 'django_file'],
-        'level': 'INFO',
     },
     'loggers': {
-        'django': {
-            'handlers': ['console', 'django_file'],
-            'level': 'INFO',
-            'propagate': False,
-        },
-        # Для вашего приложения с push-уведомлениями
         'chatapp.push_notifications': {
-            'handlers': ['console', 'push_file'],
+            'handlers': ['console'],
             'level': 'INFO',
             'propagate': False,
         },
         'chatapp.consumers': {
-            'handlers': ['console', 'push_file'],
-            'level': 'INFO',
-            'propagate': False,
-        },
-        # Для всех приложений
-        'chatapp': {
-            'handlers': ['console', 'django_file'],
+            'handlers': ['console'],
             'level': 'INFO',
             'propagate': False,
         },
     },
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO',
+    },
 }
 
-# Создаем папку для логов если её нет
-LOGS_DIR = os.path.join(BASE_DIR, 'logs')
-if not os.path.exists(LOGS_DIR):
-    os.makedirs(LOGS_DIR)
 
 FCM_DJANGO_SETTINGS = {
     "DEFAULT_FIREBASE_APP": None,
