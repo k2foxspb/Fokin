@@ -339,3 +339,24 @@ LOGGING = {
         },
     },
 }
+FCM_DJANGO_SETTINGS = {
+    "DEFAULT_FIREBASE_APP": None,
+    "APP_VERBOSE_NAME": "Fokin",
+    "FCM_SERVICE_ACCOUNT_CREDENTIALS": {
+        "type": "service_account",
+        "project_id": env('FIREBASE_PROJECT_ID'),
+        "private_key_id": env('FIREBASE_PRIVATE_KEY_ID'),
+        "private_key": env('FIREBASE_PRIVATE_KEY').replace('\\n', '\n'),
+        "client_email": env('FIREBASE_CLIENT_EMAIL'),
+        "client_id": env('FIREBASE_CLIENT_ID'),
+        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+        "token_uri": "https://oauth2.googleapis.com/token",
+        "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+        "universe_domain": "googleapis.com"
+    },
+    "ONE_DEVICE_PER_USER": False,
+    "DELETE_INACTIVE_DEVICES": False,
+}
+
+
+
