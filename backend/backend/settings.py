@@ -347,11 +347,13 @@ LOGGING = {
         },
         'push_file': {
             'level': 'INFO',
-            'class': 'logging.handlers.RotatingFileHandler',
+            'class': 'logging.FileHandler',
             'filename': os.path.join(BASE_DIR, 'logs', 'push_notifications.log'),
             'maxBytes': 1024*1024*10,  # 10 MB
             'backupCount': 5,
             'formatter': 'push_notifications',
+            'mode': 'a',
+
         },
         'django_file': {
             'level': 'INFO',
