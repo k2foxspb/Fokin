@@ -334,19 +334,16 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
             recipient_online = await self.is_user_online(recipient.id)
             logger.info(f"🔔 [PUSH] User {recipient.username} online status: {recipient_online}")
 
-            if not recipient_online:
-                logger.info(f"🔔 [PUSH] User {recipient.username} is offline, sending push notification")
 
 
-                # Отправляем push-уведомление в отдельном потоке
-                await database_sync_to_async(self._send_push_notification_sync)(
-                    recipient.expo_push_token,
-                    sender.username,
-                    message_instance.message,
-                    message_instance.room.id
-                )
-            else:
-                logger.info(f"User {recipient.username} is online, skipping push notification")
+
+            # Отправляем push-уведомление в отдельном потоке
+            await database_sync_to_async(self._send_push_notification_sync)(
+                recipient.expo_push_token,
+                sender.username,
+                message_instance.message,
+                message_instance.room.id
+            )
 
         except Exception as e:
             logger.error(f"Error in send_push_notification_if_needed: {e}")
