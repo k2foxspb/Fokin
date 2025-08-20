@@ -3,7 +3,7 @@ import requests
 import time
 from typing import List, Optional
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('chatapp.push_notifications')
 
 
 class PushNotificationService:
