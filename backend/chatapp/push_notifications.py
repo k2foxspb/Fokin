@@ -48,21 +48,51 @@ class PushNotificationService:
                 "data": {
                     "type": "message_notification",
                     "chatId": chat_id,
-                    "timestamp": int(time.time())
+                    "timestamp": int(time.time()),
+                    "sender_name": sender_name,
                 },
                 "sound": "default",
-                "priority": "high",
-                "channelId": "messages",
                 "badge": 1,
+                # Критически важно для фоновых уведомлений
+                "priority": "high",
+                "ttl": 2419200,
+                "expiration": int(time.time()) + 2419200,
+                # Android настройки
                 "android": {
                     "channelId": "messages",
-                    "priority": "high",
+                    "priority": "high",  # Изменено с "max" на "high"
                     "sound": "default",
+                    "vibrate": [0, 250, 250, 250],
+                    "color": "#222222",
+                    "sticky": False,
+                    "collapse_key": f"chat_{chat_id}",
+                    # Важно для фоновых уведомлений
+                    "notification": {
+                        "title": f"💬 {sender_name}",
+                        "body": truncated_text,
+                        "sound": "default",
+                        "color": "#222222",
+                        "priority": "high",
+                    }
                 },
+                # iOS настройки
                 "ios": {
                     "sound": "default",
                     "badge": 1,
-                }
+                    "priority": "high",
+                    "interruptionLevel": "active",
+                    "_displayInForeground": True,
+                    # Критически важно для iOS
+                    "aps": {
+                        "alert": {
+                            "title": f"💬 {sender_name}",
+                            "body": truncated_text,
+                        },
+                        "sound": "default",
+                        "badge": 1,
+                        "content-available": 1,  # Для фоновых уведомлений
+                    }
+                },
             }
             messages.append(message)
 
@@ -90,7 +120,7 @@ class PushNotificationService:
                         'Accept-Encoding': 'gzip, deflate',
                         'Content-Type': 'application/json',
                     },
-                    timeout=10
+                    timeout=30
                 )
 
                 logger.info(f"Expo API response status: {response.status_code}")

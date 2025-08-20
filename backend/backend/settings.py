@@ -321,3 +321,21 @@ if not DEBUG:
 
 # 1) iex (New-Object System.Net.WebClient).DownloadString('https://storage.yandexcloud.net/yandexcloud-yc/install.ps1')
 # 2)
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'push_file': {
+            'level': 'INFO',
+            'class': 'logging.FileHandler',
+            'filename': 'push_notifications.log',
+        },
+    },
+    'loggers': {
+        'push_notifications': {
+            'handlers': ['push_file'],
+            'level': 'INFO',
+            'propagate': True,
+        },
+    },
+}
