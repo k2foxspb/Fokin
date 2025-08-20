@@ -321,24 +321,82 @@ if not DEBUG:
 
 # 1) iex (New-Object System.Net.WebClient).DownloadString('https://storage.yandexcloud.net/yandexcloud-yc/install.ps1')
 # 2)
+# Настройки логирования
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
-    'handlers': {
-        'push_file': {
-            'level': 'INFO',
-            'class': 'logging.FileHandler',
-            'filename': 'push_notifications.log',
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '{levelname} {asctime} {message}',
+            'style': '{',
+        },
+        'push_notifications': {
+            'format': '🔔 {asctime} [{levelname}] {message}',
+            'style': '{',
         },
     },
-    'loggers': {
-        'push_notifications': {
-            'handlers': ['push_file'],
+    'handlers': {
+        'console': {
             'level': 'INFO',
-            'propagate': True,
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+        'push_file': {
+            'level': 'INFO',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': os.path.join(BASE_DIR, 'logs', 'push_notifications.log'),
+            'maxBytes': 1024*1024*10,  # 10 MB
+            'backupCount': 5,
+            'formatter': 'push_notifications',
+        },
+        'django_file': {
+            'level': 'INFO',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': os.path.join(BASE_DIR, 'logs', 'django.log'),
+            'maxBytes': 1024*1024*10,  # 10 MB
+            'backupCount': 5,
+            'formatter': 'verbose',
+        },
+    },
+    'root': {
+        'handlers': ['console', 'django_file'],
+        'level': 'INFO',
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console', 'django_file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        # Для вашего приложения с push-уведомлениями
+        'chatapp.push_notifications': {
+            'handlers': ['console', 'push_file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'chatapp.consumers': {
+            'handlers': ['console', 'push_file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        # Для всех приложений
+        'chatapp': {
+            'handlers': ['console', 'django_file'],
+            'level': 'INFO',
+            'propagate': False,
         },
     },
 }
+
+# Создаем папку для логов если её нет
+LOGS_DIR = os.path.join(BASE_DIR, 'logs')
+if not os.path.exists(LOGS_DIR):
+    os.makedirs(LOGS_DIR)
+
 FCM_DJANGO_SETTINGS = {
     "DEFAULT_FIREBASE_APP": None,
     "APP_VERBOSE_NAME": "Fokin",
