@@ -5,6 +5,7 @@ from typing import List, Optional
 
 logger = logging.getLogger('chatapp.push_notifications')
 
+logger.info("🔔 [PUSH] === PUSH NOTIFICATIONS MODULE LOADED ===")
 
 class PushNotificationService:
     """Сервис для отправки Push-уведомлений через Expo"""
