@@ -108,13 +108,7 @@ const getErrorDetails = (error: unknown) => {
 // Настройка обработчика уведомлений
 Notifications.setNotificationHandler({
   handleNotification: async (notification) => {
-    console.log('🔔 [Notification] Handler called:', {
-      title: notification.request.content.title,
-      body: notification.request.content.body,
-    });
-
     return {
-      shouldShowAlert: true,
       shouldPlaySound: true,
       shouldSetBadge: true,
       shouldShowBanner: true,
@@ -125,8 +119,6 @@ Notifications.setNotificationHandler({
 
 // Настройка Android каналов уведомлений
 const setupAndroidNotificationChannels = async () => {
-  console.log('🤖 Setting up Android notification channels...');
-
   try {
     // Канал для сообщений
     await Notifications.setNotificationChannelAsync('messages', {
@@ -154,8 +146,6 @@ const setupAndroidNotificationChannels = async () => {
       showBadge: true,
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
     });
-
-    console.log('✅ Android notification channels configured successfully');
   } catch (error) {
     console.error('❌ Error setting up Android notification channels:', getErrorDetails(error));
   }
@@ -166,14 +156,11 @@ const setupAndroidNotificationChannels = async () => {
 export const requestNotificationPermissions = async (): Promise<boolean> => {
   try {
     if (!Device.isDevice) {
-      console.log('⚠️ Not a physical device, push notifications will not work');
       return false;
     }
 
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
-
-    console.log('📱 Current notification permission status:', existingStatus);
 
     // Настраиваем каналы для Android перед запросом разрешений
     if (Platform.OS === 'android') {
@@ -200,7 +187,6 @@ export const requestNotificationPermissions = async (): Promise<boolean> => {
       finalStatus = status;
     }
 
-    console.log('📱 Final notification permission status:', finalStatus);
     return finalStatus === 'granted';
   } catch (error) {
     console.error('Error requesting notification permissions:', getErrorDetails(error));
@@ -211,21 +197,16 @@ export const requestNotificationPermissions = async (): Promise<boolean> => {
 // Регистрация для push уведомлений
 export const registerForPushNotifications = async (): Promise<string | null> => {
   try {
-    console.log('📱 [Push] Starting push token registration...');
-
     if (!Device.isDevice) {
-      console.log('⚠️ [Push] Not a physical device, skipping push registration');
       return null;
     }
 
     const hasPermission = await requestNotificationPermissions();
     if (!hasPermission) {
-      console.log('❌ [Push] No notification permissions granted');
       return null;
     }
 
     const projectId = Constants.expoConfig?.extra?.eas?.projectId;
-    console.log('🔑 [Push] EAS Project ID:', projectId);
 
     if (!projectId) {
       console.error('❌ [Push] No EAS project ID found');
@@ -239,7 +220,6 @@ export const registerForPushNotifications = async (): Promise<string | null> => 
     while (attempts < maxAttempts && !token) {
       try {
         attempts++;
-        console.log(`🔄 [Push] Attempt ${attempts}/${maxAttempts} to get push token`);
 
         // Добавляем таймаут для операции
         const tokenPromise = Notifications.getExpoPushTokenAsync({
@@ -252,12 +232,10 @@ export const registerForPushNotifications = async (): Promise<string | null> => 
 
         const tokenResponse = await Promise.race([tokenPromise, timeoutPromise]) as any;
         token = tokenResponse.data;
-        console.log('✅ [Push] Successfully got Expo push token:', token.substring(0, 50) + '...');
         break;
 
       } catch (tokenError) {
         const errorDetails = getErrorDetails(tokenError);
-        console.error(`❌ [Push] Attempt ${attempts} failed:`, errorDetails);
 
         // Специальная обработка Firebase ошибок
         if (errorDetails.message?.includes('Firebase') ||
@@ -271,53 +249,27 @@ export const registerForPushNotifications = async (): Promise<string | null> => 
           }
         }
 
-        if (errorDetails.message?.includes('timeout')) {
-          console.error('⏱️ [Push] Request timed out, retrying...');
-        }
-
         if (attempts === maxAttempts) {
-          console.error('❌ [Push] All attempts failed. Cannot get push token.');
           return null;
         }
 
         // Экспоненциальная задержка между попытками
         const delay = Math.min(1000 * Math.pow(2, attempts), 10000);
-        console.log(`⏳ [Push] Waiting ${delay}ms before retry...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
 
     if (!token) {
-      console.error('❌ [Push] Failed to get push token after all attempts');
       return null;
     }
 
     return token;
 
   } catch (error) {
-    const errorDetails = getErrorDetails(error);
-    console.error('❌ [Push] Critical error in registerForPushNotifications:', errorDetails);
     return null;
   }
 };
 
-// Проверка настроек уведомлений
-export const checkNotificationSettings = async () => {
-  try {
-    const settings = await Notifications.getPermissionsAsync();
-    console.log('📱 Current notification settings:', settings);
-
-    if (Platform.OS === 'android') {
-      const channels = await Notifications.getNotificationChannelsAsync();
-      console.log('🤖 Android notification channels:', channels);
-    }
-
-    return settings;
-  } catch (error) {
-    console.error('Error checking notification settings:', getErrorDetails(error));
-    return null;
-  }
-};
 
 // Добавление слушателя уведомлений
 export const addNotificationListener = (handler: (notification: Notifications.Notification) => void): Notifications.Subscription => {
@@ -356,10 +308,8 @@ export const sendLocalNotification = async (notification: {
       trigger: null,
     });
 
-    console.log(`📱 Local notification sent with ID: ${notificationId}`);
     return notificationId;
   } catch (error) {
-    console.error('Error sending local notification:', getErrorDetails(error));
     throw error;
   }
 };
@@ -402,30 +352,9 @@ export const sendHighPriorityNotification = async (notification: {
       trigger: null,
     });
 
-    console.log(`📱 High priority notification sent with ID: ${notificationId}`);
     return notificationId;
   } catch (error) {
-    console.error('❌ Error sending high priority notification:', getErrorDetails(error));
     throw error;
-  }
-};
-
-// Функция для тестирования уведомлений
-export const sendTestNotification = async () => {
-  try {
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: "Тест уведомления 🔔",
-        body: 'Это тестовое уведомление для проверки работы',
-        data: { test: true },
-        sound: 'default',
-        priority: Notifications.AndroidNotificationPriority.HIGH,
-      },
-      trigger: { seconds: 1 },
-    });
-    console.log('✅ Test notification scheduled');
-  } catch (error) {
-    console.error('❌ Error sending test notification:', getErrorDetails(error));
   }
 };
 
@@ -441,21 +370,14 @@ export const handleWebSocketMessage = (type: string, data: any): boolean => {
       return false;
     }
 
-    console.log(`👤 [Status] User ${user_id} is now ${status}`);
     return true;
   }
 
   // Проверяем на дубликат для других типов сообщений
   if (isDuplicateMessage(type, data)) {
-    // Логируем дубликаты только для отладки
-    if (__DEV__) {
-      console.log(`🚫 [WebSocket] Duplicate message ignored: ${type}`);
-    }
     return false;
   }
 
-  // Логируем только уникальные сообщения
-  console.log(`📨 [WebSocket] Processing message: ${type}`, data);
   return true;
 };
 
@@ -487,30 +409,25 @@ export const processWebSocketMessage = (type: string, data: any) => {
     case 'notification_update':
       handleNotificationUpdate(data);
       break;
+    case 'messages_by_sender_update':
+      handleNotificationUpdate(data);
+      break;
 
     default:
-      console.log(`📨 [WebSocket] Unknown message type: ${type}`, data);
+      break;
   }
 };
 
 // Обработка статусных обновлений пользователей
 const handleUserStatusUpdate = (data: any) => {
   const { user_id, status } = data;
-
   // Здесь можно добавить логику обновления UI
-  // Например, обновить индикатор онлайн статуса в списке пользователей
-
-  console.log(`👤 [Status] Processing status update for user ${user_id}: ${status}`);
 };
 
 // Обработка уведомлений о сообщениях
 const handleMessageNotification = (data: any) => {
   const { sender_name, message_text, chat_id } = data;
-
-  console.log(`💬 [Message] New message from ${sender_name} in chat ${chat_id}`);
-
   // Здесь можно добавить логику для обновления UI
-  // Например, обновить счетчик непрочитанных сообщений
 };
 
 // Обработка индикатора печатания
@@ -527,35 +444,16 @@ const handleTypingIndicator = (data: any) => {
   }
 
   recentMessages.set(typingKey, now);
-  console.log(`⌨️ [Typing] User ${user_id} ${is_typing ? 'started' : 'stopped'} typing in chat ${chat_id}`);
 };
 
 // Обработка начальных уведомлений
 const handleInitialNotification = (data: any) => {
   const { unique_sender_count, messages } = data;
 
-  console.log(`🔔 [Initial] Received initial notifications: ${unique_sender_count} unique senders`);
-
   if (Array.isArray(messages) && messages.length >= 2) {
     const userInfo = messages[0]; // { user: userId }
     const messagesList = messages[1]; // Массив сообщений
-
-    if (Array.isArray(messagesList) && messagesList.length > 0) {
-      console.log(`📬 [Initial] Processing ${messagesList.length} notification messages`);
-
-      // Здесь можно добавить логику для обновления UI
-      // Например, обновить счетчик непрочитанных сообщений
-      messagesList.forEach((message, index) => {
-        if (message && typeof message === 'object') {
-          console.log(`📨 [Initial] Message ${index + 1}:`, {
-            sender: message.sender_name || message.sender_id,
-            count: message.count,
-            lastMessage: message.last_message,
-            chatId: message.chat_id
-          });
-        }
-      });
-    }
+    // Здесь можно добавить логику для обновления UI
   }
 };
 
@@ -563,27 +461,10 @@ const handleInitialNotification = (data: any) => {
 const handleNotificationUpdate = (data: any) => {
   const { unique_sender_count, messages } = data;
 
-  console.log(`🔔 [Update] Received notification update: ${unique_sender_count} unique senders`);
-
   if (Array.isArray(messages) && messages.length >= 2) {
     const userInfo = messages[0]; // { user: userId }
     const messagesList = messages[1]; // Массив сообщений
-
-    if (Array.isArray(messagesList) && messagesList.length > 0) {
-      console.log(`📬 [Update] Processing ${messagesList.length} updated messages`);
-
-      // Здесь можно добавить логику для обновления UI
-      messagesList.forEach((message, index) => {
-        if (message && typeof message === 'object') {
-          console.log(`📨 [Update] Message ${index + 1}:`, {
-            sender: message.sender_name || message.sender_id,
-            count: message.count,
-            lastMessage: message.last_message,
-            chatId: message.chat_id
-          });
-        }
-      });
-    }
+    // Здесь можно добавить логику для обновления UI
   }
 };
 
@@ -591,19 +472,6 @@ const handleNotificationUpdate = (data: any) => {
 export const clearNotificationCache = () => {
   recentMessages.clear();
   recentStatusUpdates.clear();
-  console.log('🧹 [WebSocket] Message cache cleared');
-};
-
-// Функция для получения статистики дедупликации
-export const getDeduplicationStats = () => {
-  cleanupOldMessages(); // Очистка перед подсчетом
-
-  return {
-    cachedMessages: recentMessages.size,
-    cachedStatuses: recentStatusUpdates.size,
-    oldestMessage: recentMessages.size > 0 ? Math.min(...Array.from(recentMessages.values())) : 0,
-    newestMessage: recentMessages.size > 0 ? Math.max(...Array.from(recentMessages.values())) : 0,
-  };
 };
 
 // Обработка удаленных уведомлений
@@ -611,13 +479,6 @@ export const handleRemoteNotification = (notification: Notifications.Notificatio
   const data = notification.request.content.data;
   const notificationKey = data?.notification_key ||
     `${notification.request.content.title}_${notification.request.content.body}_${Date.now()}`;
-
-  console.log('📱 [Push] Remote notification received:', {
-    key: notificationKey,
-    title: notification.request.content.title,
-    body: notification.request.content.body,
-    data: data,
-  });
 
   // НЕ отправляйте локальные уведомления здесь!
   // Система уже показала уведомление

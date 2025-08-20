@@ -27,8 +27,7 @@ interface Theme {
     text: string;
     textSecondary: string;
     border: string;
-    borderLight: string;
-    error: string;
+    error?: string;
 }
 
 interface Category {
@@ -87,8 +86,8 @@ export default function Feed() {
                     'Уведомления',
                     'Разрешите уведомления, чтобы получать информацию о новых сообщениях',
                     [
-                        { text: 'Позже', style: 'cancel' },
-                        { text: 'Разрешить', onPress: () => requestPermissions() }
+                        {text: 'Позже', style: 'cancel'},
+                        {text: 'Разрешить', onPress: () => requestPermissions()}
                     ]
                 );
             }
@@ -140,7 +139,7 @@ export default function Feed() {
     };
 
     // Компонент для рендеринга HTML контента
-    const HtmlRenderer = ({ html, theme }: { html: string; theme: Theme }) => {
+    const HtmlRenderer = ({html, theme}: { html: string; theme: Theme }) => {
         const screenWidth = Dimensions.get('window').width - 70; // Увеличиваем отступы для безопасности
 
         // Определяем цвета на основе темы
@@ -306,9 +305,9 @@ export default function Feed() {
 
         return (
             <WebView
-                source={{ html: htmlContent }}
-                style={{ 
-                    width: screenWidth, 
+                source={{html: htmlContent}}
+                style={{
+                    width: screenWidth,
                     height: 800, // Увеличенная высота для полного контента
                     backgroundColor: 'transparent'
                 }}
@@ -400,16 +399,16 @@ export default function Feed() {
                     }]}>
                         {item.content ? (
                             <View style={styles.htmlContentContainer}>
-                                <TouchableOpacity 
+                                <TouchableOpacity
                                     style={styles.collapseButton}
                                     onPress={() => toggleArticleExpansion(item)}
                                 >
-                                    <Text style={[styles.collapseButtonText, { color: theme.primary }]}>
+                                    <Text style={[styles.collapseButtonText, {color: theme.primary}]}>
                                         Свернуть статью
                                     </Text>
-                                    <Ionicons name="chevron-up-outline" size={16} color={theme.primary} />
+                                    <Ionicons name="chevron-up-outline" size={16} color={theme.primary}/>
                                 </TouchableOpacity>
-                                <HtmlRenderer html={item.content} theme={theme} />
+                                <HtmlRenderer html={item.content} theme={theme}/>
                             </View>
                         ) : (
                             <View>
@@ -436,7 +435,7 @@ export default function Feed() {
                     </Text>
                 )}
 
-                <View style={[styles.articleFooter, {borderTopColor: theme.borderLight}]}>
+                <View style={[styles.articleFooter, {borderTopColor: theme.border}]}>
                     <View style={styles.footerLeft}>
                         <Ionicons name="time-outline" size={16} color={theme.textSecondary}/>
                         <Text style={[styles.footerText, {color: theme.textSecondary}]}>
@@ -482,6 +481,7 @@ export default function Feed() {
 
     return (
         <View style={styles.container}>
+
             <FlatList
                 data={articles}
                 renderItem={renderArticle}
@@ -507,6 +507,7 @@ const createStyles = (theme: Theme) => StyleSheet.create({
         flex: 1,
         backgroundColor: theme.background,
     },
+
     loadingContainer: {
         flex: 1,
         justifyContent: 'center',
@@ -628,6 +629,7 @@ const createStyles = (theme: Theme) => StyleSheet.create({
         marginTop: 8,
         paddingTop: 8,
         borderTopWidth: 1,
+        borderTopColor: theme.border,
     },
     footerLeft: {
         flexDirection: 'row',
