@@ -433,14 +433,16 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
             const notificationKey = `${mostActiveMsg.sender_id}_${mostActiveMsg.message_id}_${mostActiveMsg.count}`;
             console.log('🔑 [Notification] Notification key:', notificationKey);
 
-            // ВРЕМЕННО: Отключаем проверку кеша для тестирования
-            console.log('🔄 [Notification] Cache check temporarily disabled for testing');
-            /*
+
             if (sentNotificationsCache.current.has(notificationKey)) {
                 console.log('🔄 [Notification] BLOCKED: Notification already sent for this message');
                 return;
             }
-            */
+            sentNotificationsCache.current.add(notificationKey);
+            setTimeout(() => {
+                sentNotificationsCache.current.delete(notificationKey);
+            }, 10 * 60 * 1000);
+
 
             // Используем имя из данных WebSocket
             let senderInfo = mostActiveMsg.sender_name || `Пользователь ${mostActiveMsg.sender_id}`;

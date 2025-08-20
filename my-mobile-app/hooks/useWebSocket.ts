@@ -1,12 +1,19 @@
 import { useState, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_CONFIG } from '../config';
+import { processWebSocketMessage } from '../services/notificationService';
 
+interface WebSocketOptions {
+    onOpen?: (event: Event) => void;
+    onMessage?: (event: MessageEvent) => void;
+    onClose?: (event: CloseEvent) => void;
+    onError?: (error: Event) => void;
+}
 
-export const useWebSocket = (url: string | string[], options = {}) => {
+export const useWebSocket = (url: string | string[], options: WebSocketOptions = {}) => {
     const [isConnected, setIsConnected] = useState(false);
-    const wsRef = useRef(null);
-    const reconnectTimeoutRef = useRef(null);
+    const wsRef = useRef<WebSocket | null>(null);
+    const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
     const connect = async () => {
         try {
@@ -48,7 +55,21 @@ export const useWebSocket = (url: string | string[], options = {}) => {
             };
 
             ws.onmessage = (event) => {
-                if (options.onMessage) options.onMessage(event);
+                try {
+                    // Парсим сообщение из event.data
+                    const message = JSON.parse(event.data);
+                    const messageType = message.type;
+
+                    // Обрабатываем сообщение через дедупликатор
+                    processWebSocketMessage(messageType, message);
+
+                    // Вызываем оригинальный обработчик, если он есть
+                    if (options.onMessage) options.onMessage(event);
+                } catch (error) {
+                    console.error('Error processing WebSocket message:', error);
+                    // Вызываем оригинальный обработчик даже при ошибке
+                    if (options.onMessage) options.onMessage(event);
+                }
             };
 
             ws.onclose = (event) => {
@@ -77,7 +98,7 @@ export const useWebSocket = (url: string | string[], options = {}) => {
         } catch (error) {
             console.error('Error connecting to WebSocket:', error);
             setIsConnected(false);
-            if (options.onError) options.onError(error);
+            if (options.onError) options.onError(error as Event);
         }
     };
 
@@ -95,7 +116,7 @@ export const useWebSocket = (url: string | string[], options = {}) => {
         setIsConnected(false);
     };
 
-    const sendMessage = (message) => {
+    const sendMessage = (message: any) => {
         if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
             wsRef.current.send(JSON.stringify(message));
         } else {
@@ -119,4 +140,4 @@ export const useWebSocket = (url: string | string[], options = {}) => {
         isConnected: isConnectedState,
         reconnect
     };
-} ;
+};

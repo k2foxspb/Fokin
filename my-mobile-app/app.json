@@ -4,6 +4,7 @@
     "slug": "fokinfun",
     "version": "1.0.0",
     "orientation": "portrait",
+    "scheme": "fokinfun",
     "icon": "./assets/images/logo1024.png",
     "userInterfaceStyle": "dark",
     "splash": {
@@ -40,6 +41,22 @@
         "android.permission.INTERNET",
         "android.permission.ACCESS_NETWORK_STATE",
         "android.permission.USE_FULL_SCREEN_INTENT"
+      ],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "fokin.fun"
+            },
+            {
+              "scheme": "fokinfun"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
       ]
     },
     "plugins": [
@@ -58,7 +75,8 @@
           "color": "#222222",
           "defaultChannel": "messages",
           "androidMode": "default",
-          "androidCollapsedTitle": "Новые сообщения"
+          "androidCollapsedTitle": "Новые сообщения",
+          "sounds": ["notification.wav"]
         }
       ]
     ],
