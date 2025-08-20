@@ -11,7 +11,8 @@ from django.db.models import Q, Count
 import asyncio
 from typing import Dict, List, Any
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('chatapp.consumers')
+
 
 
 class ChatConsumer(AsyncWebsocketConsumer):
