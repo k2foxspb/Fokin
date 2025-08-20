@@ -76,7 +76,6 @@
           "defaultChannel": "messages",
           "androidMode": "default",
           "androidCollapsedTitle": "Новые сообщения",
-          "sounds": ["notification.wav"]
         }
       ]
     ],

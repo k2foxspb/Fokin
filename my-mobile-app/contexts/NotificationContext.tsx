@@ -102,7 +102,7 @@ const NotificationContext = createContext<NotificationContextType>({
     refreshNotifications: () => {
     },
     requestPermissions: async () => false,
-    checkFirebaseStatus: async () => ({ success: false, error: 'Not initialized' }),
+    checkFirebaseStatus: async () => ({success: false, error: 'Not initialized'}),
     debugInfo: {
         isWebSocketConnected: false,
         hasPermission: false,
@@ -372,6 +372,18 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
             } else {
                 console.log('🔥 [Firebase] Пользователь не аутентифицирован, пропускаем обновление');
             }
+            if (data.startfrom !== undefined) {
+                console.log('🔥 [Firebase] FCM уведомление с startfrom:', data.startfrom);
+
+                // Навигация к сообщению или чату
+                if (data.startfrom && typeof data.startfrom === 'number') {
+                    // Возможные варианты навигации:
+                    router.push(`/chat?messageId=${data.startfrom}`);
+                    // или
+                    // router.push(`/message/${data.startfrom}`);
+                }
+                return;
+            }
 
             if (data && data.type === 'message_notification') {
                 console.log('🔥 [Firebase] Это уведомление о сообщении, выполняем навигацию');
@@ -481,7 +493,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
     // Функция для отправки пинга
     const sendPing = () => {
         if (isConnected()) {
-            sendMessage({ type: 'ping' });
+            sendMessage({type: 'ping'});
             lastPingTimeRef.current = Date.now();
         }
     };
@@ -792,17 +804,17 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
                     setPushToken(token);
                     await savePushTokenToServer(token);
                     console.log('🔥 [Firebase] Токен успешно обновлен');
-                    return { success: true, token };
+                    return {success: true, token};
                 } else {
                     console.log('🔥 [Firebase] Не удалось получить токен при проверке');
-                    return { success: false, error: 'Не удалось получить токен' };
+                    return {success: false, error: 'Не удалось получить токен'};
                 }
             }
 
-            return { success: true, token: pushToken };
+            return {success: true, token: pushToken};
         } catch (error) {
             console.error('🔥 [Firebase] Ошибка при проверке статуса Firebase:', error);
-            return { success: false, error };
+            return {success: false, error};
         }
     };
 
