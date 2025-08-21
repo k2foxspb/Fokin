@@ -1,7 +1,9 @@
 import logging
 
+from django.contrib.auth import get_user_model
 from django.db.models.functions import Coalesce
 from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
 from rest_framework import viewsets, status, mixins
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
@@ -88,18 +90,65 @@ class ChatViewSet(viewsets.GenericViewSet,
     # ... остальные методы остаются без изменений ...
 
 
+User = get_user_model()
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@csrf_exempt
 def save_push_token(request):
+    """
+    Сохранение push токена пользователя (FCM или Expo)
+    """
     try:
-        expo_push_token = request.data.get('expo_push_token')
-        if expo_push_token:
-            request.user.expo_push_token = expo_push_token
-            request.user.save()
-            return Response({'success': True})
-        return Response({'error': 'No token provided'}, status=400)
+        user = request.user
+        data = request.data
+
+        fcm_token = data.get('fcm_token')
+        expo_token = data.get('expo_push_token')
+
+        if fcm_token:
+            # Сохраняем FCM токен
+            logger.info(f"Saving FCM token for user {user.username}")
+            user.fcm_token = fcm_token
+            # Очищаем старый expo токен если есть
+            if hasattr(user, 'expo_push_token'):
+                user.expo_push_token = None
+            user.save()
+
+            return Response({
+                'success': True,
+                'message': 'FCM token saved successfully',
+                'token_type': 'fcm'
+            })
+
+        elif expo_token:
+            # Сохраняем Expo токен (fallback)
+            logger.info(f"Saving Expo token for user {user.username}")
+            if hasattr(user, 'expo_push_token'):
+                user.expo_push_token = expo_token
+            # Очищаем FCM токен если есть
+            if hasattr(user, 'fcm_token'):
+                user.fcm_token = None
+            user.save()
+
+            return Response({
+                'success': True,
+                'message': 'Expo token saved successfully',
+                'token_type': 'expo'
+            })
+        else:
+            return Response({
+                'success': False,
+                'error': 'No token provided'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        logger.error(f"Error saving push token: {str(e)}")
+        return Response({
+            'success': False,
+            'error': 'Internal server error'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['GET'])

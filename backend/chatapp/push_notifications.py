@@ -1,173 +1,189 @@
 import logging
-import requests
 import time
 from typing import List, Optional
+from django.conf import settings
+import firebase_admin
+from firebase_admin import credentials, messaging
 
 logger = logging.getLogger('chatapp.push_notifications')
 
-logger.info("🔔 [PUSH] === PUSH NOTIFICATIONS MODULE LOADED ===")
+logger.info("🔔 [PUSH] === PUSH NOTIFICATIONS MODULE LOADED (FIREBASE) ===")
 
 class PushNotificationService:
-    """Сервис для отправки Push-уведомлений через Expo"""
+    """Сервис для отправки Push-уведомлений через Firebase Cloud Messaging"""
 
-    EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
+    _firebase_app = None
 
     @classmethod
-    def send_message_notification(cls, expo_tokens: List[str], sender_name: str, message_text: str,
+    def _initialize_firebase(cls):
+        """Инициализация Firebase Admin SDK"""
+        if cls._firebase_app is None:
+            try:
+                # Проверяем, инициализирован ли уже Firebase
+                firebase_admin.get_app()
+                logger.info("Firebase app already initialized")
+            except ValueError:
+                # Firebase еще не инициализирован
+                if hasattr(settings, 'FIREBASE_CREDENTIALS_PATH'):
+                    cred = credentials.Certificate(settings.FIREBASE_CREDENTIALS_PATH)
+                    cls._firebase_app = firebase_admin.initialize_app(cred)
+                    logger.info("Firebase initialized with credentials file")
+                elif hasattr(settings, 'FIREBASE_CREDENTIALS'):
+                    cred = credentials.Certificate(settings.FIREBASE_CREDENTIALS)
+                    cls._firebase_app = firebase_admin.initialize_app(cred)
+                    logger.info("Firebase initialized with credentials dict")
+                else:
+                    logger.error("Firebase credentials not found in settings")
+                    raise ValueError("Firebase credentials not configured")
+
+    @classmethod
+    def send_message_notification(cls, fcm_tokens: List[str], sender_name: str, message_text: str,
                                   chat_id: Optional[int] = None):
         """
-        Отправляет Push-уведомление о новом сообщение
+        Отправляет Push-уведомление о новом сообщении через Firebase
         """
-        logger.info(f"🔔 [PUSH] === STARTING PUSH NOTIFICATION ===")
-        logger.info(f"🔔 [PUSH] Tokens count: {len(expo_tokens)}")
+        logger.info(f"🔔 [PUSH] === STARTING FIREBASE PUSH NOTIFICATION ===")
+        logger.info(f"🔔 [PUSH] Tokens count: {len(fcm_tokens)}")
         logger.info(f"🔔 [PUSH] Sender: {sender_name}")
         logger.info(f"🔔 [PUSH] Message: {message_text[:50]}...")
         logger.info(f"🔔 [PUSH] Chat ID: {chat_id}")
 
-        if not expo_tokens:
-            logger.warning("No expo tokens provided")
+        if not fcm_tokens:
+            logger.warning("No FCM tokens provided")
             return False
 
-        logger.info(f"Attempting to send push notification to {len(expo_tokens)} tokens")
+        # Инициализируем Firebase
+        try:
+            cls._initialize_firebase()
+        except Exception as e:
+            logger.error(f"Failed to initialize Firebase: {str(e)}")
+            return False
+
+        logger.info(f"Attempting to send push notification to {len(fcm_tokens)} tokens")
 
         # Ограничиваем длину текста сообщения
         truncated_text = message_text[:100] + "..." if len(message_text) > 100 else message_text
 
-        # Создаем уведомления для каждого токена
-        messages = []
-        for token in expo_tokens:
-            logger.info(f"Processing token: {token[:20]}...")
-
-            if not token or not token.startswith('ExponentPushToken'):
-                logger.warning(f"Invalid token format: {token}")
-                continue
-
-            message = {
-                "to": token,
-                "title": f"💬 {sender_name}",
-                "body": truncated_text,
-                "data": {
-                    "type": "message_notification",
-                    "chatId": chat_id,
-                    "timestamp": int(time.time()),
-                    "sender_name": sender_name,
-                },
-                "sound": "default",
-                "badge": 1,
-                # Критически важно для фоновых уведомлений
-                "priority": "high",
-                "ttl": 2419200,
-                "expiration": int(time.time()) + 2419200,
-                # Android настройки
-                "android": {
-                    "channelId": "messages",
-                    "priority": "high",  # Изменено с "max" на "high"
-                    "sound": "default",
-                    "vibrate": [0, 250, 250, 250],
-                    "color": "#222222",
-                    "sticky": False,
-                    "collapse_key": f"chat_{chat_id}",
-                    # Важно для фоновых уведомлений
-                    "notification": {
-                        "title": f"💬 {sender_name}",
-                        "body": truncated_text,
-                        "sound": "default",
-                        "color": "#222222",
-                        "priority": "high",
-                    }
-                },
-                # iOS настройки
-                "ios": {
-                    "sound": "default",
-                    "badge": 1,
-                    "priority": "high",
-                    "interruptionLevel": "active",
-                    "_displayInForeground": True,
-                    # Критически важно для iOS
-                    "aps": {
-                        "alert": {
-                            "title": f"💬 {sender_name}",
-                            "body": truncated_text,
-                        },
-                        "sound": "default",
-                        "badge": 1,
-                        "content-available": 1,  # Для фоновых уведомлений
-                    }
-                },
-            }
-            messages.append(message)
-
-        if not messages:
-            logger.warning("No valid messages to send")
-            return False
-
-        logger.info(f"Sending {len(messages)} push notifications")
-
+        # Создаем сообщение для Firebase
         try:
-            # Отправляем уведомления батчами по 100 штук
-            batch_size = 100
+            # Данные для приложения
+            data_payload = {
+                "type": "message_notification",
+                "chatId": str(chat_id) if chat_id else "",
+                "timestamp": str(int(time.time())),
+                "sender_name": sender_name,
+            }
+
+            # Создаем уведомление
+            notification = messaging.Notification(
+                title=f"💬 {sender_name}",
+                body=truncated_text
+            )
+
+            # Настройки для Android
+            android_config = messaging.AndroidConfig(
+                ttl=2419200,  # 28 дней в секундах
+                priority='high',
+                notification=messaging.AndroidNotification(
+                    title=f"💬 {sender_name}",
+                    body=truncated_text,
+                    sound='default',
+                    color='#222222',
+                    channel_id='messages',
+                    priority='high',
+                    vibrate_timings=[0, 250, 250, 250]
+                ),
+                data=data_payload
+            )
+
+            # Настройки для iOS
+            apns_config = messaging.APNSConfig(
+                headers={'apns-priority': '10'},
+                payload=messaging.APNSPayload(
+                    aps=messaging.Aps(
+                        alert=messaging.ApsAlert(
+                            title=f"💬 {sender_name}",
+                            body=truncated_text
+                        ),
+                        badge=1,
+                        sound='default',
+                        content_available=True
+                    ),
+                    custom_data=data_payload
+                )
+            )
+
             success_count = 0
+            failed_tokens = []
 
-            for i in range(0, len(messages), batch_size):
-                batch = messages[i:i + batch_size]
+            # Отправляем уведомления батчами по 500 штук (лимит Firebase)
+            batch_size = 500
 
-                logger.info(f"Sending batch {i // batch_size + 1} with {len(batch)} notifications")
+            for i in range(0, len(fcm_tokens), batch_size):
+                batch_tokens = fcm_tokens[i:i + batch_size]
 
-                response = requests.post(
-                    cls.EXPO_PUSH_URL,
-                    json=batch,
-                    headers={
-                        'Accept': 'application/json',
-                        'Accept-Encoding': 'gzip, deflate',
-                        'Content-Type': 'application/json',
-                    },
-                    timeout=30
+                logger.info(f"Sending batch {i // batch_size + 1} with {len(batch_tokens)} notifications")
+
+                # Создаем multicast сообщение
+                multicast_message = messaging.MulticastMessage(
+                    notification=notification,
+                    android=android_config,
+                    apns=apns_config,
+                    data=data_payload,
+                    tokens=batch_tokens
                 )
 
-                logger.info(f"Expo API response status: {response.status_code}")
-                logger.info(f"Expo API response body: {response.text}")
+                try:
+                    # Отправляем батч
+                    response = messaging.send_multicast(multicast_message)
 
-                if response.status_code == 200:
-                    result = response.json()
-                    logger.info(f"Push notifications sent successfully: {len(batch)} messages")
+                    logger.info(f"Firebase batch response: {response.success_count}/{len(batch_tokens)} successful")
 
-                    # Проверяем на ошибки
-                    for j, receipt in enumerate(result.get('data', [])):
-                        if receipt.get('status') == 'error':
-                            error_type = receipt.get('details', {}).get('error')
-                            logger.error(f"Push notification error for token {batch[j]['to']}: {error_type}")
+                    success_count += response.success_count
 
-                            # Если токен недействителен, удаляем его из базы
-                            if error_type in ['DeviceNotRegistered', 'InvalidCredentials']:
-                                cls._handle_invalid_token(batch[j]['to'])
-                        elif receipt.get('status') == 'ok':
-                            logger.info(f"Push notification sent successfully to token {batch[j]['to'][:20]}...")
-                            success_count += 1
-                else:
-                    logger.error(f"Failed to send push notifications: {response.status_code} - {response.text}")
+                    # Обрабатываем ошибки
+                    if response.failure_count > 0:
+                        for idx, resp in enumerate(response.responses):
+                            if not resp.success:
+                                token = batch_tokens[idx]
+                                error = resp.exception
+                                logger.error(f"Failed to send to token {token[:20]}...: {error}")
 
+                                # Проверяем, является ли токен недействительным
+                                if hasattr(error, 'code'):
+                                    if error.code in ['UNREGISTERED', 'INVALID_ARGUMENT']:
+                                        failed_tokens.append(token)
+                                        logger.warning(f"Invalid token detected: {token[:20]}...")
+
+                except Exception as e:
+                    logger.error(f"Error sending Firebase batch: {str(e)}")
+                    continue
+
+            # Удаляем недействительные токены
+            for token in failed_tokens:
+                cls._handle_invalid_token(token)
+
+            logger.info(f"🔔 [PUSH] === FIREBASE PUSH COMPLETED: {success_count} successful ===")
             return success_count > 0
 
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Network error sending push notifications: {str(e)}")
-            return False
         except Exception as e:
-            logger.error(f"Error sending push notifications: {str(e)}")
+            logger.error(f"Error creating Firebase message: {str(e)}")
             return False
 
     @classmethod
     def _handle_invalid_token(cls, token: str):
-        """Обрабатывает недействительные токены"""
+        """Обрабатывает недействительные FCM токены"""
         try:
             # Импорт здесь, чтобы избежать циклических зависимостей
             from authapp.models import CustomUser
 
             # Находим пользователя с этим токеном и удаляем его
-            users = CustomUser.objects.filter(expo_push_token=token)
+            # Предполагаем, что поле переименовано в fcm_token
+            users = CustomUser.objects.filter(fcm_token=token)
             for user in users:
-                logger.info(f"Removing invalid push token for user {user.username}")
-                user.expo_push_token = None
+                logger.info(f"Removing invalid FCM token for user {user.username}")
+                user.fcm_token = None
                 user.save()
 
         except Exception as e:
-            logger.error(f"Error handling invalid token {token}: {str(e)}")
+            logger.error(f"Error handling invalid FCM token {token}: {str(e)}")

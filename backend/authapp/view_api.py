@@ -1,24 +1,9 @@
+import logging
+
+from django.views.decorators.csrf import csrf_exempt
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def save_push_token(request):
-    """Сохраняет Expo Push Token пользователя"""
-    try:
-        push_token = request.data.get('pushToken')
-        if not push_token:
-            return Response({'error': 'Push token is required'}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Сохраняем токен для текущего пользователя
-        request.user.expo_push_token = push_token
-        request.user.save()
-
-        return Response({'message': 'Push token saved successfully'}, status=status.HTTP_200_OK)
-
-    except Exception as e:
-        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 from rest_framework.authtoken.models import Token
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -39,12 +24,11 @@ from datetime import timedelta
 from authapp.serializer import UserSerializer
 
 # Получаем кастомную модель пользователя
-User = get_user_model()
 
 # Функция для генерации случайного кода подтверждения
 def generate_verification_code(length=6):
     return ''.join(random.choices(string.digits, k=length))
-
+User = get_user_model()
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def update_push_token(request):
@@ -99,16 +83,7 @@ class RegisterAPIView(APIView):
         birthday = request.data.get('birthday')
         avatar = request.FILES.get('avatar')
 
-        print(f"REGISTER API - Parsed fields:")
-        print(f"  username: {username}")
-        print(f"  email: {email}")
-        print(f"  password: {'***' if password else None}")
-        print(f"  password_confirm: {'***' if password_confirm else None}")
-        print(f"  first_name: {first_name}")
-        print(f"  last_name: {last_name}")
-        print(f"  gender: {gender}")
-        print(f"  birthday: {birthday}")
-        print(f"  avatar: {avatar}")
+
 
         # Валидация данных
         if not username or not email or not password or not password_confirm:

@@ -28,7 +28,6 @@ urlpatterns = [
     path('api/activate-user/', ActivateUserAPIView.as_view(), name='api_activate_user'),
     path('api/update-user-status/', UpdateUserStatusAPIView.as_view(), name='api_update_user_status'),
     path('api/update-push-token/', update_push_token, name='api_update_push_token'),
-    path('api/save-push-token/', save_push_token, name='api_save_push_token'),
     
     # Web views
     path("login/", CustomLoginView.as_view(), name="login"),
