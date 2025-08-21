@@ -5,7 +5,7 @@ from django.urls import path
 from authapp.apps import AuthappConfig
 from authapp.view_api import (
     LoginAPIView, RegisterAPIView, PasswordResetAPIView, LogoutAPIView,
-    VerifyEmailAPIView, ResendVerificationAPIView, update_push_token, save_push_token,
+    VerifyEmailAPIView, ResendVerificationAPIView, update_push_token,
     ActivateUserAPIView, UpdateUserStatusAPIView, ResetPasswordConfirmAPIView, ResetPasswordWithCodeAPIView
 )
 from authapp.views import CustomLoginView, RegisterView, ProfileEditView, \
