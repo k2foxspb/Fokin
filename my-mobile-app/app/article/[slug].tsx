@@ -46,6 +46,8 @@ interface Comment {
   author_name: string;
   created: string;
   updated: string;
+  is_pinned?: boolean;
+  display_position?: 'top' | 'middle' | 'bottom';
 }
 
 interface Article {
@@ -61,6 +63,7 @@ interface Article {
   likes_count: number;
   is_liked: boolean;
   comments_count: number;
+  pinned_comments?: Comment[];
 }
 
 export default function ArticlePage() {
@@ -69,13 +72,47 @@ export default function ArticlePage() {
   const [article, setArticle] = useState<Article | null>(null);
   const [loading, setLoading] = useState(true);
   const [comments, setComments] = useState<Comment[]>([]);
+  const [middleComments, setMiddleComments] = useState<Comment[]>([]);
+  const [pinnedComments, setPinnedComments] = useState<Comment[]>([]);
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [showCommentModal, setShowCommentModal] = useState(false);
   const [newComment, setNewComment] = useState('');
   const [submittingComment, setSubmittingComment] = useState(false);
   const [likeLoading, setLikeLoading] = useState(false);
+  const [pinningLoading, setPinningLoading] = useState<number | null>(null);
 
   const styles = createStyles(theme);
+
+  // Функция для расчета примерной высоты контента
+  const calculateContentHeight = (htmlContent: string): number => {
+    // Удаляем HTML теги для подсчета чистого текста
+    const textContent = htmlContent.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+
+    // Примерный расчет: 
+    // - 100 символов ≈ 1 строка
+    // - 1 строка ≈ 25px высоты
+    // - Добавляем отступы, заголовки, изображения
+    const textLines = Math.ceil(textContent.length / 80);
+    const baseHeight = textLines * 22;
+
+    // Добавляем высоту для заголовков (предполагаем 1-3 заголовка)
+    const headingHeight = (htmlContent.match(/<h[1-6]/g) || []).length * 40;
+
+    // Добавляем высоту для изображений (предполагаем средний размер)
+    const imageHeight = (htmlContent.match(/<img/g) || []).length * 200;
+
+    // Добавляем высоту для списков и таблиц
+    const listHeight = (htmlContent.match(/<[ou]l/g) || []).length * 100;
+    const tableHeight = (htmlContent.match(/<table/g) || []).length * 150;
+
+    // Базовые отступы и мета-информация
+    const metaHeight = 200;
+
+    const totalHeight = baseHeight + headingHeight + imageHeight + listHeight + tableHeight + metaHeight;
+
+    // Минимальная и максимальная высота
+    return Math.max(400, Math.min(totalHeight, 3000));
+  };
 
   useEffect(() => {
     fetchArticle();
@@ -167,7 +204,16 @@ export default function ArticlePage() {
         { headers: { Authorization: `Token ${token}` } }
       );
 
-      setComments(response.data);
+      const allComments = response.data;
+      const pinned = allComments.filter((comment: Comment) => comment.is_pinned);
+      const middle = allComments.filter((comment: Comment) => 
+        !comment.is_pinned && comment.display_position === 'middle');
+      const regular = allComments.filter((comment: Comment) => 
+        !comment.is_pinned && comment.display_position !== 'middle');
+
+      setPinnedComments(pinned);
+      setMiddleComments(middle);
+      setComments(regular);
     } catch (error) {
       console.error('Error fetching comments:', error);
       Alert.alert('Ошибка', 'Не удалось загрузить комментарии');
@@ -210,6 +256,87 @@ export default function ArticlePage() {
       setSubmittingComment(false);
     }
   };
+
+  const togglePinComment = async (commentId: number, isPinned: boolean) => {
+    if (pinningLoading === commentId) return;
+
+    setPinningLoading(commentId);
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      if (!token) {
+        router.replace('/(auth)/login');
+        return;
+      }
+
+      await axios.post(
+        `${API_CONFIG.BASE_URL}/api/articles/${slug}/comments/${commentId}/pin/`,
+        { is_pinned: !isPinned },
+        { headers: { Authorization: `Token ${token}` } }
+      );
+
+      // Обновляем локальное состояние
+      const updateComment = (comment: Comment) => 
+        comment.id === commentId ? { ...comment, is_pinned: !isPinned } : comment;
+
+      if (isPinned) {
+        // Перемещаем из закрепленных в обычные
+        const comment = pinnedComments.find(c => c.id === commentId);
+        if (comment) {
+          setPinnedComments(prev => prev.filter(c => c.id !== commentId));
+          setComments(prev => [{ ...comment, is_pinned: false }, ...prev]);
+        }
+      } else {
+        // Перемещаем из обычных в закрепленные
+        const comment = comments.find(c => c.id === commentId);
+        if (comment) {
+          setComments(prev => prev.filter(c => c.id !== commentId));
+          setPinnedComments(prev => [...prev, { ...comment, is_pinned: true }]);
+        }
+      }
+
+      Alert.alert('Успешно', isPinned ? 'Комментарий откреплен' : 'Комментарий закреплен');
+    } catch (error) {
+      Alert.alert('Ошибка', 'Не удалось изменить статус закрепления');
+    } finally {
+      setPinningLoading(null);
+    }
+  };
+
+  // Компонент для рендеринга отдельного комментария
+  const CommentItem = ({ item, isPinned = false }: { item: Comment; isPinned?: boolean }) => (
+    <View style={[styles.commentItem, isPinned && styles.pinnedCommentItem]}>
+      <View style={styles.commentHeader}>
+        <View style={styles.commentAuthorContainer}>
+          <Text style={styles.commentAuthor}>{item.author_name}</Text>
+          {isPinned && (
+            <View style={styles.pinnedBadge}>
+              <Ionicons name="pin" size={12} color="white" />
+              <Text style={styles.pinnedBadgeText}>Закреплено</Text>
+            </View>
+          )}
+        </View>
+        <View style={styles.commentActions}>
+          <Text style={styles.commentDate}>{formatDate(item.created)}</Text>
+          <TouchableOpacity 
+            style={[styles.pinButton, isPinned && styles.pinButtonActive]}
+            onPress={() => togglePinComment(item.id, isPinned)}
+            disabled={pinningLoading === item.id}
+          >
+            {pinningLoading === item.id ? (
+              <ActivityIndicator size="small" color={theme.primary} />
+            ) : (
+              <Ionicons 
+                name={isPinned ? "pin" : "pin-outline"} 
+                size={16} 
+                color={isPinned ? "white" : theme.primary} 
+              />
+            )}
+          </TouchableOpacity>
+        </View>
+      </View>
+      <Text style={styles.commentContent}>{item.content}</Text>
+    </View>
+  );
 
   // Компонент для рендеринга HTML контента
   const HtmlRenderer = ({ html, theme }: { html: string; theme: Theme }) => {
@@ -336,15 +463,18 @@ export default function ArticlePage() {
       </html>
     `;
 
+    // Рассчитываем высоту контента
+    const contentHeight = calculateContentHeight(html);
+
     return (
       <WebView
         source={{ html: htmlContent }}
         style={{ 
-          flex: 1,
+          height: contentHeight,
           backgroundColor: theme.background
         }}
-        scrollEnabled={true}
-        showsVerticalScrollIndicator={true}
+        scrollEnabled={false}
+        showsVerticalScrollIndicator={false}
         showsHorizontalScrollIndicator={false}
         onShouldStartLoadWithRequest={() => false}
         javaScriptEnabled={false}
@@ -352,8 +482,9 @@ export default function ArticlePage() {
         androidLayerType="software"
         mixedContentMode="compatibility"
         startInLoadingState={true}
+        automaticallyAdjustContentInsets={false}
         renderLoading={() => (
-          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <View style={{ height: contentHeight, justifyContent: 'center', alignItems: 'center' }}>
             <ActivityIndicator size="large" color={theme.primary} />
             <Text style={{ color: theme.textSecondary, marginTop: 10 }}>
               Загрузка статьи...
@@ -445,6 +576,60 @@ export default function ArticlePage() {
           `} theme={theme} />
         </View>
 
+        {/* Секция комментариев середины экрана */}
+        {middleComments.length > 0 && (
+          <View style={styles.middleCommentsSection}>
+            <View style={styles.middleCommentsSectionHeader}>
+              <Ionicons name="chatbubble-ellipses" size={20} color={theme.primary} />
+              <Text style={styles.middleCommentsSectionTitle}>
+                Комментарии читателей ({middleComments.length})
+              </Text>
+            </View>
+
+            <FlatList
+              data={middleComments}
+              keyExtractor={(item) => `middle-${item.id.toString()}`}
+              renderItem={({ item }) => (
+                <View style={styles.middleCommentItem}>
+                  <View style={styles.commentHeader}>
+                    <View style={styles.commentAuthorContainer}>
+                      <Text style={styles.commentAuthor}>{item.author_name}</Text>
+                      <View style={styles.middleBadge}>
+                        <Ionicons name="eye" size={12} color="white" />
+                        <Text style={styles.middleBadgeText}>Выделено</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.commentDate}>{formatDate(item.created)}</Text>
+                  </View>
+                  <Text style={styles.commentContent}>{item.content}</Text>
+                </View>
+              )}
+              scrollEnabled={false}
+              ItemSeparatorComponent={() => <View style={styles.commentSeparator} />}
+            />
+          </View>
+        )}
+
+        {/* Секция закрепленных комментариев внизу статьи */}
+        {pinnedComments.length > 0 && (
+          <View style={styles.pinnedCommentsSection}>
+            <View style={styles.pinnedCommentsSectionHeader}>
+              <Ionicons name="pin" size={20} color={theme.primary} />
+              <Text style={styles.pinnedCommentsSectionTitle}>
+                Закрепленные комментарии ({pinnedComments.length})
+              </Text>
+            </View>
+
+            <FlatList
+              data={pinnedComments}
+              keyExtractor={(item) => `pinned-${item.id.toString()}`}
+              renderItem={({ item }) => <CommentItem item={item} isPinned={true} />}
+              scrollEnabled={false}
+              ItemSeparatorComponent={() => <View style={styles.commentSeparator} />}
+            />
+          </View>
+        )}
+
         {/* Панель лайков и комментариев */}
         <View style={styles.actionsPanel}>
           <TouchableOpacity 
@@ -498,15 +683,7 @@ export default function ArticlePage() {
             <FlatList
               data={comments}
               keyExtractor={(item) => item.id.toString()}
-              renderItem={({ item }) => (
-                <View style={styles.commentItem}>
-                  <View style={styles.commentHeader}>
-                    <Text style={styles.commentAuthor}>{item.author_name}</Text>
-                    <Text style={styles.commentDate}>{formatDate(item.created)}</Text>
-                  </View>
-                  <Text style={styles.commentContent}>{item.content}</Text>
-                </View>
-              )}
+              renderItem={({ item }) => <CommentItem item={item} />}
               scrollEnabled={false}
               ItemSeparatorComponent={() => <View style={styles.commentSeparator} />}
             />
@@ -599,7 +776,7 @@ const createStyles = (theme: Theme) => StyleSheet.create({
     flex: 1,
   },
   articleContent: {
-    minHeight: 400,
+    backgroundColor: theme.background,
   },
   loadingContainer: {
     flex: 1,
@@ -717,6 +894,127 @@ const createStyles = (theme: Theme) => StyleSheet.create({
   commentSeparator: {
     height: 12,
   },
+  commentAuthorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  commentActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  pinnedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.primary,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    marginLeft: 8,
+  },
+  pinnedBadgeText: {
+    color: 'white',
+    fontSize: 10,
+    fontWeight: 'bold',
+    marginLeft: 2,
+  },
+  pinButton: {
+    padding: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: theme.primary,
+    backgroundColor: 'transparent',
+    minWidth: 24,
+    minHeight: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pinButtonActive: {
+    backgroundColor: theme.primary,
+    borderColor: theme.primary,
+  },
+  pinnedCommentItem: {
+    borderLeftWidth: 4,
+    borderLeftColor: theme.primary,
+    backgroundColor: theme.surface,
+  },
+  pinnedCommentsSection: {
+    paddingHorizontal: 16,
+    paddingVertical: 20,
+    backgroundColor: theme.surface,
+    borderTopWidth: 2,
+    borderTopColor: theme.primary,
+    marginTop: 20,
+  },
+  pinnedCommentsSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.border,
+  },
+  pinnedCommentsSectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: theme.text,
+    marginLeft: 8,
+  },
+    middleCommentsSection: {
+      paddingHorizontal: 16,
+      paddingVertical: 20,
+      backgroundColor: `${theme.primary}15`,
+      borderRadius: 12,
+      marginHorizontal: 16,
+      marginBottom: 20,
+      borderWidth: 1,
+      borderColor: `${theme.primary}30`,
+    },
+    middleCommentsSectionHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 16,
+      paddingBottom: 8,
+      borderBottomWidth: 1,
+      borderBottomColor: `${theme.primary}30`,
+    },
+    middleCommentsSectionTitle: {
+      fontSize: 16,
+      fontWeight: 'bold',
+      color: theme.text,
+      marginLeft: 8,
+    },
+    middleCommentItem: {
+      backgroundColor: theme.background,
+      padding: 12,
+      borderRadius: 12,
+      borderLeftWidth: 3,
+      borderLeftColor: theme.primary,
+      shadowColor: '#000',
+      shadowOffset: {
+        width: 0,
+        height: 2,
+      },
+      shadowOpacity: 0.1,
+      shadowRadius: 4,
+      elevation: 3,
+    },
+    middleBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: '#FF6B35',
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: 8,
+      marginLeft: 8,
+    },
+    middleBadgeText: {
+      color: 'white',
+      fontSize: 10,
+      fontWeight: 'bold',
+      marginLeft: 2,
+    },
   noCommentsContainer: {
     alignItems: 'center',
     paddingVertical: 40,
