@@ -27,8 +27,6 @@ urlpatterns = [
     path('api/resend-verification/', ResendVerificationAPIView.as_view(), name='api_resend_verification'),
     path('api/activate-user/', ActivateUserAPIView.as_view(), name='api_activate_user'),
     path('api/update-user-status/', UpdateUserStatusAPIView.as_view(), name='api_update_user_status'),
-    path('api/update-push-token/', update_push_token, name='api_update_push_token'),
-    
     # Web views
     path("login/", CustomLoginView.as_view(), name="login"),
     path("logout/", CustomLogoutView.as_view(), name="logout"),
