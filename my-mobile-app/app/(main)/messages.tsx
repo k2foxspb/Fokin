@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { View, FlatList, StyleSheet, Pressable, Text, Image, ActivityIndicator, RefreshControl } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import axios from 'axios';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -27,7 +28,7 @@ interface ChatPreview {
 
 export default function MessagesScreen() {
   const router = useRouter();
-  const { senderCounts, userStatuses, messages, debugInfo, testNotification, requestPermissions } = useNotifications();
+  const { senderCounts, userStatuses, messages, } = useNotifications();
   const { theme } = useTheme();
   const [chats, setChats] = useState<ChatPreview[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -89,6 +90,15 @@ export default function MessagesScreen() {
 
     fetchChats();
   }, []);
+
+  // Обновляем список чатов при возвращении на экран
+  useFocusEffect(
+    useCallback(() => {
+      console.log('📱 [Messages] Screen focused, refreshing chat list');
+      // Обновляем данные без показа лоадера
+      fetchChats(false);
+    }, [])
+  );
 
   // НОВОЕ: Обновляем список чатов при получении новых сообщений через WebSocket
   useEffect(() => {
@@ -336,7 +346,13 @@ export default function MessagesScreen() {
                   <View style={styles.avatarContainer}>
                     {item.other_user.avatar ? (
                       <Image
-                        source={{ uri: `${API_CONFIG.BASE_URL}${item.other_user.avatar}` }}
+                              source={
+                                item.other_user.avatar 
+                                  ? { uri: `${API_CONFIG.BASE_URL}${item.other_user.avatar}` }
+                                  : item.other_user.gender === 'male'
+                                  ? require('../../assets/avatar/male.png')
+                                  : require('../../assets/avatar/female.png')
+                              }
                         style={styles.avatar}
                       />
                     ) : (

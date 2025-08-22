@@ -13,6 +13,7 @@ import {
     ActivityIndicator,
     Image,
     TouchableOpacity,
+    SafeAreaView,
 } from 'react-native';
 import {Stack, useLocalSearchParams, useRouter} from 'expo-router';
 import {useWebSocket} from '../../hooks/useWebSocket';
@@ -22,6 +23,7 @@ import {MaterialIcons} from '@expo/vector-icons';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useNotifications } from '../../contexts/NotificationContext';
 import {API_CONFIG} from '../../config';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface Message {
     id: number;
@@ -91,6 +93,7 @@ const formatTimestamp = (timestamp: number | string | undefined): string => {
 export default function ChatScreen() {
     const { theme } = useTheme();
     const { userStatuses } = useNotifications();
+    const insets = useSafeAreaInsets();
     const {id: roomId} = useLocalSearchParams();
     const [messages, setMessages] = useState<Message[]>([]);
     const [messageText, setMessageText] = useState('');
@@ -410,18 +413,6 @@ export default function ChatScreen() {
                 onPress={navigateToProfile}
                 activeOpacity={0.7}
             >
-                <View style={styles.avatarContainer}>
-                    <Image
-                        source={
-                            {uri: `${API_CONFIG.BASE_URL}${recipient?.avatar}`}
-                        }
-                        style={styles.avatar}
-                    />
-                    <View style={[
-                        styles.onlineIndicator,
-                        {backgroundColor: userStatus ? theme.online : theme.offline}
-                    ]}/>
-                </View>
                 <View style={styles.userInfo}>
                     <Text style={[styles.username, { color: theme.text }]}>{recipient?.username || 'Пользователь'}</Text>
                     <Text style={[
@@ -431,6 +422,11 @@ export default function ChatScreen() {
                         {userStatus ? 'в сети' : 'не в сети'}
                     </Text>
                 </View>
+                {/* Онлайн индикатор рядом с текстом */}
+                <View style={[
+                    styles.headerOnlineIndicator,
+                    {backgroundColor: userStatus ? theme.online : theme.offline}
+                ]}/>
             </TouchableOpacity>
         );
     };
@@ -481,86 +477,100 @@ export default function ChatScreen() {
     }
 
     return (
-        <KeyboardAvoidingView
-            style={styles.container}
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
-        >
-            <Stack.Screen
-                options={{
-                    headerShown: true,
-                    headerLeft: () => (
-                        <Pressable onPress={() => router.back()} style={styles.backButton}>
-                            <MaterialIcons name="arrow-back" size={24} color={theme.primary}/>
-                        </Pressable>
-                    ),
-                    headerTitle: () => <ChatHeader/>,
-                    headerStyle: {backgroundColor: theme.headerBackground},
-                    headerShadowVisible: false,
-                }}
-            />
+        <View style={styles.container}>
+            <KeyboardAvoidingView
+                style={styles.keyboardView}
+                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+            >
+                {/* Header Section */}
+                <View style={styles.header}>
+                    <TouchableOpacity
+                        style={styles.backButton}
+                        onPress={() => router.back()}
+                    >
+                        <MaterialIcons name="arrow-back" size={24} color={theme.primary} />
+                    </TouchableOpacity>
 
-            <FlatList
-                ref={flatListRef}
-                data={messages}
-                style={styles.chatbox}
-                contentContainerStyle={styles.chatboxContent}
-                keyExtractor={(item, index) => `message-${item.id}-${index}`}
-                renderItem={renderMessage}
-                inverted
-                onEndReached={loadMoreMessages}
-                onEndReachedThreshold={0.1}
-                ListFooterComponent={
-                    isLoadingMore ? (
-                        <View style={styles.loadingMoreContainer}>
-                            <ActivityIndicator size="small" color={theme.primary} />
-                            <Text style={[styles.loadingMoreText, { color: theme.textSecondary }]}>
-                                Загрузка сообщений...
-                            </Text>
-                        </View>
-                    ) : null
-                }
-                ListEmptyComponent={
-                    <View style={styles.emptyContainer}>
-                        <Text style={[styles.emptyText, { color: theme.textSecondary }]}>Нет сообщений</Text>
+                    {/* Мини аватарка */}
+                    <View style={styles.miniAvatarContainer}>
+                        <Image
+                            source={
+                                recipient?.avatar
+                                    ? {uri: `${API_CONFIG.BASE_URL}${recipient.avatar}`}
+                                    : recipient?.gender === 'male'
+                                    ? require('../../assets/avatar/male.png')
+                                    : require('../../assets/avatar/female.png')
+                            }
+                            style={styles.miniAvatar}
+                        />
                     </View>
-                }
-                showsVerticalScrollIndicator={false}
-                maintainVisibleContentPosition={{
-                    minIndexForVisible: 0,
-                    autoscrollToTopThreshold: 10
-                }}
-            />
 
-            <View style={styles.inputContainer}>
-                <TextInput
-                    style={[styles.input, { backgroundColor: theme.surface, color: theme.text }]}
-                    value={messageText}
-                    onChangeText={setMessageText}
-                    placeholder="Введите сообщение..."
-                    placeholderTextColor={theme.placeholder}
-                    multiline
-                    maxLength={1000}
+                    <ChatHeader/>
+                </View>
+
+                <FlatList
+                    ref={flatListRef}
+                    data={messages}
+                    style={styles.chatbox}
+                    contentContainerStyle={styles.chatboxContent}
+                    keyExtractor={(item, index) => `message-${item.id}-${index}`}
+                    renderItem={renderMessage}
+                    inverted
+                    onEndReached={loadMoreMessages}
+                    onEndReachedThreshold={0.1}
+                    ListFooterComponent={
+                        isLoadingMore ? (
+                            <View style={styles.loadingMoreContainer}>
+                                <ActivityIndicator size="small" color={theme.primary} />
+                                <Text style={[styles.loadingMoreText, { color: theme.textSecondary }]}>
+                                    Загрузка сообщений...
+                                </Text>
+                            </View>
+                        ) : null
+                    }
+                    ListEmptyComponent={
+                        <View style={styles.emptyContainer}>
+                            <Text style={[styles.emptyText, { color: theme.textSecondary }]}>Нет сообщений</Text>
+                        </View>
+                    }
+                    showsVerticalScrollIndicator={false}
+                    maintainVisibleContentPosition={{
+                        minIndexForVisible: 0,
+                        autoscrollToTopThreshold: 10
+                    }}
                 />
-                <Pressable
-                    style={[
-                        styles.sendButton,
-                        {
-                            backgroundColor: messageText.trim() && isConnected && isDataLoaded ? theme.primary : theme.placeholder,
-                            opacity: messageText.trim() && isConnected && isDataLoaded ? 1 : 0.5
-                        }
-                    ]}
-                    onPress={handleSend}
-                    disabled={!messageText.trim() || !isConnected || !isDataLoaded}
-                >
-                    <MaterialIcons
-                        name="send"
-                        size={20}
-                        color={messageText.trim() && isConnected && isDataLoaded ? "#fff" : theme.textSecondary}
+
+                <View style={styles.inputContainer}>
+                    <TextInput
+                        style={[styles.input, { backgroundColor: theme.surface, color: theme.text }]}
+                        value={messageText}
+                        onChangeText={setMessageText}
+                        placeholder="Введите сообщение..."
+                        placeholderTextColor={theme.placeholder}
+                        multiline
+                        maxLength={1000}
                     />
-                </Pressable>
-            </View>
-        </KeyboardAvoidingView>
+                    <Pressable
+                        style={[
+                            styles.sendButton,
+                            {
+                                backgroundColor: messageText.trim() && isConnected && isDataLoaded ? theme.primary : theme.placeholder,
+                                opacity: messageText.trim() && isConnected && isDataLoaded ? 1 : 0.5
+                            }
+                        ]}
+                        onPress={handleSend}
+                        disabled={!messageText.trim() || !isConnected || !isDataLoaded}
+                    >
+                        <MaterialIcons
+                            name="send"
+                            size={20}
+                            color={messageText.trim() && isConnected && isDataLoaded ? "#fff" : theme.textSecondary}
+                        />
+                    </Pressable>
+                </View>
+            </KeyboardAvoidingView>
+        </View>
     );
 }
 
@@ -568,6 +578,9 @@ const createStyles = (theme: any) => StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: theme.background,
+    },
+    keyboardView: {
+        flex: 1,
     },
     loadingContainer: {
         flex: 1,
@@ -579,14 +592,43 @@ const createStyles = (theme: any) => StyleSheet.create({
         marginTop: 16,
         fontSize: 16,
     },
+    header: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 16,
+        paddingTop: 70,
+        paddingBottom: 20,
+        backgroundColor: theme.headerBackground,
+        borderBottomWidth: 1,
+        borderBottomColor: theme.border,
+    },
     backButton: {
-        marginLeft: 16,
         padding: 8,
+        marginRight: 8,
+    },
+    miniAvatarContainer: {
+        marginRight: 12,
+    },
+    miniAvatar: {
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        borderWidth: 2,
+        borderColor: theme.primary,
     },
     headerUserInfo: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 8,
+        flex: 1,
+    },
+    userInfo: {
+        flex: 1,
+    },
+    headerOnlineIndicator: {
+        width: 8,
+        height: 8,
+        borderRadius: 4,
+        marginLeft: 8,
     },
     avatarContainer: {
         position: 'relative',
@@ -606,9 +648,6 @@ const createStyles = (theme: any) => StyleSheet.create({
         borderRadius: 6,
         borderWidth: 2,
         borderColor: theme.surface,
-    },
-    userInfo: {
-        flex: 1,
     },
     username: {
         fontSize: 16,

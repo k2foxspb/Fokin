@@ -15,6 +15,8 @@ import {
     addNotificationResponseListener,
 } from '../services/notificationService';
 
+import FirebaseNotificationService from '../services/firebaseNotificationService';
+
 interface NotificationContextType {
     unreadCount: number;
     messages: MessageType[];
@@ -60,33 +62,46 @@ interface UserStatusUpdate {
 
 const savePushTokenToServer = async (token: string) => {
     try {
-        console.log('🔥 [Firebase] Начало сохранения токена на сервере');
+        // Определяем тип токена для правильных логов
+        const isFirebaseToken = !token.startsWith('ExponentPushToken');
+        const logPrefix = isFirebaseToken ? '🔥 [FCM]' : '📱 [EXPO]';
+
+        console.log(`${logPrefix} Начало сохранения токена на сервере`);
         const userToken = await AsyncStorage.getItem('userToken');
         if (!userToken) {
-            console.error('🔥 [Firebase] Нет токена авторизации для сохранения push-токена');
+            console.error(`${logPrefix} Нет токена авторизации для сохранения push-токена`);
             return;
         }
 
-        console.log('🔥 [Firebase] Отправка токена на сервер:', token.substring(0, 10) + '...');
+        console.log(`${logPrefix} Отправка токена на сервер:`, token.substring(0, 10) + '...');
+
+        // Формируем правильный payload в зависимости от типа токена
+        const payload = isFirebaseToken 
+            ? { fcm_token: token }
+            : { expo_push_token: token };
+
         const response = await axios.post(
             `${API_CONFIG.BASE_URL}/chat/api/save-push-token/`,
-            {expo_push_token: token},
+            payload,
             {headers: {'Authorization': `Token ${userToken}`}}
         );
 
-        console.log('🔥 [Firebase] Ответ сервера при сохранении токена:', response.status);
+        console.log(`${logPrefix} Ответ сервера при сохранении токена:`, response.status);
 
         if (response.status === 200) {
-            console.log('🔥 [Firebase] Токен успешно сохранен на сервере');
+            console.log(`${logPrefix} Токен успешно сохранен на сервере`);
         } else {
-            console.warn('🔥 [Firebase] Необычный статус ответа при сохранении токена:', response.status);
+            console.warn(`${logPrefix} Необычный статус ответа при сохранении токена:`, response.status);
         }
     } catch (error) {
-        console.error('🔥 [Firebase] Ошибка при сохранении push-токена:', error);
+        const isFirebaseToken = !token.startsWith('ExponentPushToken');
+        const logPrefix = isFirebaseToken ? '🔥 [FCM]' : '📱 [EXPO]';
+
+        console.error(`${logPrefix} Ошибка при сохранении push-токена:`, error);
 
         if (axios.isAxiosError(error)) {
-            console.error('🔥 [Firebase] Статус ошибки:', error.response?.status);
-            console.error('🔥 [Firebase] Данные ошибки:', error.response?.data);
+            console.error(`${logPrefix} Статус ошибки:`, error.response?.status);
+            console.error(`${logPrefix} Данные ошибки:`, error.response?.data);
         }
     }
 };
@@ -123,6 +138,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
     const [isInitialized, setIsInitialized] = useState<boolean>(false);
     const [lastMessageTimestamp, setLastMessageTimestamp] = useState<number>(0);
     const [reconnectAttempts, setReconnectAttempts] = useState<number>(0);
+    const [isUsingFirebaseNavigation, setIsUsingFirebaseNavigation] = useState<boolean>(false);
 
     const appState = useRef(AppState.currentState);
     const notificationListener = useRef<Notifications.Subscription | null>(null);
@@ -176,44 +192,47 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
     // Функция для запроса разрешений
     const requestPermissions = async (): Promise<boolean> => {
         try {
-            console.log('🔥 [Firebase] Начинаем запрос разрешений...');
+            console.log('🔔 [PUSH] Начинаем запрос разрешений...');
             const currentPermissions = await Notifications.getPermissionsAsync();
-            console.log('🔥 [Firebase] Текущий статус разрешений:', currentPermissions.status);
+            console.log('🔔 [PUSH] Текущий статус разрешений:', currentPermissions.status);
 
             let hasPermission = currentPermissions.status === 'granted';
 
             if (!hasPermission) {
-                console.log('🔥 [Firebase] Запрашиваем новые разрешения...');
+                console.log('🔔 [PUSH] Запрашиваем новые разрешения...');
                 hasPermission = await requestNotificationPermissions();
-                console.log('🔥 [Firebase] Результат запроса разрешений:', hasPermission);
+                console.log('🔔 [PUSH] Результат запроса разрешений:', hasPermission);
             } else {
-                console.log('🔥 [Firebase] Разрешения уже предоставлены');
+                console.log('🔔 [PUSH] Разрешения уже предоставлены');
             }
 
             setHasNotificationPermission(hasPermission);
 
             if (hasPermission) {
-                console.log('🔥 [Firebase] Запрашиваем push-токен для Firebase...');
+                console.log('🔔 [PUSH] Запрашиваем push-токен...');
                 const token = await registerForPushNotifications();
-                console.log('🔥 [Firebase] Получен токен:', token ? 'Да' : 'Нет');
 
                 if (token) {
+                    const isFirebaseToken = !token.startsWith('ExponentPushToken');
+                    const logPrefix = isFirebaseToken ? '🔥 [FCM]' : '📱 [EXPO]';
+
+                    console.log(`${logPrefix} Получен токен:`, token.substring(0, 20) + '...');
                     setPushToken(token);
-                    console.log('🔥 [Firebase] Сохраняем токен на сервере...');
+                    console.log(`${logPrefix} Сохраняем токен на сервере...`);
                     await savePushTokenToServer(token);
                 } else {
-                    console.error('🔥 [Firebase] Не удалось получить push-токен для Firebase');
+                    console.error('🔔 [PUSH] Не удалось получить push-токен');
                 }
 
                 setIsInitialized(true);
-                console.log('🔥 [Firebase] Инициализация завершена');
+                console.log('🔔 [PUSH] Инициализация завершена');
             } else {
-                console.warn('🔥 [Firebase] Разрешения не получены, push-уведомления не будут работать');
+                console.warn('🔔 [PUSH] Разрешения не получены, push-уведомления не будут работать');
             }
 
             return hasPermission;
         } catch (error) {
-            console.error('🔥 [Firebase] Ошибка при запросе разрешений:', error);
+            console.error('🔔 [PUSH] Ошибка при запросе разрешений:', error);
             setHasNotificationPermission(false);
             return false;
         }
@@ -223,80 +242,128 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
     useEffect(() => {
         const initNotifications = async () => {
             try {
-                const currentPermissions = await Notifications.getPermissionsAsync();
-                const permissionGranted = currentPermissions.status === 'granted';
+                // Очищаем старые данные уведомлений при первом запуске
+                const lastClearTime = await AsyncStorage.getItem('lastNotificationClear');
+                const now = Date.now();
+                const oneDayAgo = now - (24 * 60 * 60 * 1000);
 
-                setHasNotificationPermission(permissionGranted);
-
-                if (permissionGranted) {
-                    if (!pushToken) {
-                        console.log('🔥 [Firebase] Запрашиваем push-токен для Firebase...');
-                        const token = await registerForPushNotifications();
-                        console.log('🔥 [Firebase] Получен токен:', token ? 'Да' : 'Нет');
-
-                        if (token) {
-                            setPushToken(token);
-                            console.log('🔥 [Firebase] Сохраняем токен на сервере...');
-                            await savePushTokenToServer(token);
-                            console.log('🔥 [Firebase] Токен сохранен успешно');
-                        } else {
-                            console.error('🔥 [Firebase] Не удалось получить токен для Firebase');
-                        }
-                    } else {
-                        console.log('🔥 [Firebase] Push-токен уже существует');
+                if (!lastClearTime || parseInt(lastClearTime) < oneDayAgo) {
+                    // Очищаем старые уведомления раз в день
+                    try {
+                        await Notifications.dismissAllNotificationsAsync();
+                        await AsyncStorage.setItem('lastNotificationClear', now.toString());
+                        console.log('🔔 [PUSH] Очищены старые уведомления');
+                    } catch (clearError) {
+                        console.log('🔔 [PUSH] Ошибка очистки старых уведомлений:', clearError);
                     }
-
-                    setIsInitialized(true);
-                } else if (currentPermissions.canAskAgain) {
-                    console.log('🔥 [Firebase] Запрашиваем разрешения для уведомлений...');
-                    const granted = await requestPermissions();
-                    console.log('🔥 [Firebase] Результат запроса разрешений:', granted ? 'Разрешено' : 'Отклонено');
-
-                    if (granted && !pushToken) {
-                        console.log('🔥 [Firebase] Повторный запрос push-токена...');
-                        const token = await registerForPushNotifications();
-                        console.log('🔥 [Firebase] Получен токен при повторном запросе:', token ? 'Да' : 'Нет');
-
-                        if (token) {
-                            setPushToken(token);
-                            await savePushTokenToServer(token);
-                        }
-                    }
-                } else {
-                    console.log('🔥 [Firebase] Разрешения на уведомления отклонены пользователем');
                 }
 
-                // Добавляем слушатели уведомлений
+                // Получаем экземпляр Firebase сервиса
+                const firebaseService = FirebaseNotificationService.getInstance();
+
+                // Пытаемся инициализировать Firebase сначала
+                const firebaseResult = await firebaseService.initialize();
+
+                if (firebaseResult.success && firebaseResult.tokenType === 'fcm') {
+                    // Успешная инициализация с нативным Firebase токеном
+                    const token = firebaseResult.token;
+                    if (token) {
+                        console.log('🔥 [FCM] ✅ Используем нативный Firebase FCM токен');
+                        setPushToken(token);
+                        setHasNotificationPermission(true);
+                        setIsInitialized(true);
+
+                        // Добавляем обработчик Firebase сообщений ТОЛЬКО для обновления данных
+                        firebaseService.addMessageHandler((messageData) => {
+                            console.log('🔥 [FCM] Обработка сообщения Firebase в контексте (только обновление данных)');
+                            if (isAuthenticated) {
+                                refreshNotifications();
+                            }
+                        });
+
+                        setIsUsingFirebaseNavigation(true);
+                        console.log('🔥 [FCM] Native Firebase уведомления настроены успешно');
+                        console.log('🔥 [FCM] Навигация обрабатывается ТОЛЬКО Firebase сервисом');
+
+                        // НЕ настраиваем Expo слушатели - Firebase сервис уже обрабатывает навигацию
+                        return;
+                    }
+                }
+
+                // Fallback на Expo - или Firebase не работает, или это Expo токен через Firebase сервис
+                console.log('📱 [EXPO] Настраиваем Expo notifications (Firebase недоступен или это Expo токен)');
+
+                // Если Firebase вернул Expo токен - используем его
+                if (firebaseResult.success && firebaseResult.token) {
+                    setPushToken(firebaseResult.token);
+                    setHasNotificationPermission(true);
+                    setIsInitialized(true);
+                } else {
+                    // Стандартная Expo инициализация
+                    const currentPermissions = await Notifications.getPermissionsAsync();
+                    const permissionGranted = currentPermissions.status === 'granted';
+
+                    setHasNotificationPermission(permissionGranted);
+
+                    if (permissionGranted) {
+                        if (!pushToken) {
+                            console.log('📱 [EXPO] Запрашиваем push-токен...');
+                            const token = await registerForPushNotifications();
+
+                            if (token) {
+                                console.log('📱 [EXPO] Получен Expo токен');
+                                setPushToken(token);
+                                await savePushTokenToServer(token);
+                            } else {
+                                console.error('📱 [EXPO] Не удалось получить токен');
+                            }
+                        }
+
+                        setIsInitialized(true);
+                    } else if (currentPermissions.canAskAgain) {
+                        console.log('📱 [EXPO] Запрашиваем разрешения для уведомлений...');
+                        const granted = await requestPermissions();
+
+                        if (granted && !pushToken) {
+                            const token = await registerForPushNotifications();
+                            if (token) {
+                                setPushToken(token);
+                                await savePushTokenToServer(token);
+                            }
+                        }
+                    }
+                }
+
+                // Настраиваем Expo слушатели для обработки уведомлений
+                console.log('📱 [EXPO] Настраиваем Expo слушатели');
+
+                // Очищаем старые слушатели
                 if (notificationListener.current) {
                     notificationListener.current.remove();
-                    console.log('🔥 [Firebase] Предыдущий слушатель уведомлений удален');
                 }
 
-                console.log('🔥 [Firebase] Добавляем слушатель входящих уведомлений');
+                if (responseListener.current) {
+                    responseListener.current.remove();
+                }
+
+                // Добавляем новые слушатели
                 notificationListener.current = addNotificationListener((notification: Notifications.Notification) => {
-                    console.log('🔥 [Firebase] Получено уведомление пока приложение открыто:', {
+                    console.log('📱 [EXPO] Получено Expo уведомление:', {
                         title: notification.request.content.title,
                         body: notification.request.content.body,
                         data: notification.request.content.data
                     });
 
                     if (isAuthenticated) {
-                        console.log('🔥 [Firebase] Обновляем данные после получения уведомления');
                         refreshNotifications();
                     }
                 });
 
-                if (responseListener.current) {
-                    responseListener.current.remove();
-                    console.log('🔥 [Firebase] Предыдущий слушатель ответов на уведомления удален');
-                }
-
-                console.log('🔥 [Firebase] Добавляем слушатель ответов на уведомления');
                 responseListener.current = addNotificationResponseListener((response: Notifications.NotificationResponse) => {
-                    console.log('🔥 [Firebase] Пользователь нажал на уведомление:', {
-                        title: response.notification.request.content.title,
-                        data: response.notification.request.content.data
-                    });
+                    console.log('📱 [EXPO] ========== ЕДИНСТВЕННЫЙ ОБРАБОТЧИК НАВИГАЦИИ ==========');
+                    console.log('📱 [EXPO] Пользователь нажал на уведомление');
+
+                    // ВСЕГДА обрабатываем навигацию здесь, независимо от типа токена
                     handleNotificationResponse(response);
                 });
 
@@ -335,22 +402,47 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
     useEffect(() => {
         const checkLaunchNotification = async () => {
             try {
-                console.log('🔥 [Firebase] Проверяем, было ли приложение запущено из уведомления...');
+                console.log('🔔 [PUSH] Проверяем, было ли приложение запущено из уведомления...');
+
+                // Получаем время запуска приложения из AsyncStorage
+                const appLaunchTime = await AsyncStorage.getItem('appLaunchTime');
+                const currentLaunchTime = Date.now().toString();
+
+                // Сохраняем текущее время запуска
+                await AsyncStorage.setItem('appLaunchTime', currentLaunchTime);
+
                 const lastNotificationResponse = await Notifications.getLastNotificationResponseAsync();
 
                 if (lastNotificationResponse) {
-                    console.log('🔥 [Firebase] Приложение запущено из уведомления!');
-                    console.log('🔥 [Firebase] Данные уведомления:', JSON.stringify(lastNotificationResponse.notification.request.content.data));
+                    const notificationTime = lastNotificationResponse.actionDate;
+                    const timeSinceNotification = Date.now() - notificationTime;
 
-                    setTimeout(() => {
-                        console.log('🔥 [Firebase] Обрабатываем уведомление, из которого запущено приложение');
-                        handleNotificationResponse(lastNotificationResponse);
-                    }, 1000);
+                    // Проверяем, что уведомление было нажато недавно (в течение последних 30 секунд)
+                    // и это новый запуск приложения
+                    const isRecentNotification = timeSinceNotification < 30000; // 30 секунд
+                    const isNewAppLaunch = !appLaunchTime || (parseInt(currentLaunchTime) - parseInt(appLaunchTime) > 5000);
+
+                    if (isRecentNotification && isNewAppLaunch) {
+                        const isFromFirebase = lastNotificationResponse.notification.request.content.data?.isFirebase === true;
+                        const logPrefix = isFromFirebase ? '🔥 [FCM]' : '📱 [EXPO]';
+
+                        console.log(`${logPrefix} Приложение запущено из уведомления!`);
+                        console.log(`${logPrefix} Время с момента нажатия: ${Math.round(timeSinceNotification / 1000)}с`);
+                        console.log(`${logPrefix} Данные уведомления:`, JSON.stringify(lastNotificationResponse.notification.request.content.data));
+
+                        setTimeout(() => {
+                            console.log(`${logPrefix} Обрабатываем уведомление, из которого запущено приложение`);
+                            handleNotificationResponse(lastNotificationResponse);
+                        }, 1000);
+                    } else {
+                        console.log('🔔 [PUSH] Приложение запущено обычным способом (уведомление слишком старое или это не новый запуск)');
+                        console.log('🔔 [PUSH] Время с момента последнего уведомления:', Math.round(timeSinceNotification / 1000), 'секунд');
+                    }
                 } else {
-                    console.log('🔥 [Firebase] Приложение запущено обычным способом (не из уведомления)');
+                    console.log('🔔 [PUSH] Приложение запущено обычным способом (нет последнего уведомления)');
                 }
             } catch (error) {
-                console.error('🔥 [Firebase] Ошибка при проверке запуска из уведомления:', error);
+                console.error('🔔 [PUSH] Ошибка при проверке запуска из уведомления:', error);
             }
         };
 
@@ -359,53 +451,76 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
         }
     }, [isAuthenticated]);
 
-    // Обработка ответа на уведомление
+    // Обработка ответа на уведомление - ЕДИНСТВЕННОЕ МЕСТО ДЛЯ НАВИГАЦИИ
     const handleNotificationResponse = (response: Notifications.NotificationResponse) => {
         try {
-            const data = response.notification.request.content.data;
-            console.log('🔥 [Firebase] Обработка ответа на уведомление:', response.notification.request.identifier);
-            console.log('🔥 [Firebase] Данные уведомления:', JSON.stringify(data));
+            console.log('📱 [CONTEXT] ========== ОБРАБОТКА НАВИГАЦИИ ==========');
+
+            // Используем data вместо устаревшего dataString
+            let data = response.notification.request.content.data;
+
+            // Если data является строкой (старый формат), парсим её
+            if (typeof data === 'string') {
+                try {
+                    data = JSON.parse(data);
+                } catch (parseError) {
+                    console.warn('🔔 [PUSH] Failed to parse notification data string:', parseError);
+                }
+            }
+
+            const isFromFirebase = data?.isFirebase === true;
+            const logPrefix = isFromFirebase ? '🔥 [FCM]' : '📱 [EXPO]';
+
+            console.log(`${logPrefix} Обработка ответа на уведомление:`, response.notification.request.identifier);
+            console.log(`${logPrefix} Данные уведомления:`, JSON.stringify(data));
 
             if (isAuthenticated) {
-                console.log('🔥 [Firebase] Обновляем данные после нажатия на уведомление');
+                console.log(`${logPrefix} Обновляем данные после нажатия на уведомление`);
                 refreshNotifications();
             } else {
-                console.log('🔥 [Firebase] Пользователь не аутентифицирован, пропускаем обновление');
+                console.log(`${logPrefix} Пользователь не аутентифицирован, пропускаем обновление`);
             }
-            if (data.startfrom !== undefined) {
-                console.log('🔥 [Firebase] FCM уведомление с startfrom:', data.startfrom);
 
-                // Навигация к сообщению или чату
-                if (data.startfrom && typeof data.startfrom === 'number') {
-                    // Возможные варианты навигации:
-                    router.push(`/chat?messageId=${data.startfrom}`);
-                    // или
-                    // router.push(`/message/${data.startfrom}`);
-                }
-                return;
+            if (data?.startfrom !== undefined) {
+                console.log(`🔥 [FCM] Уведомление с startfrom:`, data.startfrom);
             }
 
             if (data && data.type === 'message_notification') {
-                console.log('🔥 [Firebase] Это уведомление о сообщении, выполняем навигацию');
+                console.log(`${logPrefix} Это уведомление о сообщении, выполняем навигацию`);
+                console.log(`${logPrefix} Данные для навигации:`, {
+                    chatId: data.chatId,
+                    senderId: data.senderId || data.sender_id,
+                    type: data.type
+                });
 
                 if (data.chatId) {
-                    console.log('🔥 [Firebase] Переходим к чату:', data.chatId);
-                    router.push({
-                        pathname: '/chat/[id]',
-                        params: {
-                            "id": String(data.chatId),
-                            "userId": String(data.senderId)
-                        }
-                    });
+                    console.log(`${logPrefix} Переходим к чату:`, data.chatId);
+
+                    // Простая навигация без задержки
+                    try {
+                        router.push({
+                            pathname: '/chat/[id]' as any,
+                            params: {
+                                "id": String(data.chatId),
+                                "userId": String(data.senderId || data.sender_id)
+                            }
+                        });
+                        console.log(`${logPrefix} ✅ Навигация в чат выполнена успешно`);
+                    } catch (navError) {
+                        console.error(`${logPrefix} ❌ Ошибка навигации в чат:`, navError);
+                        // Fallback - переход к списку сообщений
+                        router.push('/(main)/messages');
+                    }
                 } else {
-                    console.log('🔥 [Firebase] Переходим к списку сообщений');
+                    console.log(`${logPrefix} Нет chatId, переходим к списку сообщений`);
                     router.push('/(main)/messages');
                 }
             } else {
-                console.log('🔥 [Firebase] Тип уведомления не распознан или не требует навигации');
+                console.log(`${logPrefix} Тип уведомления не распознан или не требует навигации`);
+                console.log(`${logPrefix} Данные уведомления:`, data);
             }
         } catch (error) {
-            console.error('🔥 [Firebase] Ошибка при обработке ответа на уведомление:', error);
+            console.error('🔔 [PUSH] Ошибка при обработке ответа на уведомление:', error);
         }
     };
 
@@ -501,14 +616,15 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
     // Проверка состояния соединения
     const checkConnection = () => {
         const now = Date.now();
-        // Если последний пинг был отправлен более 30 секунд назад и соединение считается активным
-        if (now - lastPingTimeRef.current > 30000 && isConnected()) {
+        // Если последний пинг был отправлен более 45 секунд назад и соединение считается активным
+        if (now - lastPingTimeRef.current > 45000 && isConnected()) {
+            console.log('🔌 [WS] ⚠️ Connection seems stale, attempting to reconnect...');
             reconnect();
         }
     };
 
 // Обработчик сообщений WebSocket
-    const handleMessage = (event: WebSocketMessageEvent) => {
+    const handleMessage = (event: any) => {
         try {
             const data = JSON.parse(event.data);
             lastPingTimeRef.current = Date.now();
@@ -752,11 +868,11 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
             }
 
             checkConnectionIntervalRef.current = setInterval(() => {
-                // Отправляем пинг каждые 15 секунд
+                // Отправляем пинг каждые 30 секунд
                 sendPing();
-                // Проверяем состояние соединения каждые 15 секунд
+                // Проверяем состояние соединения каждые 30 секунд
                 checkConnection();
-            }, 15000);
+            }, 30000);
         }
 
         return () => {
@@ -788,32 +904,42 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
         };
     }, [isAuthenticated, wsConnected]);
 
-    // Функция для проверки статуса Firebase
+    // Функция для проверки статуса push-уведомлений
     const checkFirebaseStatus = async () => {
         try {
-            console.log('🔥 [Firebase] Проверка статуса Firebase...');
-            console.log('🔥 [Firebase] Текущие разрешения:', await Notifications.getPermissionsAsync());
-            console.log('🔥 [Firebase] Push-токен:', pushToken ? pushToken.substring(0, 15) + '...' : 'отсутствует');
+            console.log('🔔 [PUSH] Проверка статуса push-уведомлений...');
+            console.log('🔔 [PUSH] Текущие разрешения:', await Notifications.getPermissionsAsync());
+
+            if (pushToken) {
+                const isFirebaseToken = !pushToken.startsWith('ExponentPushToken');
+                const logPrefix = isFirebaseToken ? '🔥 [FCM]' : '📱 [EXPO]';
+                console.log(`${logPrefix} Push-токен:`, pushToken.substring(0, 15) + '...');
+            } else {
+                console.log('🔔 [PUSH] Push-токен: отсутствует');
+            }
 
             if (!pushToken) {
-                console.log('🔥 [Firebase] Попытка повторного получения push-токена...');
+                console.log('🔔 [PUSH] Попытка повторного получения push-токена...');
                 const token = await registerForPushNotifications();
-                console.log('🔥 [Firebase] Результат получения токена:', token ? 'Успешно' : 'Неудача');
 
                 if (token) {
+                    const isFirebaseToken = !token.startsWith('ExponentPushToken');
+                    const logPrefix = isFirebaseToken ? '🔥 [FCM]' : '📱 [EXPO]';
+                    console.log(`${logPrefix} Результат получения токена: Успешно`);
+
                     setPushToken(token);
                     await savePushTokenToServer(token);
-                    console.log('🔥 [Firebase] Токен успешно обновлен');
+                    console.log(`${logPrefix} Токен успешно обновлен`);
                     return {success: true, token};
                 } else {
-                    console.log('🔥 [Firebase] Не удалось получить токен при проверке');
+                    console.log('🔔 [PUSH] Не удалось получить токен при проверке');
                     return {success: false, error: 'Не удалось получить токен'};
                 }
             }
 
             return {success: true, token: pushToken};
         } catch (error) {
-            console.error('🔥 [Firebase] Ошибка при проверке статуса Firebase:', error);
+            console.error('🔔 [PUSH] Ошибка при проверке статуса push-уведомлений:', error);
             return {success: false, error};
         }
     };

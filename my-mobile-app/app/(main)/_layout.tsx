@@ -2,6 +2,7 @@ import { Stack } from "expo-router";
 import TabBar from "../../components/TabBar";
 import { View, StyleSheet } from "react-native";
 import { useTheme } from "../../contexts/ThemeContext";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function MainLayout() {
   const { theme } = useTheme();
@@ -9,7 +10,7 @@ export default function MainLayout() {
   const styles = createStyles(theme);
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <Stack
         screenOptions={{
           headerStyle: {
@@ -70,7 +71,7 @@ export default function MainLayout() {
         />
       </Stack>
       <TabBar />
-    </View>
+    </SafeAreaView>
   );
 }
 

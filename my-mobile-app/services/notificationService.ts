@@ -105,17 +105,8 @@ const getErrorDetails = (error: unknown) => {
 };
 
 // ======== НАСТРОЙКА УВЕДОМЛЕНИЙ ========
-// Настройка обработчика уведомлений
-Notifications.setNotificationHandler({
-  handleNotification: async (notification) => {
-    return {
-      shouldPlaySound: true,
-      shouldSetBadge: true,
-      shouldShowBanner: true,
-      shouldShowList: true,
-    };
-  },
-});
+// Настройка обработчика уведомлений будет выполнена в Firebase сервисе
+// чтобы избежать конфликтов между Firebase и Expo
 
 // Настройка Android каналов уведомлений
 const setupAndroidNotificationChannels = async () => {

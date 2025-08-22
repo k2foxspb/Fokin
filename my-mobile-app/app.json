@@ -18,7 +18,12 @@
       "infoPlist": {
         "NSCameraUsageDescription": "Приложение использует камеру для создания фотографий",
         "NSPhotoLibraryUsageDescription": "Приложение использует галерею для выбора фотографий",
-        "NSMicrophoneUsageDescription": "Приложение использует микрофон для записи аудио"
+        "NSMicrophoneUsageDescription": "Приложение использует микрофон для записи аудио",
+        "UIBackgroundModes": [
+          "remote-notification",
+          "background-fetch"
+        ],
+        "FirebaseAppDelegateProxyEnabled": true
       }
     },
     "android": {
@@ -40,7 +45,8 @@
         "android.permission.VIBRATE",
         "android.permission.INTERNET",
         "android.permission.ACCESS_NETWORK_STATE",
-        "android.permission.USE_FULL_SCREEN_INTENT"
+        "android.permission.USE_FULL_SCREEN_INTENT",
+        "com.google.android.c2dm.permission.RECEIVE"
       ],
       "intentFilters": [
         {
@@ -55,7 +61,10 @@
               "scheme": "fokinfun"
             }
           ],
-          "category": ["BROWSABLE", "DEFAULT"]
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         }
       ]
     },
@@ -72,10 +81,28 @@
         "expo-notifications",
         {
           "icon": "./assets/images/logo1024.png",
-          "color": "#222222",
-          "defaultChannel": "messages",
-          "androidMode": "default",
-          "androidCollapsedTitle": "Новые сообщения",
+          "color": "#222222"
+        }
+      ],
+      [
+        "@react-native-firebase/app",
+        {
+          "android_background_activity_names": [
+            "com.k2foxspb.fokinfun.MainActivity"
+          ]
+        }
+      ],
+      [
+        "@react-native-firebase/messaging",
+        {
+          "android": {
+            "default_notification_channel_id": "messages",
+            "default_notification_color": "#222222",
+            "notification_foreground_service": {
+              "enabled": true
+            }
+          },
+          "backgroundMessageHandler": "./firebaseBackgroundHandler.js"
         }
       ]
     ],

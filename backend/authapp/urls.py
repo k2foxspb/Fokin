@@ -52,7 +52,6 @@ urlpatterns = [
     path('privacy-policy', PrivacyPolicyView.as_view(), name="privacy_policy"),
     path('email-confirmed', EmailConfirmedView.as_view(), name="email_confirmed"),
     path('privacy-policy', PrivacyPolicyView.as_view(), name="privacy_policy"),
-    path('api/update-push-token/', update_push_token, name='update-push-token'),
     path('api/activate-user/', ActivateUserAPIView.as_view(), name='activate_user'),
     path('api/update-user-status/', UpdateUserStatusAPIView.as_view(), name='update_user_status'),
 

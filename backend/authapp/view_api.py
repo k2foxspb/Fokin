@@ -15,7 +15,6 @@ from django.contrib.auth.tokens import default_token_generator
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes, force_str
 from django.conf import settings
-from django.template.loader import render_to_string
 import random
 import string
 from django.utils import timezone
@@ -29,17 +28,6 @@ from authapp.serializer import UserSerializer
 def generate_verification_code(length=6):
     return ''.join(random.choices(string.digits, k=length))
 User = get_user_model()
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def update_push_token(request):
-    push_token = request.data.get('push_token')
-    if push_token:
-
-        request.user.expo_push_token = push_token
-        request.user.save()
-        return Response({'status': 'success'})
-    return Response({'error': 'No token provided'}, status=400)
-
 class LoginAPIView(APIView):
     permission_classes = (AllowAny,)
 

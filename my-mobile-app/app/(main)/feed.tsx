@@ -311,14 +311,14 @@ export default function Feed() {
                     height: 800, // Увеличенная высота для полного контента
                     backgroundColor: 'transparent'
                 }}
-                scrollEnabled={true}
-                showsVerticalScrollIndicator={true}
+                scrollEnabled={false}
+                showsVerticalScrollIndicator={false}
                 showsHorizontalScrollIndicator={false}
                 onShouldStartLoadWithRequest={() => false}
                 javaScriptEnabled={false}
                 androidLayerType="software"
                 mixedContentMode="compatibility"
-                nestedScrollEnabled={true}
+                nestedScrollEnabled={false}
             />
         );
     };
@@ -377,20 +377,20 @@ export default function Feed() {
         const isExpanded = expandedArticleIds.includes(item.id);
 
         return (
-            <TouchableOpacity
-                style={[styles.articleItem, isExpanded && styles.expandedArticleItem]}
-                onPress={() => toggleArticleExpansion(item)}
-                activeOpacity={0.7}
-                disabled={isExpanded}
-            >
-                <View style={styles.articleHeader}>
-                    <View style={styles.categoryContainer}>
-                        <Text style={styles.categoryText}>{item.category.title}</Text>
+            <View style={[styles.articleItem, isExpanded && styles.expandedArticleItem]}>
+                <TouchableOpacity 
+                    onPress={() => !isExpanded && toggleArticleExpansion(item)}
+                    activeOpacity={isExpanded ? 1 : 0.7}
+                >
+                    <View style={styles.articleHeader}>
+                        <View style={styles.categoryContainer}>
+                            <Text style={styles.categoryText}>{item.category.title}</Text>
+                        </View>
+                        <Text style={[styles.dateText, {color: theme.textSecondary}]}>{formatDate(item.updated)}</Text>
                     </View>
-                    <Text style={[styles.dateText, {color: theme.textSecondary}]}>{formatDate(item.updated)}</Text>
-                </View>
 
-                <Text style={[styles.articleTitle, {color: theme.text}]}>{item.title}</Text>
+                    <Text style={[styles.articleTitle, {color: theme.text}]}>{item.title}</Text>
+                </TouchableOpacity>
 
                 {isExpanded ? (
                     <View style={[styles.expandedContent, {
@@ -399,15 +399,27 @@ export default function Feed() {
                     }]}>
                         {item.content ? (
                             <View style={styles.htmlContentContainer}>
-                                <TouchableOpacity
-                                    style={styles.collapseButton}
-                                    onPress={() => toggleArticleExpansion(item)}
-                                >
-                                    <Text style={[styles.collapseButtonText, {color: theme.primary}]}>
-                                        Свернуть статью
-                                    </Text>
-                                    <Ionicons name="chevron-up-outline" size={16} color={theme.primary}/>
-                                </TouchableOpacity>
+                                <View style={styles.buttonContainer}>
+                                    <TouchableOpacity
+                                        style={styles.collapseButton}
+                                        onPress={() => toggleArticleExpansion(item)}
+                                    >
+                                        <Text style={[styles.collapseButtonText, {color: theme.primary}]}>
+                                            Свернуть статью
+                                        </Text>
+                                        <Ionicons name="chevron-up-outline" size={16} color={theme.primary}/>
+                                    </TouchableOpacity>
+
+                                    <TouchableOpacity
+                                        style={[styles.fullArticleButton, {backgroundColor: theme.primary}]}
+                                        onPress={() => router.push(`/article/${item.slug}`)}
+                                    >
+                                        <Ionicons name="expand-outline" size={16} color="white"/>
+                                        <Text style={styles.fullArticleButtonText}>
+                                            Читать полностью
+                                        </Text>
+                                    </TouchableOpacity>
+                                </View>
                                 <HtmlRenderer html={item.content} theme={theme}/>
                             </View>
                         ) : (
@@ -430,9 +442,11 @@ export default function Feed() {
                         )}
                     </View>
                 ) : (
-                    <Text style={[styles.articlePreamble, {color: theme.textSecondary}]} numberOfLines={3}>
-                        {stripHtml(item.preamble)}
-                    </Text>
+                    <TouchableOpacity onPress={() => toggleArticleExpansion(item)} activeOpacity={0.7}>
+                        <Text style={[styles.articlePreamble, {color: theme.textSecondary}]} numberOfLines={3}>
+                            {stripHtml(item.preamble)}
+                        </Text>
+                    </TouchableOpacity>
                 )}
 
                 <View style={[styles.articleFooter, {borderTopColor: theme.border}]}>
@@ -443,7 +457,11 @@ export default function Feed() {
                         </Text>
                     </View>
 
-                    <View style={[styles.expandIndicator, {backgroundColor: `${theme.primary}10`}]}>
+                    <TouchableOpacity 
+                        style={[styles.expandIndicator, {backgroundColor: `${theme.primary}10`}]}
+                        onPress={() => toggleArticleExpansion(item)}
+                        activeOpacity={0.7}
+                    >
                         <Ionicons
                             name={isExpanded ? "chevron-up-outline" : "chevron-down-outline"}
                             size={20}
@@ -452,9 +470,9 @@ export default function Feed() {
                         <Text style={[styles.expandText, {color: theme.primary}]}>
                             {isExpanded ? "Свернуть" : "Подробнее"}
                         </Text>
-                    </View>
+                    </TouchableOpacity>
                 </View>
-            </TouchableOpacity>
+            </View>
         );
     };
 
@@ -669,20 +687,47 @@ const createStyles = (theme: Theme) => StyleSheet.create({
     htmlContentContainer: {
         marginBottom: 15,
         minHeight: 800,
-        overflow: 'visible',
+    },
+    buttonContainer: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 12,
+        gap: 12,
     },
     collapseButton: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
         paddingVertical: 8,
-        marginBottom: 12,
+        paddingHorizontal: 12,
         backgroundColor: 'transparent',
         borderRadius: 8,
+        flex: 1,
     },
     collapseButtonText: {
         fontSize: 14,
         fontWeight: '600',
         marginRight: 4,
+    },
+    fullArticleButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 10,
+        paddingHorizontal: 16,
+        borderRadius: 8,
+        flex: 1,
+        elevation: 2,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+    },
+    fullArticleButtonText: {
+        color: 'white',
+        fontSize: 14,
+        fontWeight: 'bold',
+        marginLeft: 6,
     },
 });
