@@ -497,12 +497,21 @@ export default function ChatScreen() {
                         <Image
                             source={
                                 recipient?.avatar
-                                    ? {uri: `${API_CONFIG.BASE_URL}${recipient.avatar}`}
+                                    ? { 
+                                        uri: recipient.avatar.startsWith('http') 
+                                          ? recipient.avatar 
+                                          : `${API_CONFIG.BASE_URL}${recipient.avatar}` 
+                                      }
                                     : recipient?.gender === 'male'
                                     ? require('../../assets/avatar/male.png')
                                     : require('../../assets/avatar/female.png')
                             }
                             style={styles.miniAvatar}
+                            defaultSource={
+                                recipient?.gender === 'male'
+                                    ? require('../../assets/avatar/male.png')
+                                    : require('../../assets/avatar/female.png')
+                            }
                         />
                     </View>
 
@@ -615,6 +624,7 @@ const createStyles = (theme: any) => StyleSheet.create({
         borderRadius: 16,
         borderWidth: 2,
         borderColor: theme.primary,
+        backgroundColor: '#f0f0f0', // Фон на случай загрузки
     },
     headerUserInfo: {
         flexDirection: 'row',

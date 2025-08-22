@@ -374,105 +374,52 @@ export default function Feed() {
 
 
     const renderArticle = ({item}: { item: Article }) => {
-        const isExpanded = expandedArticleIds.includes(item.id);
-
         return (
-            <View style={[styles.articleItem, isExpanded && styles.expandedArticleItem]}>
-                <TouchableOpacity 
-                    onPress={() => !isExpanded && toggleArticleExpansion(item)}
-                    activeOpacity={isExpanded ? 1 : 0.7}
-                >
-                    <View style={styles.articleHeader}>
-                        <View style={styles.categoryContainer}>
-                            <Text style={styles.categoryText}>{item.category.title}</Text>
-                        </View>
-                        <Text style={[styles.dateText, {color: theme.textSecondary}]}>{formatDate(item.updated)}</Text>
-                    </View>
+            <TouchableOpacity 
+                style={[styles.articleItem]}
+                onPress={() => router.push(`/article/${item.slug}`)}
+                activeOpacity={0.8}
+            >
+                {/* Категория */}
+                <View style={styles.categoryContainer}>
+                    <Text style={styles.categoryText}>{item.category.title}</Text>
+                </View>
 
-                    <Text style={[styles.articleTitle, {color: theme.text}]}>{item.title}</Text>
-                </TouchableOpacity>
+                {/* Заголовок - отцентрованный */}
+                <Text style={[styles.articleTitle, {color: theme.text}]}>{item.title}</Text>
 
-                {isExpanded ? (
-                    <View style={[styles.expandedContent, {
-                        borderTopColor: theme.border,
-                        borderBottomColor: theme.border
-                    }]}>
-                        {item.content ? (
-                            <View style={styles.htmlContentContainer}>
-                                <View style={styles.buttonContainer}>
-                                    <TouchableOpacity
-                                        style={styles.collapseButton}
-                                        onPress={() => toggleArticleExpansion(item)}
-                                    >
-                                        <Text style={[styles.collapseButtonText, {color: theme.primary}]}>
-                                            Свернуть статью
-                                        </Text>
-                                        <Ionicons name="chevron-up-outline" size={16} color={theme.primary}/>
-                                    </TouchableOpacity>
+                {/* Преамбула */}
+                <Text style={[styles.articlePreamble, {color: theme.textSecondary}]} numberOfLines={4}>
+                    {stripHtml(item.preamble)}
+                </Text>
 
-                                    <TouchableOpacity
-                                        style={[styles.fullArticleButton, {backgroundColor: theme.primary}]}
-                                        onPress={() => router.push(`/article/${item.slug}`)}
-                                    >
-                                        <Ionicons name="expand-outline" size={16} color="white"/>
-                                        <Text style={styles.fullArticleButtonText}>
-                                            Читать полностью
-                                        </Text>
-                                    </TouchableOpacity>
-                                </View>
-                                <HtmlRenderer html={item.content} theme={theme}/>
-                            </View>
-                        ) : (
-                            <View>
-                                <Text style={[styles.articlePreamble, {color: theme.textSecondary}]}>
-                                    {stripHtml(item.preamble)}
-                                </Text>
-                                {item.isLoading ? (
-                                    <ActivityIndicator style={styles.contentLoader} color={theme.primary}/>
-                                ) : item.loadError ? (
-                                    <Text style={[styles.noContentText, {color: theme.error || theme.textSecondary}]}>
-                                        Не удалось загрузить полный текст статьи
-                                    </Text>
-                                ) : (
-                                    <Text style={[styles.waitingText, {color: theme.textSecondary}]}>
-                                        Нажмите, чтобы загрузить полный текст
-                                    </Text>
-                                )}
-                            </View>
-                        )}
-                    </View>
-                ) : (
-                    <TouchableOpacity onPress={() => toggleArticleExpansion(item)} activeOpacity={0.7}>
-                        <Text style={[styles.articlePreamble, {color: theme.textSecondary}]} numberOfLines={3}>
-                            {stripHtml(item.preamble)}
-                        </Text>
-                    </TouchableOpacity>
-                )}
-
-                <View style={[styles.articleFooter, {borderTopColor: theme.border}]}>
-                    <View style={styles.footerLeft}>
-                        <Ionicons name="time-outline" size={16} color={theme.textSecondary}/>
-                        <Text style={[styles.footerText, {color: theme.textSecondary}]}>
+                {/* Даты */}
+                <View style={styles.datesContainer}>
+                    <View style={styles.dateRow}>
+                        <Ionicons name="calendar-outline" size={14} color={theme.textSecondary}/>
+                        <Text style={[styles.dateLabel, {color: theme.textSecondary}]}>Создано:</Text>
+                        <Text style={[styles.dateValue, {color: theme.textSecondary}]}>
                             {formatDate(item.created)}
                         </Text>
                     </View>
 
-                    <TouchableOpacity 
-                        style={[styles.expandIndicator, {backgroundColor: `${theme.primary}10`}]}
-                        onPress={() => toggleArticleExpansion(item)}
-                        activeOpacity={0.7}
-                    >
-                        <Ionicons
-                            name={isExpanded ? "chevron-up-outline" : "chevron-down-outline"}
-                            size={20}
-                            color={theme.primary}
-                        />
-                        <Text style={[styles.expandText, {color: theme.primary}]}>
-                            {isExpanded ? "Свернуть" : "Подробнее"}
-                        </Text>
-                    </TouchableOpacity>
+                    {item.updated !== item.created && (
+                        <View style={styles.dateRow}>
+                            <Ionicons name="create-outline" size={14} color={theme.textSecondary}/>
+                            <Text style={[styles.dateLabel, {color: theme.textSecondary}]}>Изменено:</Text>
+                            <Text style={[styles.dateValue, {color: theme.textSecondary}]}>
+                                {formatDate(item.updated)}
+                            </Text>
+                        </View>
+                    )}
                 </View>
-            </View>
+
+                {/* Кнопка "Читать полностью" */}
+                <View style={[styles.readMoreButton, {backgroundColor: theme.primary}]}>
+                    <Ionicons name="book-outline" size={16} color="white"/>
+                    <Text style={styles.readMoreButtonText}>Читать полностью</Text>
+                </View>
+            </TouchableOpacity>
         );
     };
 
@@ -583,25 +530,13 @@ const createStyles = (theme: Theme) => StyleSheet.create({
         borderWidth: 1,
         borderColor: theme.border,
     },
-    expandedArticleItem: {
-        backgroundColor: theme.surface,
-        borderColor: theme.primary,
-        shadowOpacity: 0.15,
-        shadowRadius: 8,
-        elevation: 5,
-        borderWidth: 2,
-    },
-    articleHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 12,
-    },
     categoryContainer: {
         backgroundColor: theme.primary,
         paddingHorizontal: 12,
         paddingVertical: 6,
         borderRadius: 8,
+        alignSelf: 'center',
+        marginBottom: 12,
         elevation: 1,
         shadowColor: theme.text,
         shadowOffset: {width: 0, height: 1},
@@ -612,119 +547,53 @@ const createStyles = (theme: Theme) => StyleSheet.create({
         color: 'white',
         fontSize: 12,
         fontWeight: 'bold',
-    },
-    dateText: {
-        fontSize: 12,
-        fontStyle: 'italic',
+        textAlign: 'center',
     },
     articleTitle: {
-        fontSize: 22,
+        fontSize: 20,
         fontWeight: 'bold',
         marginBottom: 12,
-        lineHeight: 28,
+        lineHeight: 26,
+        textAlign: 'center',
     },
     articlePreamble: {
-        fontSize: 16,
-        lineHeight: 24,
-        marginBottom: 15,
-    },
-    expandedContent: {
-        marginVertical: 12,
-        paddingVertical: 8,
-        borderTopWidth: 1,
-        borderBottomWidth: 1,
-    },
-    articleContent: {
-        fontSize: 16,
-        lineHeight: 26,
-        marginBottom: 15,
+        fontSize: 15,
+        lineHeight: 22,
+        marginBottom: 16,
         textAlign: 'justify',
     },
-    articleFooter: {
+    datesContainer: {
+        marginBottom: 16,
+    },
+    dateRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'space-between',
-        marginTop: 8,
-        paddingTop: 8,
-        borderTopWidth: 1,
-        borderTopColor: theme.border,
+        marginBottom: 4,
     },
-    footerLeft: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    footerText: {
+    dateLabel: {
         fontSize: 12,
-        marginLeft: 4,
-    },
-    expandIndicator: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 8,
-        paddingVertical: 4,
-        borderRadius: 6,
-    },
-    expandText: {
-        fontSize: 14,
-        marginLeft: 4,
-        fontWeight: '600',
-    },
-    contentLoader: {
-        marginVertical: 12,
-    },
-    noContentText: {
-        fontSize: 14,
-        fontStyle: 'italic',
-        textAlign: 'center',
-        marginVertical: 12,
-    },
-    waitingText: {
-        fontSize: 14,
-        fontStyle: 'italic',
-        textAlign: 'center',
-        marginVertical: 12,
-    },
-    htmlContentContainer: {
-        marginBottom: 15,
-        minHeight: 800,
-    },
-    buttonContainer: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 12,
-        gap: 12,
-    },
-    collapseButton: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: 8,
-        paddingHorizontal: 12,
-        backgroundColor: 'transparent',
-        borderRadius: 8,
-        flex: 1,
-    },
-    collapseButtonText: {
-        fontSize: 14,
-        fontWeight: '600',
+        marginLeft: 6,
         marginRight: 4,
+        fontWeight: '500',
     },
-    fullArticleButton: {
+    dateValue: {
+        fontSize: 12,
+        fontWeight: '400',
+    },
+    readMoreButton: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        paddingVertical: 10,
+        paddingVertical: 12,
         paddingHorizontal: 16,
         borderRadius: 8,
-        flex: 1,
         elevation: 2,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.1,
         shadowRadius: 4,
     },
-    fullArticleButtonText: {
+    readMoreButtonText: {
         color: 'white',
         fontSize: 14,
         fontWeight: 'bold',

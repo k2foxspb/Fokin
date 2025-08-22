@@ -10,6 +10,9 @@ from main_app.view_api import (
     ArticleListAPIView,
     ArticleDetailAPIView,
     CategoryListAPIView,
+    ArticleCommentsAPIView,
+    toggle_like_article,
+    article_stats,
 )
 from main_app.apps import MainAppConfig
 
@@ -29,4 +32,9 @@ urlpatterns = [
     path('api/articles/', ArticleListAPIView.as_view(), name='api_articles_list'),
     path('api/articles/<slug:slug>/', ArticleDetailAPIView.as_view(), name='api_article_detail'),
     path('api/categories/', CategoryListAPIView.as_view(), name='api_categories_list'),
+
+    # Comments and Likes API
+    path('api/articles/<slug:slug>/comments/', ArticleCommentsAPIView.as_view(), name='api_article_comments'),
+    path('api/articles/<slug:slug>/like/', toggle_like_article, name='api_toggle_like'),
+    path('api/articles/<slug:slug>/stats/', article_stats, name='api_article_stats'),
 ]

@@ -344,27 +344,25 @@ export default function MessagesScreen() {
                   }}
                 >
                   <View style={styles.avatarContainer}>
-                    {item.other_user.avatar ? (
-                      <Image
-                              source={
-                                item.other_user.avatar 
-                                  ? { uri: `${API_CONFIG.BASE_URL}${item.other_user.avatar}` }
-                                  : item.other_user.gender === 'male'
-                                  ? require('../../assets/avatar/male.png')
-                                  : require('../../assets/avatar/female.png')
-                              }
-                        style={styles.avatar}
-                      />
-                    ) : (
-                      <Image
-                        source={
-                          item.other_user.gender === 'male'
-                            ? require('../../assets/avatar/male.png')
-                            : require('../../assets/avatar/female.png')
-                        }
-                        style={styles.avatar}
-                      />
-                    )}
+                    <Image
+                      source={
+                        item.other_user.avatar 
+                          ? { 
+                              uri: item.other_user.avatar.startsWith('http') 
+                                ? item.other_user.avatar 
+                                : `${API_CONFIG.BASE_URL}${item.other_user.avatar}` 
+                            }
+                          : item.other_user.gender === 'male'
+                          ? require('../../assets/avatar/male.png')
+                          : require('../../assets/avatar/female.png')
+                      }
+                      style={styles.avatar}
+                      defaultSource={
+                        item.other_user.gender === 'male'
+                          ? require('../../assets/avatar/male.png')
+                          : require('../../assets/avatar/female.png')
+                      }
+                    />
                     <View style={[
                       styles.onlineIndicator,
                       {
@@ -445,6 +443,7 @@ const styles = StyleSheet.create({
     width: 50,
     height: 50,
     borderRadius: 25,
+    backgroundColor: '#f0f0f0', // Фон на случай загрузки
   },
   onlineIndicator: {
     position: 'absolute',

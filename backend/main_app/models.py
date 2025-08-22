@@ -104,3 +104,37 @@ class Category(models.Model):
     class Meta:
         verbose_name = "Категория"
         verbose_name_plural = "Категории"
+
+
+class Comment(models.Model):
+    """Модель комментариев к статьям"""
+    article = models.ForeignKey(Article, on_delete=models.CASCADE, related_name='comments', verbose_name="Статья")
+    author = models.ForeignKey('authapp.CustomUser', on_delete=models.CASCADE, verbose_name="Автор")
+    content = models.TextField(verbose_name="Содержание комментария")
+    created = models.DateTimeField(auto_now_add=True, verbose_name="Создано")
+    updated = models.DateTimeField(auto_now=True, verbose_name="Обновлено")
+    is_approved = models.BooleanField(default=True, verbose_name="Одобрен")
+
+    class Meta:
+        verbose_name = "Комментарий"
+        verbose_name_plural = "Комментарии"
+        ordering = ['-created']
+
+    def __str__(self):
+        return f'Комментарий от {self.author.username} к {self.article.title}'
+
+
+class Like(models.Model):
+    """Модель лайков к статьям"""
+    article = models.ForeignKey(Article, on_delete=models.CASCADE, related_name='likes', verbose_name="Статья")
+    user = models.ForeignKey('authapp.CustomUser', on_delete=models.CASCADE, verbose_name="Пользователь")
+    created = models.DateTimeField(auto_now_add=True, verbose_name="Создано")
+
+    class Meta:
+        verbose_name = "Лайк"
+        verbose_name_plural = "Лайки"
+        unique_together = ('article', 'user')  # Один пользователь может поставить только один лайк статье
+        ordering = ['-created']
+
+    def __str__(self):
+        return f'Лайк от {self.user.username} к {self.article.title}'
