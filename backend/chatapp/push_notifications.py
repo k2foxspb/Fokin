@@ -61,6 +61,7 @@ class PushNotificationService:
 
         if not fcm_tokens:
             logger.warning("🔥 [FCM] ❌ No FCM tokens provided")
+            cls._suggest_token_migration()
             return False
 
         # Фильтруем и удаляем Expo токены из базы данных
@@ -80,6 +81,8 @@ class PushNotificationService:
             if expo_tokens:
                 logger.warning("🔥 [FCM] ❌ All tokens were Expo tokens - they have been removed")
                 logger.warning("🔥 [FCM] 💡 Users need to restart app to get new FCM tokens")
+
+            cls._suggest_token_migration()
             return False
 
         logger.info(f"🔥 [FCM] ✅ Proceeding with {len(fcm_tokens_only)} valid FCM tokens")
@@ -88,6 +91,11 @@ class PushNotificationService:
         fcm_success = cls._send_firebase_notification(fcm_tokens_only, sender_name, message_text, chat_id)
 
         logger.info(f"🔔 [PUSH] === FCM PUSH RESULT: {fcm_success} ===")
+
+        # Показываем статистику токенов для отслеживания миграции
+        if not fcm_success:
+            cls.get_token_statistics()
+
         return fcm_success
 
     # Метод удален - используется только Firebase FCM
@@ -294,3 +302,49 @@ class PushNotificationService:
 
         except Exception as e:
             logger.error(f"🚨 [CLEANUP] Ошибка при массовой очистке Expo токенов: {str(e)}")
+
+    @classmethod
+    def _suggest_token_migration(cls):
+        """Предлагает пользователям мигрировать на FCM токены"""
+        logger.warning("🔥 [FCM] 📋 МИГРАЦИЯ НА FIREBASE FCM ТОКЕНЫ")
+        logger.warning("🔥 [FCM] 📱 Для пользователей мобильного приложения:")
+        logger.warning("🔥 [FCM]   1. Полностью закройте приложение")
+        logger.warning("🔥 [FCM]   2. Перезапустите приложение")
+        logger.warning("🔥 [FCM]   3. При необходимости разрешите push-уведомления заново")
+        logger.warning("🔥 [FCM]   4. Приложение автоматически получит новый FCM токен")
+        logger.warning("🔥 [FCM] 🔧 Для администраторов:")
+        logger.warning("🔥 [FCM]   - Убедитесь что Firebase настроен в мобильном приложении")
+        logger.warning("🔥 [FCM]   - Проверьте google-services.json в проекте")
+        logger.warning("🔥 [FCM]   - Firebase credentials настроены в Django settings")
+
+    @classmethod
+    def get_token_statistics(cls):
+        """Получает статистику по токенам в базе данных"""
+        try:
+            from authapp.models import CustomUser
+
+            total_users = CustomUser.objects.count()
+            users_with_tokens = CustomUser.objects.exclude(fcm_token__isnull=True).exclude(fcm_token='').count()
+            users_with_expo_tokens = CustomUser.objects.filter(fcm_token__startswith='ExponentPushToken').count()
+            users_with_fcm_tokens = CustomUser.objects.exclude(fcm_token__isnull=True).exclude(fcm_token='').exclude(fcm_token__startswith='ExponentPushToken').count()
+
+            stats = {
+                'total_users': total_users,
+                'users_with_tokens': users_with_tokens,
+                'users_with_expo_tokens': users_with_expo_tokens,
+                'users_with_fcm_tokens': users_with_fcm_tokens,
+                'migration_progress': round((users_with_fcm_tokens / total_users * 100) if total_users > 0 else 0, 1)
+            }
+
+            logger.info(f"🔥 [FCM] 📊 TOKEN STATISTICS:")
+            logger.info(f"🔥 [FCM]   Total Users: {stats['total_users']}")
+            logger.info(f"🔥 [FCM]   Users with Tokens: {stats['users_with_tokens']}")
+            logger.info(f"🔥 [FCM]   Users with Expo Tokens: {stats['users_with_expo_tokens']} ❌")
+            logger.info(f"🔥 [FCM]   Users with FCM Tokens: {stats['users_with_fcm_tokens']} ✅")
+            logger.info(f"🔥 [FCM]   Migration Progress: {stats['migration_progress']}%")
+
+            return stats
+
+        except Exception as e:
+            logger.error(f"🔥 [FCM] Error getting token statistics: {str(e)}")
+            return None
