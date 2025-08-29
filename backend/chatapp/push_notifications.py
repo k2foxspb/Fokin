@@ -106,6 +106,13 @@ class PushNotificationService:
         if not has_expo_token:
             logger.warning("📱 [EXPO] ⚠️ No EXPO_ACCESS_TOKEN in settings. This might cause InvalidCredentials errors.")
             logger.warning("📱 [EXPO] 💡 To fix: Add EXPO_ACCESS_TOKEN to your Django settings with your Expo access token")
+            logger.warning("📱 [EXPO] 🔄 Alternative: Consider switching to Firebase FCM tokens in your mobile app")
+
+            # Проверяем, стоит ли пропускать отправку без токена
+            skip_expo_without_token = getattr(settings, 'SKIP_EXPO_WITHOUT_ACCESS_TOKEN', False)
+            if skip_expo_without_token:
+                logger.info("📱 [EXPO] ⏭️ Skipping Expo notification due to SKIP_EXPO_WITHOUT_ACCESS_TOKEN=True")
+                return False
 
         # Ограничиваем длину текста сообщения
         truncated_text = message_text[:100] + "..." if len(message_text) > 100 else message_text
