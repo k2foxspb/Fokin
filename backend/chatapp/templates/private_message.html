@@ -93,17 +93,28 @@
         };
 
 
-        sendMessageButton.addEventListener('click', function () {
+        function sendMessage() {
             const message = messageInput.value;
             if (message.trim() !== '') {
                 const timestamp = Math.floor(Date.now() / 1000);
                 websocketmessage.send(JSON.stringify({
+                    type: 'chat_message',  // Добавляем обязательное поле type
                     message: message,
                     timestamp: timestamp,
                     user1: user1,
                     user2: user2,
                 }));
                 messageInput.value = '';
+                messageInput.focus();
+            }
+        }
+
+        sendMessageButton.addEventListener('click', sendMessage);
+
+        // Добавляем отправку по Enter
+        messageInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
             }
         });
     </script>
