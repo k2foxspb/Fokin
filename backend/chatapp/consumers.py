@@ -664,11 +664,19 @@ class NotificationConsumer(AsyncWebsocketConsumer):
             data = json.loads(text_data)
             message_type = data.get('type', '')
 
+            logger.info(f"NotificationConsumer received: {message_type} from user {self.user_id}")
+
             if message_type == 'ping':
+                logger.info(f"Sending pong to user {self.user_id}")
                 await self.send(text_data=json.dumps({'type': 'pong'}))
+            elif message_type == 'get_initial_data':
+                logger.info(f"Sending initial notification data to user {self.user_id}")
+                unread_sender_count = await self.get_unique_senders_count(self.user_id)
+                messages_by_sender = await self.get_messages_by_sender(self.user_id)
+                await self.send_initial_notification(unread_sender_count, messages_by_sender)
 
         except Exception as e:
-            logger.error(f"Error in receive: {e}")
+            logger.error(f"Error in NotificationConsumer receive: {e}")
 
     async def notification(self, event):
         try:
