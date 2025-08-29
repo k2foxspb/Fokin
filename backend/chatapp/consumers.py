@@ -366,7 +366,7 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
             from .push_notifications import PushNotificationService
 
             PushNotificationService.send_message_notification(
-                expo_tokens=[push_token],
+                fcm_tokens=[push_token],
                 sender_name=sender_name,
                 message_text=message_text,
                 chat_id=chat_id
