@@ -96,6 +96,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     is_online = models.CharField(
         max_length=20, choices=STATUS, default='offline'
     )
+    last_seen = models.DateTimeField("Последний вход", auto_now=True)
     date_joined = models.DateTimeField("Дата регистрации", auto_now_add=True)
     last_joined = models.DateTimeField("<UNK> <UNK>", auto_now=True)
     expo_push_token = models.CharField(max_length=255, blank=True, null=True)

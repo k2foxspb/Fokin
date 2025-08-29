@@ -12,8 +12,8 @@ class UserProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
         fields = ['id', 'username', 'email', 'first_name', 'last_name',
-                 'gender', 'birthday', 'avatar', 'avatar_url', 'is_online', 'age']
-        read_only_fields = ['id', 'username', 'is_online']
+                 'gender', 'birthday', 'avatar', 'avatar_url', 'is_online', 'last_seen', 'age']
+        read_only_fields = ['id', 'username', 'is_online', 'last_seen']
 
     def get_age(self, obj):
         if obj.birthday:
@@ -90,5 +90,5 @@ class UserProfileSerializer(serializers.ModelSerializer):
 class UserListSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
-        fields = ['id', 'username', 'first_name', 'last_name', 'avatar', 'is_online']
-        read_only_fields = ['id', 'username', 'avatar', 'is_online']
+        fields = ['id', 'username', 'first_name', 'last_name', 'avatar', 'is_online', 'last_seen', 'gender']
+        read_only_fields = ['id', 'username', 'avatar', 'is_online', 'last_seen']

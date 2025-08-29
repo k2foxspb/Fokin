@@ -147,10 +147,12 @@ class ChatConsumer(AsyncWebsocketConsumer):
     def set_user_offline(self, user_id):
         """Устанавливаем статус пользователя оффлайн в БД"""
         try:
+            from django.utils import timezone
             User = get_user_model()
             user = User.objects.get(id=user_id)
             user.is_online = 'offline'
-            user.save(update_fields=['is_online'])
+            user.last_seen = timezone.now()
+            user.save(update_fields=['is_online', 'last_seen'])
             logger.info(f"User {user_id} set to offline in ChatConsumer")
         except Exception as e:
             logger.error(f"Error setting user {user_id} offline in ChatConsumer: {e}")
@@ -428,10 +430,12 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
     def set_user_offline(self, user_id):
         """Устанавливаем статус пользователя оффлайн в БД"""
         try:
+            from django.utils import timezone
             User = get_user_model()
             user = User.objects.get(id=user_id)
             user.is_online = 'offline'
-            user.save(update_fields=['is_online'])
+            user.last_seen = timezone.now()
+            user.save(update_fields=['is_online', 'last_seen'])
             logger.info(f"User {user_id} set to offline in PrivateChatConsumer")
         except Exception as e:
             logger.error(f"Error setting user {user_id} offline in PrivateChatConsumer: {e}")
@@ -900,10 +904,12 @@ class NotificationConsumer(AsyncWebsocketConsumer):
     def set_user_offline(self, user_id):
         """Устанавливаем статус пользователя оффлайн в БД"""
         try:
+            from django.utils import timezone
             User = get_user_model()
             user = User.objects.get(id=user_id)
             user.is_online = 'offline'
-            user.save(update_fields=['is_online'])
+            user.last_seen = timezone.now()
+            user.save(update_fields=['is_online', 'last_seen'])
             logger.info(f"User {user_id} set to offline")
         except Exception as e:
             logger.error(f"Error setting user {user_id} offline: {e}")
@@ -1188,10 +1194,12 @@ class ChatListConsumer(AsyncWebsocketConsumer):
     def set_user_offline(self, user_id):
         """Устанавливаем статус пользователя оффлайн в БД"""
         try:
+            from django.utils import timezone
             User = get_user_model()
             user = User.objects.get(id=user_id)
             user.is_online = 'offline'
-            user.save(update_fields=['is_online'])
+            user.last_seen = timezone.now()
+            user.save(update_fields=['is_online', 'last_seen'])
             logger.info(f"User {user_id} set to offline in ChatListConsumer")
         except Exception as e:
             logger.error(f"Error setting user {user_id} offline in ChatListConsumer: {e}")

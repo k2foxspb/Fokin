@@ -17,6 +17,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../contexts/ThemeContext';
+import { useNotifications } from '../../contexts/NotificationContext';
 
 interface User {
   id: number;
@@ -26,10 +27,12 @@ interface User {
   avatar?: string;
   gender?: string;
   is_online: string;
+  last_seen?: string;
 }
 
 export default function SearchScreen() {
   const { theme } = useTheme();
+  const { userStatuses } = useNotifications();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -37,6 +40,46 @@ export default function SearchScreen() {
 
   // Создаем стили с темой
   const styles = createStyles(theme);
+
+  // Функция для форматирования времени последнего входа
+  const formatLastSeen = (lastSeen: string) => {
+    try {
+      const lastSeenDate = new Date(lastSeen);
+      const now = new Date();
+      const diffInMinutes = Math.floor((now.getTime() - lastSeenDate.getTime()) / (1000 * 60));
+
+      if (diffInMinutes < 1) {
+        return 'только что';
+      } else if (diffInMinutes < 60) {
+        return `${diffInMinutes} мин назад`;
+      } else if (diffInMinutes < 1440) { // меньше суток
+        const hours = Math.floor(diffInMinutes / 60);
+        return `${hours} ч назад`;
+      } else if (diffInMinutes < 10080) { // меньше недели
+        const days = Math.floor(diffInMinutes / 1440);
+        return `${days} д назад`;
+      } else {
+        // Показываем дату
+        return lastSeenDate.toLocaleDateString('ru-RU', {
+          day: '2-digit',
+          month: '2-digit',
+          year: '2-digit'
+        });
+      }
+    } catch (error) {
+      console.error('Error formatting last seen:', error);
+      return 'недавно';
+    }
+  };
+
+  // Функция для получения актуального статуса пользователя
+  const getUserStatus = (user: User) => {
+    const realtimeStatus = userStatuses.get(user.id);
+    if (realtimeStatus) {
+      return realtimeStatus;
+    }
+    return user.is_online || 'offline';
+  };
 
   const fetchUsers = async (search?: string) => {
     try {
@@ -84,44 +127,62 @@ export default function SearchScreen() {
     fetchUsers();
   }, []);
 
-  const renderUser = ({ item }: { item: User }) => (
-    <TouchableOpacity
-      style={styles.userItem}
-      onPress={() => navigateToProfile(item.username)}
-    >
-      <View style={styles.avatarContainer}>
-        <Image
-          source={
-            item.avatar
-              ? { uri: item.avatar }
-              : item.gender === 'male'
-              ? require('../../assets/avatar/male.png')
-              : require('../../assets/avatar/female.png')
-          }
-          style={styles.avatar}
-        />
-        <View style={[
-          styles.onlineIndicator,
-          { backgroundColor: item.is_online === 'online' ? theme.online : theme.offline }
-        ]} />
-      </View>
+  // Автоматическое обновление интерфейса при изменении статусов пользователей
+  useEffect(() => {
+    console.log('👥 [SEARCH] User statuses updated:', Array.from(userStatuses.entries()));
+    // Принудительно обновляем компонент при изменении статусов
+    // Это заставит все renderUser пересчитать статусы
+    setUsers(prevUsers => [...prevUsers]);
+  }, [userStatuses]);
 
-      <View style={styles.userInfo}>
-        <Text style={styles.userName}>
-          {item.first_name} {item.last_name}
-        </Text>
-        <Text style={styles.username}>@{item.username}</Text>
-        <Text style={[
-          styles.onlineStatus,
-          { color: item.is_online === 'online' ? theme.online : theme.offline }
-        ]}>
-          {item.is_online === 'online' ? 'в сети' : 'не в сети'}
-        </Text>
-      </View>
+  const renderUser = ({ item }: { item: User }) => {
+    const currentStatus = getUserStatus(item);
+    const isOnline = currentStatus === 'online';
 
-      <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
-    </TouchableOpacity>
-  );
+    return (
+      <TouchableOpacity
+        style={styles.userItem}
+        onPress={() => navigateToProfile(item.username)}
+      >
+        <View style={styles.avatarContainer}>
+          <Image
+            source={
+              item.avatar
+                ? { uri: item.avatar }
+                : item.gender === 'male'
+                ? require('../../assets/avatar/male.png')
+                : require('../../assets/avatar/female.png')
+            }
+            style={styles.avatar}
+          />
+          <View style={[
+            styles.onlineIndicator,
+            { backgroundColor: isOnline ? theme.online : theme.offline }
+          ]} />
+        </View>
+
+        <View style={styles.userInfo}>
+          <Text style={styles.userName}>
+            {item.first_name} {item.last_name}
+          </Text>
+          <Text style={styles.username}>@{item.username}</Text>
+          <Text style={[
+            styles.onlineStatus,
+            { color: isOnline ? theme.online : theme.textSecondary }
+          ]}>
+            {isOnline 
+              ? 'в сети' 
+              : item.last_seen 
+                ? formatLastSeen(item.last_seen)
+                : 'был(а) в сети недавно'
+            }
+          </Text>
+        </View>
+
+        <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
+      </TouchableOpacity>
+    );
+  };
 
   if (loading) {
     return (
