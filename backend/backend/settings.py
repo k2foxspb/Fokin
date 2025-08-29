@@ -2,6 +2,7 @@ import os
 import sys
 from pathlib import Path
 import environ
+from django.contrib import staticfiles
 
 env = environ.Env(DEBUG=(bool, False))
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -376,6 +377,20 @@ FCM_DJANGO_SETTINGS = {
     },
     "ONE_DEVICE_PER_USER": False,
     "DELETE_INACTIVE_DEVICES": False,
+}
+
+# Настройки Firebase для push уведомлений
+FIREBASE_CREDENTIALS = {
+    "type": "service_account",
+    "project_id": env('FIREBASE_PROJECT_ID'),
+    "private_key_id": env('FIREBASE_PRIVATE_KEY_ID'),
+    "private_key": env('FIREBASE_PRIVATE_KEY').replace('\\n', '\n'),
+    "client_email": env('FIREBASE_CLIENT_EMAIL'),
+    "client_id": env('FIREBASE_CLIENT_ID'),
+    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+    "token_uri": "https://oauth2.googleapis.com/token",
+    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+    "universe_domain": "googleapis.com"
 }
 
 
