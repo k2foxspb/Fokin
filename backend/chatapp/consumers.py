@@ -428,6 +428,10 @@ class NotificationConsumer(AsyncWebsocketConsumer):
 
                 logger.info(f"User {self.user_id} connected to notifications")
 
+                # НОВОЕ: Отправляем статус "онлайн" и уведомляем других пользователей
+                await self.set_user_online(self.user_id)
+                await self.broadcast_user_status(self.user_id, 'online')
+
                 # Отправляем начальные уведомления
                 unread_sender_count = await self.get_unique_senders_count(self.user_id)
                 messages_by_sender = await self.get_messages_by_sender(self.user_id)
@@ -627,8 +631,33 @@ class NotificationConsumer(AsyncWebsocketConsumer):
             logger.info(f"User {self.user_id} disconnected from notifications")
 
         if self.user_id:
-            await self.send_user_offline(self.user_id)
+            # ИСПРАВЛЕНО: Устанавливаем статус "оффлайн" и уведомляем других
+            await self.set_user_offline(self.user_id)
             await self.broadcast_user_status(self.user_id, 'offline')
+
+    @database_sync_to_async
+    def set_user_online(self, user_id):
+        """Устанавливаем статус пользователя онлайн в БД"""
+        try:
+            User = get_user_model()
+            user = User.objects.get(id=user_id)
+            user.is_online = 'online'
+            user.save(update_fields=['is_online'])
+            logger.info(f"User {user_id} set to online")
+        except Exception as e:
+            logger.error(f"Error setting user {user_id} online: {e}")
+
+    @database_sync_to_async
+    def set_user_offline(self, user_id):
+        """Устанавливаем статус пользователя оффлайн в БД"""
+        try:
+            User = get_user_model()
+            user = User.objects.get(id=user_id)
+            user.is_online = 'offline'
+            user.save(update_fields=['is_online'])
+            logger.info(f"User {user_id} set to offline")
+        except Exception as e:
+            logger.error(f"Error setting user {user_id} offline: {e}")
 
     async def receive(self, text_data):
         try:
