@@ -173,7 +173,14 @@ class PushNotificationService:
                 token_preview = settings.EXPO_ACCESS_TOKEN[:20] + "..." if len(settings.EXPO_ACCESS_TOKEN) > 20 else settings.EXPO_ACCESS_TOKEN
                 logger.debug(f"📱 [EXPO] 🔑 Token preview: {token_preview}")
             else:
-                logger.warning("📱 [EXPO] 🔓 Sending requests without Expo Access Token - this may cause InvalidCredentials errors")
+                # Пытаемся найти альтернативные способы аутентификации
+                expo_project_id = getattr(settings, 'EXPO_PROJECT_ID', '7a408a11-ebbd-48ac-8f31-e0eb0f1bf1d7')
+                logger.warning("📱 [EXPO] 🔓 No EXPO_ACCESS_TOKEN found")
+                logger.warning("📱 [EXPO] 💡 Your Expo Project ID: " + expo_project_id)
+                logger.warning("📱 [EXPO] 📋 To get Access Token:")
+                logger.warning("📱 [EXPO]   1. Go to https://expo.dev/accounts/k2foxspb/settings/access-tokens")
+                logger.warning("📱 [EXPO]   2. Create new token with push permissions")
+                logger.warning("📱 [EXPO]   3. Add EXPO_ACCESS_TOKEN=your_token to Django settings")
 
             # Отправляем батчами по 100 (лимит Expo)
             batch_size = 100
