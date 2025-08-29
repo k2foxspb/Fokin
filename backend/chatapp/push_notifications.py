@@ -21,20 +21,30 @@ class PushNotificationService:
             try:
                 # Проверяем, инициализирован ли уже Firebase
                 firebase_admin.get_app()
-                logger.info("Firebase app already initialized")
+                logger.info("🔥 [FCM] Firebase app already initialized")
             except ValueError:
                 # Firebase еще не инициализирован
-                if hasattr(settings, 'FIREBASE_CREDENTIALS_PATH'):
-                    cred = credentials.Certificate(settings.FIREBASE_CREDENTIALS_PATH)
-                    cls._firebase_app = firebase_admin.initialize_app(cred)
-                    logger.info("Firebase initialized with credentials file")
-                elif hasattr(settings, 'FIREBASE_CREDENTIALS'):
-                    cred = credentials.Certificate(settings.FIREBASE_CREDENTIALS)
-                    cls._firebase_app = firebase_admin.initialize_app(cred)
-                    logger.info("Firebase initialized with credentials dict")
-                else:
-                    logger.error("Firebase credentials not found in settings")
-                    raise ValueError("Firebase credentials not configured")
+                logger.info("🔥 [FCM] Initializing Firebase Admin SDK...")
+
+                try:
+                    if hasattr(settings, 'FIREBASE_CREDENTIALS_PATH') and settings.FIREBASE_CREDENTIALS_PATH:
+                        logger.info("🔥 [FCM] Using Firebase credentials from file path")
+                        cred = credentials.Certificate(settings.FIREBASE_CREDENTIALS_PATH)
+                        cls._firebase_app = firebase_admin.initialize_app(cred)
+                        logger.info("🔥 [FCM] ✅ Firebase initialized with credentials file")
+                    elif hasattr(settings, 'FIREBASE_CREDENTIALS') and settings.FIREBASE_CREDENTIALS:
+                        logger.info("🔥 [FCM] Using Firebase credentials from settings dict")
+                        cred = credentials.Certificate(settings.FIREBASE_CREDENTIALS)
+                        cls._firebase_app = firebase_admin.initialize_app(cred)
+                        logger.info("🔥 [FCM] ✅ Firebase initialized with credentials dict")
+                    else:
+                        logger.error("🔥 [FCM] ❌ Firebase credentials not found in settings")
+                        logger.error("🔥 [FCM] ❌ Expected FIREBASE_CREDENTIALS or FIREBASE_CREDENTIALS_PATH in settings")
+                        raise ValueError("Firebase credentials not configured")
+
+                except Exception as init_error:
+                    logger.error(f"🔥 [FCM] ❌ Error during Firebase initialization: {str(init_error)}")
+                    raise ValueError(f"Failed to initialize Firebase: {str(init_error)}")
 
     @classmethod
     def send_message_notification(cls, fcm_tokens: List[str], sender_name: str, message_text: str,
