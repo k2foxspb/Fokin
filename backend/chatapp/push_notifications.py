@@ -403,9 +403,35 @@ class PushNotificationService:
             # Предполагаем, что Expo токены также хранятся в fcm_token поле
             users = CustomUser.objects.filter(fcm_token=token)
             for user in users:
-                logger.info(f"📱 [EXPO] Removing invalid Expo token for user {user.username}")
+                logger.info(f"🚨 [CLEANUP] Удаление Expo токена для пользователя {user.username}")
                 user.fcm_token = None
                 user.save()
 
         except Exception as e:
-            logger.error(f"📱 [EXPO] Error handling invalid Expo token {token}: {str(e)}")
+            logger.error(f"🚨 [CLEANUP] Ошибка удаления Expo токена {token}: {str(e)}")
+
+    @classmethod
+    def _cleanup_all_expo_tokens(cls):
+        """Полная очистка всех Expo токенов из базы данных"""
+        try:
+            from authapp.models import CustomUser
+
+            # Находим всех пользователей с Expo токенами
+            users_with_expo_tokens = CustomUser.objects.filter(
+                fcm_token__startswith='ExponentPushToken['
+            )
+
+            count = users_with_expo_tokens.count()
+            if count > 0:
+                logger.warning(f"🚨 [CLEANUP] Найдено {count} пользователей с Expo токенами - начинаем очистку")
+
+                # Массовое обновление - очищаем все Expo токены
+                updated_count = users_with_expo_tokens.update(fcm_token=None)
+
+                logger.info(f"🚨 [CLEANUP] ✅ Очищено {updated_count} Expo токенов из базы данных")
+                logger.info(f"🚨 [CLEANUP] ✅ Пользователи должны перезапустить приложение для получения новых FCM токенов")
+            else:
+                logger.info("🚨 [CLEANUP] ✅ Expo токены в базе данных не найдены")
+
+        except Exception as e:
+            logger.error(f"🚨 [CLEANUP] Ошибка при массовой очистке Expo токенов: {str(e)}")
