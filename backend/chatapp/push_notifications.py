@@ -59,8 +59,26 @@ class PushNotificationService:
         logger.info(f"🔔 [PUSH] Chat ID: {chat_id}")
 
         if not fcm_tokens:
-            logger.warning("No FCM tokens provided")
+            logger.warning("🔥 [FCM] ❌ No FCM tokens provided")
             return False
+
+        # Проверяем типы токенов
+        expo_tokens = [token for token in fcm_tokens if token.startswith('ExponentPushToken')]
+        fcm_tokens_only = [token for token in fcm_tokens if not token.startswith('ExponentPushToken')]
+
+        if expo_tokens:
+            logger.warning(f"🔥 [FCM] ⚠️ Detected {len(expo_tokens)} Expo tokens - these cannot be used with Firebase FCM!")
+            for token in expo_tokens[:3]:  # Показываем только первые 3 для диагностики
+                logger.warning(f"🔥 [FCM] ⚠️ Expo token: {token[:30]}...")
+
+        if fcm_tokens_only:
+            logger.info(f"🔥 [FCM] ✅ Found {len(fcm_tokens_only)} valid FCM tokens")
+        else:
+            logger.error(f"🔥 [FCM] ❌ No valid FCM tokens found! All tokens are Expo tokens.")
+            return False
+
+        # Продолжаем только с FCM токенами
+        fcm_tokens = fcm_tokens_only
 
         # Инициализируем Firebase
         try:
