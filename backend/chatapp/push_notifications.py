@@ -99,9 +99,7 @@ class PushNotificationService:
                     body=truncated_text,
                     sound='default',
                     color='#222222',
-                    channel_id='messages',
-                    priority='high',
-                    vibrate_timings=[0, 250, 250, 250]
+                    channel_id='messages'
                 ),
                 data=data_payload
             )
