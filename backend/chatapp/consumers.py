@@ -201,7 +201,13 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
 
             if message_type == 'chat_message':
                 message_content = data.get('message', '')
-                recipient_id = data.get('recipient_id')
+                user1_id = data.get('user1')
+                user2_id = data.get('user2')
+
+                # Определяем получателя (тот, кто не является отправителем)
+                recipient_id = user2_id if user1_id == self.user.id else user1_id
+
+                logger.info(f"Processing chat_message: sender={self.user.id}, recipient={recipient_id}, message='{message_content[:50]}'")
 
                 if message_content and recipient_id:
                     try:
@@ -219,11 +225,11 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
                                 {
                                     'type': 'chat_message',
                                     'message': message_content,
-                                    'sender': self.user.username,
+                                    'sender__username': self.user.username,  # Исправляем формат для клиента
                                     'sender_id': self.user.id,
                                     'recipient_id': recipient_id,
-                                    'timestamp': timestamp,
-                                    'message_id': message_instance.id
+                                    'timestamp': int(message_instance.timestamp.timestamp()),  # Unix timestamp
+                                    'id': message_instance.id  # Исправляем название поля
                                 }
                             )
 
@@ -264,16 +270,19 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
 
     async def chat_message(self, event):
         message = event['message']
-        sender = event['sender']
+        sender = event.get('sender__username', event.get('sender', 'Unknown'))
         timestamp = event['timestamp']
-        message_id = event['message_id']
+        message_id = event.get('id', event.get('message_id'))
+        sender_id = event.get('sender_id')
+
+        logger.info(f"Sending chat_message to client: sender={sender}, message='{message[:50]}'")
 
         await self.send(text_data=json.dumps({
-            'type': 'message',
             'message': message,
-            'sender': sender,
+            'sender__username': sender,
             'timestamp': timestamp,
-            'message_id': message_id
+            'id': message_id,
+            'sender_id': sender_id
         }))
 
     @database_sync_to_async
