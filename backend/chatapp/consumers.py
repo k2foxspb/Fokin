@@ -814,6 +814,7 @@ class ChatListConsumer(AsyncWebsocketConsumer):
     @database_sync_to_async
     def get_user_chats(self, user_id):
         try:
+            print(user_id)
             User = get_user_model()
             user = User.objects.get(id=user_id)
 
