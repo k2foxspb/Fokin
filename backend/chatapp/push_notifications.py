@@ -120,23 +120,54 @@ class PushNotificationService:
             }
             messages.append(message)
 
+        # Валидируем Expo токены перед отправкой
+        valid_messages = []
+        invalid_tokens = []
+
+        for i, message in enumerate(messages):
+            token = message["to"]
+            # Проверяем формат Expo токена
+            if not token.startswith('ExponentPushToken[') or not token.endswith(']'):
+                logger.warning(f"📱 [EXPO] ⚠️ Invalid token format: {token[:30]}...")
+                invalid_tokens.append(token)
+            else:
+                valid_messages.append(message)
+
+        if invalid_tokens:
+            logger.warning(f"📱 [EXPO] 🔍 Found {len(invalid_tokens)} invalid tokens, will be removed")
+            for token in invalid_tokens:
+                cls._handle_invalid_expo_token(token)
+
+        if not valid_messages:
+            logger.warning("📱 [EXPO] ⚠️ No valid tokens to send notifications")
+            return False
+
+        logger.info(f"📱 [EXPO] 📤 Proceeding with {len(valid_messages)} valid tokens")
+
         try:
             # Отправляем в Expo Push API
             expo_url = "https://exp.host/--/api/v2/push/send"
             headers = {
                 'Accept': 'application/json',
                 'Accept-encoding': 'gzip, deflate',
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'User-Agent': 'Django-Expo-Push-Client/1.0'
             }
+
+            # Добавляем Expo Access Token если доступен
+            from django.conf import settings
+            if hasattr(settings, 'EXPO_ACCESS_TOKEN') and settings.EXPO_ACCESS_TOKEN:
+                headers['Authorization'] = f'Bearer {settings.EXPO_ACCESS_TOKEN}'
+                logger.debug("📱 [EXPO] 🔐 Using Expo Access Token for authentication")
 
             # Отправляем батчами по 100 (лимит Expo)
             batch_size = 100
             success_count = 0
             failed_tokens = []
 
-            for i in range(0, len(messages), batch_size):
-                batch_messages = messages[i:i + batch_size]
-                logger.info(f"📱 [EXPO] Sending batch {i // batch_size + 1} with {len(batch_messages)} notifications")
+            for i in range(0, len(valid_messages), batch_size):
+                batch_messages = valid_messages[i:i + batch_size]
+                logger.info(f"📱 [EXPO] 📦 Sending batch {i // batch_size + 1}/{(len(valid_messages) - 1) // batch_size + 1} with {len(batch_messages)} notifications")
 
                 try:
                     response = requests.post(expo_url, json=batch_messages, headers=headers, timeout=30)
@@ -148,15 +179,21 @@ class PushNotificationService:
                             for idx, ticket in enumerate(result['data']):
                                 if ticket.get('status') == 'ok':
                                     success_count += 1
+                                    logger.debug(f"📱 [EXPO] ✅ Successfully sent to token {expo_tokens[i + idx][:30]}...")
                                 else:
                                     error_details = ticket.get('details', {})
                                     error_message = error_details.get('error', 'Unknown error')
                                     token = expo_tokens[i + idx]
-                                    logger.error(f"📱 [EXPO] Failed to send to token {token[:30]}...: {error_message}")
+
+                                    # Подробное логирование ошибок
+                                    logger.error(f"📱 [EXPO] ❌ Failed to send to token {token[:30]}...: {error_message}")
+                                    if error_details:
+                                        logger.error(f"📱 [EXPO] Error details: {error_details}")
 
                                     # Проверяем, является ли токен недействительным
-                                    if error_message in ['DeviceNotRegistered', 'InvalidCredentials']:
+                                    if error_message in ['DeviceNotRegistered', 'InvalidCredentials', 'MessageTooBig', 'MessageRateExceeded']:
                                         failed_tokens.append(token)
+                                        logger.warning(f"📱 [EXPO] 🗑️ Marking token as invalid: {token[:30]}... (reason: {error_message})")
                     else:
                         logger.error(f"📱 [EXPO] HTTP error: {response.status_code} - {response.text}")
 
