@@ -121,22 +121,40 @@ export default function ChatScreen() {
                 setIsConnected(true);
             },
             onMessage: (event: any) => {
+                console.log('💬 [CHAT] ========== RAW WebSocket MESSAGE ==========');
+                console.log('💬 [CHAT] Raw data:', event.data);
+
                 try {
                     const data = JSON.parse(event.data);
+                    console.log('💬 [CHAT] Parsed data:', {
+                        type: data.type,
+                        hasMessage: !!data.message,
+                        hasError: !!data.error,
+                        allKeys: Object.keys(data),
+                        dataPreview: JSON.stringify(data).substring(0, 200)
+                    });
 
                     // Игнорируем системные сообщения
                     if (data.type === 'messages_by_sender_update') {
+                        console.log('💬 [CHAT] Ignoring system message: messages_by_sender_update');
                         return;
                     }
 
                     // Обработка ошибок от consumer
                     if (data.error) {
+                        console.error('💬 [CHAT] Server error received:', data.error);
                         Alert.alert('Ошибка', data.error);
                         return;
                     }
 
                     // Обработка сообщений чата
                     if (data.message) {
+                        console.log('💬 [CHAT] Processing chat message:', {
+                            id: data.id,
+                            message: data.message,
+                            sender: data.sender__username,
+                            timestamp: data.timestamp
+                        });
                         const newMessage: Message = {
                             id: data.id || Date.now(),
                             message: data.message,
@@ -370,25 +388,77 @@ export default function ChatScreen() {
         };
     }, [roomId]);
 
+    // Тест-функция для проверки связи с сервером
+    const testServerConnection = () => {
+        console.log('🧪 [CHAT-TEST] Testing server connection...');
+
+        // Отправляем простой пинг
+        const pingMessage = {
+            type: 'ping',
+            timestamp: Date.now()
+        };
+
+        try {
+            sendMessage(pingMessage);
+            console.log('🧪 [CHAT-TEST] Ping sent, waiting for pong...');
+
+            setTimeout(() => {
+                console.log('🧪 [CHAT-TEST] 3 seconds passed - did server respond?');
+            }, 3000);
+        } catch (error) {
+            console.error('🧪 [CHAT-TEST] Error sending ping:', error);
+        }
+    };
+
     // Отправка сообщения
     const handleSend = () => {
+        console.log('💬 [CHAT] ========== SENDING MESSAGE ==========');
+        console.log('💬 [CHAT] Send conditions check:', {
+            hasText: !!messageText.trim(),
+            isConnected: isConnected,
+            isDataLoaded: isDataLoaded,
+            hasRecipient: !!recipient?.id,
+            hasCurrentUser: !!currentUserId,
+            messageLength: messageText.trim().length
+        });
+
         if (!messageText.trim() || !isConnected || !isDataLoaded || !recipient?.id || !currentUserId) {
+            console.log('💬 [CHAT] ❌ Cannot send - missing requirements');
+            return;
+        }
+
+        // ТЕСТ: отправляем пинг перед сообщением
+        if (messageText.trim() === '/test') {
+            testServerConnection();
+            setMessageText('');
             return;
         }
 
         const timestamp = Math.floor(Date.now() / 1000);
 
         const messageData = {
+            type: 'chat_message', // Добавляем обязательное поле type
             message: messageText.trim(),
             timestamp: timestamp,
             user1: currentUserId,
             user2: recipient.id
         };
 
+        console.log('💬 [CHAT] Sending message data:', messageData);
+        console.log('💬 [CHAT] Message will be sent to room:', roomId);
+
         try {
             sendMessage(messageData);
+            console.log('💬 [CHAT] ✅ sendMessage called successfully');
             setMessageText('');
+
+            // Даем время на получение ответа от сервера
+            setTimeout(() => {
+                console.log('💬 [CHAT] 🕐 5 seconds passed after sending - checking if message appeared...');
+            }, 5000);
+
         } catch (error) {
+            console.error('💬 [CHAT] ❌ Error in sendMessage:', error);
             Alert.alert('Ошибка', 'Не удалось отправить сообщение');
         }
     };

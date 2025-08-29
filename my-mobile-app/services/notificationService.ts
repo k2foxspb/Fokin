@@ -185,78 +185,60 @@ export const requestNotificationPermissions = async (): Promise<boolean> => {
   }
 };
 
-// Регистрация для push уведомлений
+// Регистрация для push уведомлений - ТОЛЬКО Firebase FCM
 export const registerForPushNotifications = async (): Promise<string | null> => {
   try {
     if (!Device.isDevice) {
+      console.log('🔥 [FCM] Not a physical device, skipping push notification setup');
       return null;
     }
 
-    const hasPermission = await requestNotificationPermissions();
+    console.log('🔥 [FCM] Регистрация push-уведомлений ТОЛЬКО через Firebase FCM');
+
+    // Используем Firebase сервис
+    const FirebaseNotificationService = require('./firebaseNotificationService').default;
+    const firebaseService = FirebaseNotificationService.getInstance();
+
+    // Запрашиваем разрешения через Firebase
+    const hasPermission = await firebaseService.requestPermissions();
     if (!hasPermission) {
+      console.error('🔥 [FCM] Firebase permissions not granted');
       return null;
     }
 
-    const projectId = Constants.expoConfig?.extra?.eas?.projectId;
-
-    if (!projectId) {
-      console.error('❌ [Push] No EAS project ID found');
-      return null;
-    }
-
-    let token = null;
-    let attempts = 0;
-    const maxAttempts = 3;
-
-    while (attempts < maxAttempts && !token) {
-      try {
-        attempts++;
-
-        // Добавляем таймаут для операции
-        const tokenPromise = Notifications.getExpoPushTokenAsync({
-          projectId: projectId,
-        });
-
-        const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error('Token request timeout')), 15000);
-        });
-
-        const tokenResponse = await Promise.race([tokenPromise, timeoutPromise]) as any;
-        token = tokenResponse.data;
-        break;
-
-      } catch (tokenError) {
-        const errorDetails = getErrorDetails(tokenError);
-
-        // Специальная обработка Firebase ошибок
-        if (errorDetails.message?.includes('Firebase') ||
-            errorDetails.message?.includes('FCM') ||
-            errorDetails.message?.includes('google-services')) {
-          console.error('🔥 [Push] Firebase/FCM error detected');
-
-          if (Platform.OS === 'android') {
-            console.error('🤖 [Push] For Android production builds, FCM credentials are required');
-            console.error('📖 [Push] Please check: https://docs.expo.dev/push-notifications/fcm-credentials/');
-          }
-        }
-
-        if (attempts === maxAttempts) {
-          return null;
-        }
-
-        // Экспоненциальная задержка между попытками
-        const delay = Math.min(1000 * Math.pow(2, attempts), 10000);
-        await new Promise(resolve => setTimeout(resolve, delay));
-      }
-    }
+    // Получаем FCM токен через Firebase сервис
+    const token = await firebaseService.getToken();
 
     if (!token) {
+      console.error('🔥 [FCM] Failed to get Firebase FCM token');
+      console.error('🔥 [FCM] Проверьте:');
+      console.error('🔥 [FCM] 1. google-services.json настроен корректно');
+      console.error('🔥 [FCM] 2. Firebase project имеет push notification разрешения');
+      console.error('🔥 [FCM] 3. @react-native-firebase/messaging установлен');
       return null;
     }
+
+    // КРИТИЧНО: отклоняем любые Expo токены
+    const isFCMToken = !token.startsWith('ExponentPushToken');
+    if (!isFCMToken) {
+      console.error('🔥 [FCM] ❌ Получен Expo токен вместо FCM - отклоняем');
+      console.error('🔥 [FCM] ❌ Expo токены больше не поддерживаются');
+
+      // Удаляем Expo токен из хранилища
+      const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+      await AsyncStorage.removeItem('pushToken');
+      await AsyncStorage.removeItem('pushTokenType');
+
+      return null;
+    }
+
+    console.log('🔥 [FCM] ✅ Получен валидный Firebase FCM токен');
+    console.log('🔥 [FCM] Token type: Native FCM, Length:', token.length);
 
     return token;
 
   } catch (error) {
+    console.error('🔥 [FCM] Error in Firebase FCM registration:', getErrorDetails(error));
     return null;
   }
 };

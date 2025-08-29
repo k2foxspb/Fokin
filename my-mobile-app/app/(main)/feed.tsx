@@ -123,203 +123,51 @@ export default function Feed() {
         fetchArticles();
     };
 
-    const formatDate = (dateString: string) => {
-        const date = new Date(dateString);
-        return date.toLocaleDateString('ru-RU', {
-            day: '2-digit',
-            month: '2-digit',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-        });
+    const formatDate = (dateString: string | null | undefined) => {
+        if (!dateString) return 'Не указано';
+        try {
+            const date = new Date(dateString);
+            if (isNaN(date.getTime())) return 'Неверная дата';
+            return date.toLocaleDateString('ru-RU', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        } catch {
+            return 'Ошибка даты';
+        }
     };
 
-    const stripHtml = (html: string) => {
-        return html.replace(/<[^>]*>/g, '');
+    const stripHtml = (html: string | null | undefined) => {
+        if (!html || typeof html !== 'string') return '';
+        try {
+            return html.replace(/<[^>]*>/g, '');
+        } catch {
+            return '';
+        }
     };
 
-    // Компонент для рендеринга HTML контента
+    // Простой компонент для отображения HTML как текста
     const HtmlRenderer = ({html, theme}: { html: string; theme: Theme }) => {
-        const screenWidth = Dimensions.get('window').width - 70; // Увеличиваем отступы для безопасности
+        if (!html) {
+            return <Text style={{color: theme?.text || '#000'}}>Контент недоступен</Text>;
+        }
 
-        // Определяем цвета на основе темы
-        const isDarkTheme = theme.background === '#000000' || theme.background === '#121212' || theme.text === '#ffffff';
-        const textColor = isDarkTheme ? '#ffffff' : '#000000';
-        const backgroundColor = 'transparent';
-        const secondaryTextColor = isDarkTheme ? '#cccccc' : '#666666';
-        const primaryColor = theme.primary || '#007AFF';
-        const borderColor = isDarkTheme ? '#333333' : '#e0e0e0';
-        const codeBackgroundColor = isDarkTheme ? '#1e1e1e' : '#f5f5f5';
-
-        const htmlContent = `
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <style>
-                    * {
-                        box-sizing: border-box;
-                    }
-
-                    body {
-                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                        font-size: 16px;
-                        line-height: 1.6;
-                        color: ${textColor} !important;
-                        background-color: ${backgroundColor};
-                        margin: 0;
-                        padding: 8px;
-                        word-wrap: break-word;
-                        overflow-wrap: break-word;
-                        max-width: 100%;
-                    }
-
-                    p {
-                        margin: 0 0 12px 0;
-                        text-align: justify;
-                        color: ${textColor} !important;
-                    }
-
-                    h1, h2, h3, h4, h5, h6 {
-                        color: ${textColor} !important;
-                        margin: 16px 0 8px 0;
-                        font-weight: bold;
-                    }
-
-                    h1 { font-size: 24px; }
-                    h2 { font-size: 22px; }
-                    h3 { font-size: 20px; }
-                    h4 { font-size: 18px; }
-                    h5 { font-size: 16px; }
-                    h6 { font-size: 14px; }
-
-                    strong, b {
-                        font-weight: bold;
-                        color: ${textColor} !important;
-                    }
-
-                    em, i {
-                        font-style: italic;
-                        color: ${textColor} !important;
-                    }
-
-                    ul, ol {
-                        margin: 12px 0;
-                        padding-left: 20px;
-                    }
-
-                    li {
-                        margin: 4px 0;
-                        color: ${textColor} !important;
-                    }
-
-                    blockquote {
-                        border-left: 4px solid ${primaryColor};
-                        margin: 12px 0;
-                        padding: 8px 16px;
-                        background-color: ${isDarkTheme ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)'};
-                        font-style: italic;
-                        color: ${textColor} !important;
-                    }
-
-                    img {
-                        max-width: 100%;
-                        height: auto;
-                        border-radius: 8px;
-                        margin: 8px 0;
-                    }
-
-                    figure {
-                        margin: 16px 0;
-                        text-align: center;
-                    }
-
-                    figure img {
-                        max-width: 100%;
-                        height: auto;
-                        border-radius: 8px;
-                    }
-
-                    figcaption {
-                        color: ${secondaryTextColor} !important;
-                        font-size: 14px;
-                        margin-top: 8px;
-                        font-style: italic;
-                    }
-
-                    a {
-                        color: ${primaryColor} !important;
-                        text-decoration: none;
-                    }
-
-                    a:hover {
-                        text-decoration: underline;
-                    }
-
-                    pre {
-                        background-color: ${codeBackgroundColor};
-                        border: 1px solid ${borderColor};
-                        border-radius: 6px;
-                        padding: 12px;
-                        overflow-x: auto;
-                        font-family: 'Courier New', monospace;
-                        font-size: 14px;
-                        margin: 12px 0;
-                        color: ${textColor} !important;
-                    }
-
-                    code {
-                        background-color: ${codeBackgroundColor};
-                        border: 1px solid ${borderColor};
-                        border-radius: 3px;
-                        padding: 2px 4px;
-                        font-family: 'Courier New', monospace;
-                        font-size: 14px;
-                        color: ${textColor} !important;
-                    }
-
-                    table {
-                        width: 100%;
-                        border-collapse: collapse;
-                        margin: 16px 0;
-                    }
-
-                    th, td {
-                        border: 1px solid ${borderColor};
-                        padding: 8px 12px;
-                        text-align: left;
-                        color: ${textColor} !important;
-                    }
-
-                    th {
-                        background-color: ${codeBackgroundColor};
-                        font-weight: bold;
-                    }
-                </style>
-            </head>
-            <body>
-                ${html}
-            </body>
-            </html>
-        `;
+        // Простое отображение очищенного HTML как текста
+        const cleanText = stripHtml(html);
 
         return (
-            <WebView
-                source={{html: htmlContent}}
-                style={{
-                    width: screenWidth,
-                    height: 800, // Увеличенная высота для полного контента
-                    backgroundColor: 'transparent'
-                }}
-                scrollEnabled={false}
-                showsVerticalScrollIndicator={false}
-                showsHorizontalScrollIndicator={false}
-                onShouldStartLoadWithRequest={() => false}
-                javaScriptEnabled={false}
-                androidLayerType="software"
-                mixedContentMode="compatibility"
-                nestedScrollEnabled={false}
-            />
+            <Text style={{
+                fontSize: 16,
+                lineHeight: 24,
+                color: theme?.text || '#000',
+                textAlign: 'justify',
+                padding: 8
+            }}>
+                {cleanText}
+            </Text>
         );
     };
 
@@ -374,40 +222,46 @@ export default function Feed() {
 
 
     const renderArticle = ({item}: { item: Article }) => {
+        if (!item) return null;
+
         return (
-            <TouchableOpacity 
+            <TouchableOpacity
                 style={[styles.articleItem]}
-                onPress={() => router.push(`/article/${item.slug}`)}
+                onPress={() => router.push(`/article/${item.slug || 'unknown'}`)}
                 activeOpacity={0.8}
             >
                 {/* Категория */}
                 <View style={styles.categoryContainer}>
-                    <Text style={styles.categoryText}>{item.category.title}</Text>
+                    <Text style={styles.categoryText}>
+                        {item.category?.title || 'Без категории'}
+                    </Text>
                 </View>
 
                 {/* Заголовок - отцентрованный */}
-                <Text style={[styles.articleTitle, {color: theme.text}]}>{item.title}</Text>
+                <Text style={[styles.articleTitle, {color: theme?.text || '#000'}]}>
+                    {item.title || 'Без названия'}
+                </Text>
 
                 {/* Преамбула */}
-                <Text style={[styles.articlePreamble, {color: theme.textSecondary}]} numberOfLines={4}>
+                <Text style={[styles.articlePreamble, {color: theme?.textSecondary || '#666'}]} numberOfLines={4}>
                     {stripHtml(item.preamble)}
                 </Text>
 
                 {/* Даты */}
                 <View style={styles.datesContainer}>
                     <View style={styles.dateRow}>
-                        <Ionicons name="calendar-outline" size={14} color={theme.textSecondary}/>
-                        <Text style={[styles.dateLabel, {color: theme.textSecondary}]}>Создано:</Text>
-                        <Text style={[styles.dateValue, {color: theme.textSecondary}]}>
+                        <Ionicons name="calendar-outline" size={14} color={theme?.textSecondary || '#666'}/>
+                        <Text style={[styles.dateLabel, {color: theme?.textSecondary || '#666'}]}>Создано:</Text>
+                        <Text style={[styles.dateValue, {color: theme?.textSecondary || '#666'}]}>
                             {formatDate(item.created)}
                         </Text>
                     </View>
 
-                    {item.updated !== item.created && (
+                    {item.updated && item.updated !== item.created && (
                         <View style={styles.dateRow}>
-                            <Ionicons name="create-outline" size={14} color={theme.textSecondary}/>
-                            <Text style={[styles.dateLabel, {color: theme.textSecondary}]}>Изменено:</Text>
-                            <Text style={[styles.dateValue, {color: theme.textSecondary}]}>
+                            <Ionicons name="create-outline" size={14} color={theme?.textSecondary || '#666'}/>
+                            <Text style={[styles.dateLabel, {color: theme?.textSecondary || '#666'}]}>Изменено:</Text>
+                            <Text style={[styles.dateValue, {color: theme?.textSecondary || '#666'}]}>
                                 {formatDate(item.updated)}
                             </Text>
                         </View>
@@ -415,7 +269,7 @@ export default function Feed() {
                 </View>
 
                 {/* Кнопка "Читать полностью" */}
-                <View style={[styles.readMoreButton, {backgroundColor: theme.primary}]}>
+                <View style={[styles.readMoreButton, {backgroundColor: theme?.primary || '#007AFF'}]}>
                     <Ionicons name="book-outline" size={16} color="white"/>
                     <Text style={styles.readMoreButtonText}>Читать полностью</Text>
                 </View>
@@ -450,13 +304,18 @@ export default function Feed() {
             <FlatList
                 data={articles}
                 renderItem={renderArticle}
-                keyExtractor={(item) => item.id.toString()}
+                keyExtractor={(item, index) => {
+                    if (item && item.id != null) {
+                        return String(item.id);
+                    }
+                    return String(index);
+                }}
                 refreshControl={
                     <RefreshControl
                         refreshing={refreshing}
                         onRefresh={onRefresh}
-                        colors={[theme.primary]}
-                        tintColor={theme.primary}
+                        colors={[theme?.primary || '#007AFF']}
+                        tintColor={theme?.primary || '#007AFF'}
                     />
                 }
                 showsVerticalScrollIndicator={false}

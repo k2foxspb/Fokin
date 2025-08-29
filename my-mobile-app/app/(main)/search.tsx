@@ -37,6 +37,7 @@ export default function SearchScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [forceUpdateTrigger, setForceUpdateTrigger] = useState(0);
 
   // Создаем стили с темой
   const styles = createStyles(theme);
@@ -75,7 +76,9 @@ export default function SearchScreen() {
   // Функция для получения актуального статуса пользователя
   const getUserStatus = (user: User) => {
     const realtimeStatus = userStatuses.get(user.id);
-    if (realtimeStatus) {
+    console.log(`👥 [SEARCH] Getting status for user ${user.id}: realtime=${realtimeStatus}, original=${user.is_online}`);
+
+    if (realtimeStatus !== undefined && realtimeStatus !== null) {
       return realtimeStatus;
     }
     return user.is_online || 'offline';
@@ -129,15 +132,33 @@ export default function SearchScreen() {
 
   // Автоматическое обновление интерфейса при изменении статусов пользователей
   useEffect(() => {
-    console.log('👥 [SEARCH] User statuses updated:', Array.from(userStatuses.entries()));
+    const statusEntries = Array.from(userStatuses.entries());
+    console.log('👥 [SEARCH] User statuses updated:', statusEntries);
+    console.log('👥 [SEARCH] Map size:', userStatuses.size);
+
     // Принудительно обновляем компонент при изменении статусов
-    // Это заставит все renderUser пересчитать статусы
-    setUsers(prevUsers => [...prevUsers]);
+    setForceUpdateTrigger(prev => prev + 1);
+
+    // Также обновляем массив пользователей для гарантированного перерендера
+    setUsers(prevUsers => {
+      console.log('👥 [SEARCH] Force updating users array, count:', prevUsers.length);
+      return [...prevUsers];
+    });
   }, [userStatuses]);
+
+  // Дополнительный эффект для отслеживания изменений размера Map
+  useEffect(() => {
+    console.log('👥 [SEARCH] Force update trigger changed:', forceUpdateTrigger);
+  }, [forceUpdateTrigger]);
 
   const renderUser = ({ item }: { item: User }) => {
     const currentStatus = getUserStatus(item);
     const isOnline = currentStatus === 'online';
+
+    // Логирование для отладки (можно убрать в продакшене)
+    if (userStatuses.has(item.id)) {
+      console.log(`👥 [SEARCH] Rendering user ${item.username} with status: ${currentStatus} (realtime: ${userStatuses.get(item.id)}, original: ${item.is_online})`);
+    }
 
     return (
       <TouchableOpacity

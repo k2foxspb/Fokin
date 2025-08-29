@@ -62,23 +62,25 @@ interface UserStatusUpdate {
 
 const savePushTokenToServer = async (token: string) => {
     try {
-        // Определяем тип токена для правильных логов
-        const isFirebaseToken = !token.startsWith('ExponentPushToken');
-        const logPrefix = isFirebaseToken ? '🔥 [FCM]' : '📱 [EXPO]';
+        console.log('🔥 [FCM] Начало сохранения FCM токена на сервере');
 
-        console.log(`${logPrefix} Начало сохранения токена на сервере`);
-        const userToken = await AsyncStorage.getItem('userToken');
-        if (!userToken) {
-            console.error(`${logPrefix} Нет токена авторизации для сохранения push-токена`);
+        // КРИТИЧНО: отклоняем любые Expo токены
+        if (token.startsWith('ExponentPushToken')) {
+            console.error('🔥 [FCM] ❌ Попытка сохранить Expo токен - отклоняем');
+            console.error('🔥 [FCM] ❌ Expo токены больше не поддерживаются');
             return;
         }
 
-        console.log(`${logPrefix} Отправка токена на сервер:`, token.substring(0, 10) + '...');
+        const userToken = await AsyncStorage.getItem('userToken');
+        if (!userToken) {
+            console.error('🔥 [FCM] Нет токена авторизации для сохранения FCM токена');
+            return;
+        }
 
-        // Формируем правильный payload в зависимости от типа токена
-        const payload = isFirebaseToken 
-            ? { fcm_token: token }
-            : { expo_push_token: token };
+        console.log('🔥 [FCM] Отправка FCM токена на сервер:', token.substring(0, 10) + '...');
+
+        // Отправляем ТОЛЬКО FCM токен
+        const payload = { fcm_token: token };
 
         const response = await axios.post(
             `${API_CONFIG.BASE_URL}/chat/api/save-push-token/`,
@@ -86,22 +88,19 @@ const savePushTokenToServer = async (token: string) => {
             {headers: {'Authorization': `Token ${userToken}`}}
         );
 
-        console.log(`${logPrefix} Ответ сервера при сохранении токена:`, response.status);
+        console.log('🔥 [FCM] Ответ сервера при сохранении FCM токена:', response.status);
 
         if (response.status === 200) {
-            console.log(`${logPrefix} Токен успешно сохранен на сервере`);
+            console.log('🔥 [FCM] FCM токен успешно сохранен на сервере');
         } else {
-            console.warn(`${logPrefix} Необычный статус ответа при сохранении токена:`, response.status);
+            console.warn('🔥 [FCM] Необычный статус ответа при сохранении FCM токена:', response.status);
         }
     } catch (error) {
-        const isFirebaseToken = !token.startsWith('ExponentPushToken');
-        const logPrefix = isFirebaseToken ? '🔥 [FCM]' : '📱 [EXPO]';
-
-        console.error(`${logPrefix} Ошибка при сохранении push-токена:`, error);
+        console.error('🔥 [FCM] Ошибка при сохранении FCM токена:', error);
 
         if (axios.isAxiosError(error)) {
-            console.error(`${logPrefix} Статус ошибки:`, error.response?.status);
-            console.error(`${logPrefix} Данные ошибки:`, error.response?.data);
+            console.error('🔥 [FCM] Статус ошибки:', error.response?.status);
+            console.error('🔥 [FCM] Данные ошибки:', error.response?.data);
         }
     }
 };
@@ -261,13 +260,17 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
                 // Получаем экземпляр Firebase сервиса
                 const firebaseService = FirebaseNotificationService.getInstance();
 
-                // Пытаемся инициализировать Firebase сначала
+                // ПРИОРИТЕТ: только Firebase FCM токены
+                console.log('🔥 [FCM] Инициализируем только Firebase FCM (без Expo fallback)');
                 const firebaseResult = await firebaseService.initialize();
 
-                if (firebaseResult.success && firebaseResult.tokenType === 'fcm') {
-                    // Успешная инициализация с нативным Firebase токеном
+                if (firebaseResult.success && firebaseResult.token) {
                     const token = firebaseResult.token;
-                    if (token) {
+
+                    // Проверяем, что это именно FCM токен (не Expo)
+                    const isFCMToken = !token.startsWith('ExponentPushToken');
+
+                    if (isFCMToken) {
                         console.log('🔥 [FCM] ✅ Используем нативный Firebase FCM токен');
                         setPushToken(token);
                         setHasNotificationPermission(true);
@@ -281,121 +284,41 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
                             }
                         });
 
+                        // Сохраняем токен на сервере
+                        await savePushTokenToServer(token);
+
                         setIsUsingFirebaseNavigation(true);
-                        console.log('🔥 [FCM] Native Firebase уведомления настроены успешно');
+                        console.log('🔥 [FCM] Firebase FCM уведомления настроены успешно');
                         console.log('🔥 [FCM] Навигация обрабатывается ТОЛЬКО Firebase сервисом');
 
                         // НЕ настраиваем Expo слушатели - Firebase сервис уже обрабатывает навигацию
                         return;
+                    } else {
+                        console.warn('📱 [EXPO] Firebase сервис вернул Expo токен - отклоняем');
                     }
                 }
 
-                // Fallback на Expo - или Firebase не работает, или это Expo токен через Firebase сервис
-                console.log('📱 [EXPO] Настраиваем Expo notifications (Firebase недоступен или это Expo токен)');
+                // Если Firebase не работает - показываем ошибку
+                console.error('🔥 [FCM] ❌ Firebase FCM недоступен - push-уведомления отключены');
+                console.error('🔥 [FCM] ❌ Проверьте настройки Firebase в приложении');
+                console.error('🔥 [FCM] ❌ Убедитесь, что google-services.json правильно настроен');
 
-                // Если Firebase вернул Expo токен - используем его
-                if (firebaseResult.success && firebaseResult.token) {
-                    setPushToken(firebaseResult.token);
-                    setHasNotificationPermission(true);
-                    setIsInitialized(true);
-                } else {
-                    // Стандартная Expo инициализация
-                    const currentPermissions = await Notifications.getPermissionsAsync();
-                    const permissionGranted = currentPermissions.status === 'granted';
+                setHasNotificationPermission(false);
+                setIsInitialized(false);
 
-                    setHasNotificationPermission(permissionGranted);
-
-                    if (permissionGranted) {
-                        if (!pushToken) {
-                            console.log('📱 [EXPO] Запрашиваем push-токен...');
-                            const token = await registerForPushNotifications();
-
-                            if (token) {
-                                console.log('📱 [EXPO] Получен Expo токен');
-                                setPushToken(token);
-                                await savePushTokenToServer(token);
-                            } else {
-                                console.error('📱 [EXPO] Не удалось получить токен');
-                            }
-                        }
-
-                        setIsInitialized(true);
-                    } else if (currentPermissions.canAskAgain) {
-                        console.log('📱 [EXPO] Запрашиваем разрешения для уведомлений...');
-                        const granted = await requestPermissions();
-
-                        if (granted && !pushToken) {
-                            const token = await registerForPushNotifications();
-                            if (token) {
-                                setPushToken(token);
-                                await savePushTokenToServer(token);
-                            }
-                        }
-                    }
-                }
-
-                // Настраиваем Expo слушатели для обработки уведомлений
-                console.log('📱 [EXPO] Настраиваем Expo слушатели');
-
-                // Очищаем старые слушатели
-                if (notificationListener.current) {
-                    notificationListener.current.remove();
-                }
-
-                if (responseListener.current) {
-                    responseListener.current.remove();
-                }
-
-                // Добавляем новые слушатели
-                notificationListener.current = addNotificationListener((notification: Notifications.Notification) => {
-                    console.log('📱 [EXPO] Получено Expo уведомление:', {
-                        title: notification.request.content.title,
-                        body: notification.request.content.body,
-                        data: notification.request.content.data
-                    });
-
-                    if (isAuthenticated) {
-                        refreshNotifications();
-                    }
-                });
-
-                responseListener.current = addNotificationResponseListener((response: Notifications.NotificationResponse) => {
-                    console.log('📱 [EXPO] ========== ЕДИНСТВЕННЫЙ ОБРАБОТЧИК НАВИГАЦИИ ==========');
-                    console.log('📱 [EXPO] Пользователь нажал на уведомление');
-
-                    // ВСЕГДА обрабатываем навигацию здесь, независимо от типа токена
-                    handleNotificationResponse(response);
-                });
-
-                // Слушаем изменения состояния приложения
-                const subscription = AppState.addEventListener('change', nextAppState => {
-                    if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
-                        if (isAuthenticated) {
-                            refreshNotifications();
-                        }
-                    }
-
-                    appState.current = nextAppState;
-                });
-
-                return () => {
-                    if (notificationListener.current) {
-                        notificationListener.current.remove();
-                    }
-                    if (responseListener.current) {
-                        responseListener.current.remove();
-                    }
-                    subscription.remove();
-                };
             } catch (error) {
-                console.error('❌ [Notification] Error in initNotifications:', error);
+                console.error('🔥 [FCM] ❌ Ошибка инициализации Firebase FCM:', error);
+                console.error('🔥 [FCM] ❌ Push-уведомления будут отключены');
+
+                setHasNotificationPermission(false);
+                setIsInitialized(false);
+                setPushToken(null);
             }
         };
 
         if (isAuthenticated) {
             initNotifications();
         }
-
     }, [isAuthenticated]);
 
     // Проверка запуска из уведомления
@@ -414,7 +337,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
                 const lastNotificationResponse = await Notifications.getLastNotificationResponseAsync();
 
                 if (lastNotificationResponse) {
-                    const notificationTime = lastNotificationResponse.actionDate;
+                    const notificationTime = lastNotificationResponse.notification.date;
                     const timeSinceNotification = Date.now() - notificationTime;
 
                     // Проверяем, что уведомление было нажато недавно (в течение последних 30 секунд)
@@ -607,78 +530,212 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
 
     // Функция для отправки пинга
     const sendPing = () => {
-        if (isConnected()) {
-            sendMessage({type: 'ping'});
+        const connectionState = isConnected();
+        console.log('🏓 [PING] Attempting to send ping:', {
+            isConnected: connectionState,
+            lastPing: new Date(lastPingTimeRef.current).toISOString(),
+            timeSinceLastPing: Date.now() - lastPingTimeRef.current
+        });
+
+        if (connectionState) {
+            const pingMessage = {type: 'ping'};
+            console.log('🏓 [PING] Ping message object:', pingMessage);
+            sendMessage(pingMessage);
             lastPingTimeRef.current = Date.now();
+            console.log('🏓 [PING] ✅ Ping sent successfully');
+        } else {
+            console.log('🏓 [PING] ❌ Cannot send ping - not connected');
         }
     };
 
     // Проверка состояния соединения
     const checkConnection = () => {
         const now = Date.now();
-        // Если последний пинг был отправлен более 45 секунд назад и соединение считается активным
-        if (now - lastPingTimeRef.current > 45000 && isConnected()) {
-            console.log('🔌 [WS] ⚠️ Connection seems stale, attempting to reconnect...');
+        const timeSincePing = now - lastPingTimeRef.current;
+        const connectionState = isConnected();
+        const wsConnectedState = wsConnected;
+
+        console.log('🔍 [CONNECTION-CHECK] Checking connection health:', {
+            timeSincePing: timeSincePing,
+            isConnected: connectionState,
+            wsConnected: wsConnectedState,
+            threshold: 45000,
+            isAuthenticated: isAuthenticated
+        });
+
+        // ИСПРАВЛЯЕМ ЛОГИКУ: переподключаемся если НЕТ соединения ИЛИ оно зависло
+        const shouldReconnect = !connectionState || !wsConnectedState || timeSincePing > 45000;
+
+        console.log('🔍 [CONNECTION-CHECK] Reconnection decision:', {
+            noConnection: !connectionState,
+            notWsConnected: !wsConnectedState,
+            staleConnection: timeSincePing > 45000,
+            shouldReconnect: shouldReconnect,
+            isAuthenticated: isAuthenticated
+        });
+
+        if (shouldReconnect && isAuthenticated) {
+            console.log('🔍 [CONNECTION-CHECK] ⚠️ Connection problem detected, attempting to reconnect...');
+            console.log('🔍 [CONNECTION-CHECK] 🔄 Initiating reconnection...');
             reconnect();
+        } else if (!isAuthenticated) {
+            console.log('🔍 [CONNECTION-CHECK] ❌ Not authenticated, skipping reconnect');
+        } else {
+            console.log('🔍 [CONNECTION-CHECK] ✅ Connection appears healthy');
         }
     };
 
 // Обработчик сообщений WebSocket
     const handleMessage = (event: any) => {
         try {
+            console.log('📨 [CONTEXT] ========== MESSAGE RECEIVED ==========');
+            console.log('📨 [CONTEXT] Raw event data:', event.data);
+
             const data = JSON.parse(event.data);
             lastPingTimeRef.current = Date.now();
 
+            console.log('📨 [CONTEXT] Parsed message:', {
+                type: data.type,
+                timestamp: new Date().toISOString(),
+                dataKeys: Object.keys(data),
+                hasTrigerUpdate: !!data.trigger_update
+            });
+
             if (reconnectAttempts > 0) {
+                console.log('📨 [CONTEXT] Resetting reconnect attempts from', reconnectAttempts, 'to 0');
                 setReconnectAttempts(0);
             }
 
             if (data.type === 'pong') {
+                console.log('📨 [CONTEXT] ✅ Received pong response');
                 return;
             }
 
+            // Обработка принудительного обновления (например, после прочтения сообщений)
+            if (data.trigger_update) {
+                console.log('📨 [CONTEXT] 🔥 Forced update triggered, clearing caches and requesting fresh data');
+                previousMessagesRef.current = [];
+                sentNotificationsCache.current.clear();
+
+                // Запрашиваем свежие данные немедленно
+                setTimeout(() => {
+                    console.log('📨 [CONTEXT] 🔥 Requesting fresh data after forced update');
+                    if (isConnected() && wsConnected) {
+                        sendMessage({type: 'get_initial_data'});
+                    }
+                }, 50);
+                return; // Выходим, чтобы не обрабатывать это сообщение дальше
+            }
+
             if (data.type === 'user_status_update') {
+                console.log('👤 [STATUS] Processing user status update:', {
+                    userId: data.user_id,
+                    status: data.status,
+                    currentStatusesCount: userStatuses.size
+                });
+
                 const statusUpdate = data as UserStatusUpdate;
                 setUserStatuses(prevStatuses => {
                     const newStatuses = new Map(prevStatuses);
+                    const oldStatus = newStatuses.get(statusUpdate.user_id);
                     newStatuses.set(statusUpdate.user_id, statusUpdate.status);
+
+                    console.log('👤 [STATUS] Status updated:', {
+                        userId: statusUpdate.user_id,
+                        oldStatus,
+                        newStatus: statusUpdate.status,
+                        totalStatuses: newStatuses.size,
+                        allStatuses: Array.from(newStatuses.entries())
+                    });
+
                     return newStatuses;
                 });
+
+                // Принудительно обновляем уведомления при изменении статуса пользователя
+                console.log('👤 [STATUS] Triggering notification refresh due to status change');
+                setTimeout(() => {
+                    if (isConnected() && wsConnected) {
+                        console.log('👤 [STATUS] Requesting fresh data after status update');
+                        sendMessage({type: 'get_initial_data'});
+                    }
+                }, 100);
+
                 return;
             }
 
             if (data.type === 'notification_update' || data.type === 'new_message_notification') {
+                console.log('🔔 [NOTIFICATION] Processing notification update:', {
+                    type: data.type,
+                    hasMessages: !!data.messages,
+                    messagesType: Array.isArray(data.messages) ? 'array' : typeof data.messages,
+                    messagesLength: Array.isArray(data.messages) ? data.messages.length : 'N/A',
+                    uniqueSenderCount: data.unique_sender_count,
+                    triggerUpdate: data.trigger_update
+                });
+
+                // Если это принудительное обновление, запрашиваем свежие данные
+                if (data.trigger_update) {
+                    console.log('🔔 [NOTIFICATION] Forced update detected, requesting fresh data...');
+                    setTimeout(() => {
+                        const refreshMessage = {type: 'get_initial_data'};
+                        console.log('🔔 [NOTIFICATION] Requesting fresh data after trigger');
+                        sendMessage(refreshMessage);
+                    }, 100);
+                    return;
+                }
+
                 let messageArray: MessageType[] = [];
                 if (data.messages && Array.isArray(data.messages)) {
                     if (data.messages.length === 2 && Array.isArray(data.messages[1])) {
                         messageArray = data.messages[1];
+                        console.log('🔔 [NOTIFICATION] Using nested array format, extracted', messageArray.length, 'messages');
                     } else {
                         messageArray = data.messages;
+                        console.log('🔔 [NOTIFICATION] Using direct array format,', messageArray.length, 'messages');
                     }
+                } else {
+                    console.log('🔔 [NOTIFICATION] No valid messages array found, clearing state');
+                    // Если нет сообщений, очищаем состояние
+                    setMessages([]);
+                    setSenderCounts(new Map());
+                    setUnreadCount(0);
+                    return;
                 }
 
-                if (messageArray && messageArray.length > 0) {
-                    setMessages(messageArray);
+                console.log('🔔 [NOTIFICATION] Processing', messageArray.length, 'messages:', 
+                    messageArray.map(m => ({id: m.sender_id, count: m.count, hasMessage: !!m.last_message}))
+                );
 
-                    const newSenderCounts = new Map<number, number>();
-                    messageArray.forEach(message => {
-                        newSenderCounts.set(message.sender_id, message.count);
-                    });
-                    setSenderCounts(newSenderCounts);
+                setMessages(messageArray);
 
-                    // Обновляем общий счетчик
-                    if (data.unique_sender_count !== undefined) {
-                        setUnreadCount(data.unique_sender_count);
-                    } else {
-                        setUnreadCount(messageArray.length);
-                    }
+                const newSenderCounts = new Map<number, number>();
+                messageArray.forEach(message => {
+                    newSenderCounts.set(message.sender_id, message.count);
+                });
+                setSenderCounts(newSenderCounts);
 
-                    // Показываем уведомление только если есть разрешения
-                    if (hasNotificationPermission && AppState.currentState !== 'active') {
-                        setTimeout(() => {
-                            sendNotificationWithUserData(messageArray);
-                        }, 300);
-                    }
+                console.log('🔔 [NOTIFICATION] Updated sender counts:', Array.from(newSenderCounts.entries()));
+
+                // Обновляем общий счетчик
+                const newUnreadCount = data.unique_sender_count !== undefined ? data.unique_sender_count : messageArray.length;
+                setUnreadCount(newUnreadCount);
+
+                console.log('🔔 [NOTIFICATION] Updated unread count to:', newUnreadCount);
+
+                // Показываем уведомление только если есть разрешения
+                const shouldShowNotification = hasNotificationPermission && AppState.currentState !== 'active' && messageArray.length > 0;
+                console.log('🔔 [NOTIFICATION] Should show notification?', {
+                    hasPermission: hasNotificationPermission,
+                    appState: AppState.currentState,
+                    hasMessages: messageArray.length > 0,
+                    willShow: shouldShowNotification
+                });
+
+                if (shouldShowNotification) {
+                    setTimeout(() => {
+                        console.log('🔔 [NOTIFICATION] Triggering notification display...');
+                        sendNotificationWithUserData(messageArray);
+                    }, 300);
                 }
                 return;
             }
@@ -739,6 +796,12 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
 
             // Обработка начальных и обновленных данных
             if (data.type === 'initial_notification' || data.type === 'messages_by_sender_update') {
+                console.log('📊 [DATA] Processing data update:', {
+                    type: data.type,
+                    hasMessages: !!data.messages,
+                    uniqueSenderCount: data.unique_sender_count
+                });
+
                 // Извлекаем массив сообщений
                 let messageArray: MessageType[] = [];
 
@@ -751,6 +814,8 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
                         messageArray = data.messages;
                     }
                 }
+
+                console.log('📊 [DATA] Extracted messages:', messageArray.length);
 
                 if (messageArray && messageArray.length > 0) {
                     // Обновляем массив сообщений
@@ -773,6 +838,11 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
                         setUnreadCount(messageArray.length);
                     }
 
+                    console.log('📊 [DATA] Updated counts:', {
+                        senders: Array.from(newSenderCounts.entries()),
+                        unreadCount: data.unique_sender_count !== undefined ? data.unique_sender_count : messageArray.length
+                    });
+
                     // Показываем уведомления для обновлений (но не для начальных данных) и только если приложение неактивно
                     if (data.type === 'messages_by_sender_update' && AppState.currentState !== 'active') {
                         const previousMessages = previousMessagesRef.current;
@@ -782,6 +852,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
                         });
 
                         if (hasChanges && hasNotificationPermission) {
+                            console.log('📊 [DATA] Changes detected, showing notification');
                             setTimeout(() => {
                                 sendNotificationWithUserData(messageArray);
                             }, 300);
@@ -797,6 +868,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
                     }
                 } else {
                     // Если список сообщений пуст, сбрасываем счетчики
+                    console.log('📊 [DATA] No messages, clearing state');
                     setSenderCounts(new Map());
                     setUnreadCount(0);
                     setMessages([]);
@@ -816,70 +888,176 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
     // Инициализация WebSocket
     const {connect, disconnect, sendMessage, isConnected, reconnect} = useWebSocket(`/wss/notification/`, {
         onOpen: () => {
+            console.log('🔌 [WS-CONTEXT] ========== WebSocket OPENED ==========');
+            console.log('🔌 [WS-CONTEXT] Connection established successfully!');
+
             setWsConnected(true);
             setReconnectAttempts(0);
+
             // Сбрасываем кеши при переподключении для корректного сравнения
+            console.log('🔌 [WS-CONTEXT] Clearing caches and resetting state...');
             previousMessagesRef.current = [];
             sentNotificationsCache.current.clear();
-            sendMessage({type: 'get_initial_data'});
+
+            console.log('🔌 [WS-CONTEXT] Requesting initial data...');
+            const initialDataMessage = {type: 'get_initial_data'};
+            console.log('🔌 [WS-CONTEXT] Initial data message object:', initialDataMessage);
+            sendMessage(initialDataMessage);
             lastPingTimeRef.current = Date.now();
+
+            // Тестируем получение статусов через 3 секунды
+            setTimeout(() => {
+                console.log('🧪 [TEST] Testing user status data:');
+                console.log('🧪 [TEST] Current userStatuses Map size:', userStatuses.size);
+                console.log('🧪 [TEST] Current userStatuses content:', Array.from(userStatuses.entries()));
+                console.log('🧪 [TEST] Current unreadCount:', unreadCount);
+                console.log('🧪 [TEST] Current messages count:', messages.length);
+            }, 3000);
+
+            // Синхронизация разрешений
             setTimeout(async () => {
                 try {
+                    console.log('🔌 [WS-CONTEXT] Syncing notification permissions...');
                     const currentPermissions = await Notifications.getPermissionsAsync();
                     const permissionGranted = currentPermissions.status === 'granted';
+                    console.log('🔌 [WS-CONTEXT] Permission status:', permissionGranted);
                     setHasNotificationPermission(permissionGranted);
                 } catch (error) {
-                    console.error('❌ [Notification] Error syncing permissions:', error);
+                    console.error('❌ [WS-CONTEXT] Error syncing permissions:', error);
                 }
             }, 1000);
         },
         onMessage: handleMessage,
         onClose: (event: any) => {
+            console.log('🔌 [WS-CONTEXT] ========== WebSocket CLOSED ==========');
+            console.log('🔌 [WS-CONTEXT] Connection lost:', {
+                code: event.code,
+                reason: event.reason,
+                wasClean: event.wasClean
+            });
+
             setWsConnected(false);
 
             // Увеличиваем счетчик попыток переподключения
             const newAttempts = reconnectAttempts + 1;
+            console.log('🔌 [WS-CONTEXT] Incrementing reconnect attempts:', newAttempts);
             setReconnectAttempts(newAttempts);
         },
         onError: (error: any) => {
-            console.error('❌ [Notification] WebSocket error:', error);
+            console.error('🔌 [WS-CONTEXT] ========== WebSocket ERROR ==========');
+            console.error('❌ [WS-CONTEXT] WebSocket error occurred:', error);
+            console.error('❌ [WS-CONTEXT] Error details:', {
+                message: error.message,
+                type: error.type,
+                target: error.target
+            });
             setWsConnected(false);
         },
     });
 
-    // Функция обновления уведомлений
+    // Функция обновления уведомлений - событийно-управляемая
     const refreshNotifications = () => {
-        if (isConnected()) {
-            sendMessage({type: 'get_initial_data'});
+        const connectionState = isConnected();
+        const wsConnectedState = wsConnected;
+
+        console.log('🔄 [REFRESH] Event-driven notification refresh:', {
+            isConnected: connectionState,
+            wsConnected: wsConnectedState,
+            isAuthenticated: isAuthenticated,
+            timestamp: new Date().toISOString()
+        });
+
+        if (connectionState && wsConnectedState) {
+            console.log('🔄 [REFRESH] ✅ Connection healthy, requesting data...');
+            const refreshMessage = {type: 'get_initial_data'};
+            console.log('🔄 [REFRESH] Refresh message object:', refreshMessage);
+            sendMessage(refreshMessage);
             lastPingTimeRef.current = Date.now();
         } else {
-            reconnect();
+            console.log('🔄 [REFRESH] ❌ Connection unhealthy, reconnecting...');
+            console.log('🔄 [REFRESH] Connection details:', {
+                isConnected: connectionState,
+                wsConnected: wsConnectedState,
+                willReconnect: isAuthenticated
+            });
+
+            if (isAuthenticated) {
+                reconnect();
+            } else {
+                console.log('🔄 [REFRESH] Cannot reconnect - not authenticated');
+            }
         }
     };
 
     // Подключаемся при аутентификации
     useEffect(() => {
+        console.log('🔐 [AUTH] Authentication state changed:', {
+            isAuthenticated,
+            wasConnected: wsConnected,
+            intervalExists: !!checkConnectionIntervalRef.current
+        });
+
         if (isAuthenticated) {
-            connect();
+            console.log('🔐 [AUTH] ✅ User authenticated - starting WebSocket connection...');
+
+            // Даем небольшую задержку для стабилизации состояния
+            setTimeout(() => {
+                console.log('🔐 [AUTH] 🚀 Initiating connection after auth...');
+                connect();
+            }, 500);
 
             // Настраиваем проверку соединения и пинги
             if (checkConnectionIntervalRef.current) {
+                console.log('🔐 [AUTH] 🧹 Clearing existing connection interval');
                 clearInterval(checkConnectionIntervalRef.current);
             }
 
+            console.log('🔐 [AUTH] ⏰ Setting up ping/health check interval (30s)');
             checkConnectionIntervalRef.current = setInterval(() => {
+                console.log('⏰ [INTERVAL] Running scheduled connection maintenance...');
+
+                // Дополнительная диагностика
+                console.log('⏰ [INTERVAL] Current system state:', {
+                    isAuthenticated: isAuthenticated,
+                    wsConnected: wsConnected,
+                    isConnectedFunc: isConnected(),
+                    lastPing: new Date(lastPingTimeRef.current).toISOString(),
+                    timeSinceLastPing: Date.now() - lastPingTimeRef.current
+                });
+
                 // Отправляем пинг каждые 30 секунд
                 sendPing();
                 // Проверяем состояние соединения каждые 30 секунд
                 checkConnection();
             }, 30000);
+
+            // Дополнительная проверка через 5 секунд после аутентификации
+            setTimeout(() => {
+                console.log('🔐 [AUTH] 📊 Post-auth connection check:');
+                console.log('🔐 [AUTH] Connection status:', {
+                    wsConnected: wsConnected,
+                    isConnected: isConnected(),
+                    isAuthenticated: isAuthenticated
+                });
+
+                if (!wsConnected && !isConnected()) {
+                    console.log('🔐 [AUTH] ⚠️ Connection failed after auth, retrying...');
+                    reconnect();
+                }
+            }, 5000);
+
+        } else {
+            console.log('🔐 [AUTH] ❌ User not authenticated - skipping WebSocket connection');
         }
 
         return () => {
+            console.log('🔐 [AUTH] 🧹 Cleanup function called for authentication effect');
             if (isAuthenticated) {
+                console.log('🔐 [AUTH] 🔌 Disconnecting WebSocket...');
                 disconnect();
 
                 if (checkConnectionIntervalRef.current) {
+                    console.log('🔐 [AUTH] ⏰ Clearing connection interval');
                     clearInterval(checkConnectionIntervalRef.current);
                     checkConnectionIntervalRef.current = null;
                 }
@@ -887,22 +1065,8 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
         };
     }, [isAuthenticated]);
 
-    // Периодическое обновление
-    useEffect(() => {
-        let interval: NodeJS.Timeout | null = null;
-
-        if (isAuthenticated && wsConnected) {
-            interval = setInterval(() => {
-                refreshNotifications();
-            }, 60000);  // Каждые 60 секунд
-        }
-
-        return () => {
-            if (interval) {
-                clearInterval(interval);
-            }
-        };
-    }, [isAuthenticated, wsConnected]);
+    // Удалено периодическое обновление - теперь используем только событийно-управляемые обновления
+    // Обновления происходят при: подключении, получении сообщений, изменении статуса, принудительных триггерах
 
     // Функция для проверки статуса push-уведомлений
     const checkFirebaseStatus = async () => {

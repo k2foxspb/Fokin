@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -80,6 +80,7 @@ export default function ArticlePage() {
   const [submittingComment, setSubmittingComment] = useState(false);
   const [likeLoading, setLikeLoading] = useState(false);
   const [pinningLoading, setPinningLoading] = useState<number | null>(null);
+  const scrollViewRef = React.useRef<ScrollView>(null);
 
   const styles = createStyles(theme);
 
@@ -88,7 +89,7 @@ export default function ArticlePage() {
     // Удаляем HTML теги для подсчета чистого текста
     const textContent = htmlContent.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 
-    // Примерный расчет: 
+    // Примерный расчет:
     // - 100 символов ≈ 1 строка
     // - 1 строка ≈ 25px высоты
     // - Добавляем отступы, заголовки, изображения
@@ -206,9 +207,9 @@ export default function ArticlePage() {
 
       const allComments = response.data;
       const pinned = allComments.filter((comment: Comment) => comment.is_pinned);
-      const middle = allComments.filter((comment: Comment) => 
+      const middle = allComments.filter((comment: Comment) =>
         !comment.is_pinned && comment.display_position === 'middle');
-      const regular = allComments.filter((comment: Comment) => 
+      const regular = allComments.filter((comment: Comment) =>
         !comment.is_pinned && comment.display_position !== 'middle');
 
       setPinnedComments(pinned);
@@ -239,6 +240,7 @@ export default function ArticlePage() {
         { headers: { Authorization: `Token ${token}` } }
       );
 
+      // Обновляем комментарии
       setComments(prev => [response.data, ...prev]);
       setNewComment('');
       setShowCommentModal(false);
@@ -249,7 +251,11 @@ export default function ArticlePage() {
         comments_count: prev.comments_count + 1
       } : null);
 
-      Alert.alert('Успешно', 'Комментарий добавлен');
+      // Плавно прокручиваем к разделу комментариев через небольшую задержку
+      setTimeout(() => {
+        scrollViewRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+
     } catch (error) {
       Alert.alert('Ошибка', 'Не удалось добавить комментарий');
     } finally {
@@ -275,7 +281,7 @@ export default function ArticlePage() {
       );
 
       // Обновляем локальное состояние
-      const updateComment = (comment: Comment) => 
+      const updateComment = (comment: Comment) =>
         comment.id === commentId ? { ...comment, is_pinned: !isPinned } : comment;
 
       if (isPinned) {
@@ -317,7 +323,7 @@ export default function ArticlePage() {
         </View>
         <View style={styles.commentActions}>
           <Text style={styles.commentDate}>{formatDate(item.created)}</Text>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.pinButton, isPinned && styles.pinButtonActive]}
             onPress={() => togglePinComment(item.id, isPinned)}
             disabled={pinningLoading === item.id}
@@ -325,10 +331,10 @@ export default function ArticlePage() {
             {pinningLoading === item.id ? (
               <ActivityIndicator size="small" color={theme.primary} />
             ) : (
-              <Ionicons 
-                name={isPinned ? "pin" : "pin-outline"} 
-                size={16} 
-                color={isPinned ? "white" : theme.primary} 
+              <Ionicons
+                name={isPinned ? "pin" : "pin-outline"}
+                size={16}
+                color={isPinned ? "white" : theme.primary}
               />
             )}
           </TouchableOpacity>
@@ -338,17 +344,74 @@ export default function ArticlePage() {
     </View>
   );
 
-  // Компонент для рендеринга HTML контента
+  // Компонент красивой шапки статьи
+  const ArticleHeader = ({ article, theme }: { article: Article; theme: Theme }) => (
+    <View style={[styles.articleHeaderContainer, { backgroundColor: theme.surface }]}>
+
+      {/* Категория и дата */}
+      <View style={styles.categoryDateRow}>
+        <View style={[styles.categoryBadge, { backgroundColor: theme.primary }]}>
+          <Text style={styles.categoryBadgeText}>{article.category.title}</Text>
+        </View>
+        <Text style={[styles.headerDate, { color: theme.textSecondary }]}>
+          {formatDate(article.updated)}
+        </Text>
+      </View>
+
+      {/* Заголовок */}
+      <Text style={[styles.articleHeaderTitle, { color: theme.text }]}>
+        {article.title}
+      </Text>
+
+      {/* Мета информация */}
+      <View style={styles.metaContainer}>
+        <View style={styles.metaRow}>
+          <View style={styles.metaItem}>
+            <Ionicons name="calendar-outline" size={16} color={theme.primary} />
+            <Text style={[styles.metaText, { color: theme.textSecondary }]}>
+              Создано: {formatDate(article.created)}
+            </Text>
+          </View>
+        </View>
+
+        {article.updated !== article.created && (
+          <View style={styles.metaRow}>
+            <View style={styles.metaItem}>
+              <Ionicons name="refresh-outline" size={16} color={theme.primary} />
+              <Text style={[styles.metaText, { color: theme.textSecondary }]}>
+                Обновлено: {formatDate(article.updated)}
+              </Text>
+            </View>
+          </View>
+        )}
+      </View>
+
+      {/* Разделитель */}
+      <View style={[styles.headerDivider, { backgroundColor: theme.border }]} />
+    </View>
+  );
+
+  // WebView компонент для отображения CKEditor HTML
   const HtmlRenderer = ({ html, theme }: { html: string; theme: Theme }) => {
-    const screenWidth = Dimensions.get('window').width;
+    const [webViewHeight, setWebViewHeight] = useState(600);
+
+    if (!html) {
+      return (
+        <View style={{ padding: 16 }}>
+          <Text style={{ color: theme.textSecondary, fontSize: 16, textAlign: 'center' }}>
+            Контент недоступен
+          </Text>
+        </View>
+      );
+    }
 
     const isDarkTheme = theme.background === '#000000' || theme.background === '#121212' || theme.text === '#ffffff';
-    const textColor = isDarkTheme ? '#ffffff' : '#000000';
-    const backgroundColor = 'transparent';
-    const secondaryTextColor = isDarkTheme ? '#cccccc' : '#666666';
-    const primaryColor = theme.primary || '#007AFF';
-    const borderColor = isDarkTheme ? '#333333' : '#e0e0e0';
-    const codeBackgroundColor = isDarkTheme ? '#1e1e1e' : '#f5f5f5';
+    const textColor = isDarkTheme ? '#ffffff' : '#333333';
+    const backgroundColor = theme.background;
+    const linkColor = theme.primary || '#007AFF';
+    const borderColor = isDarkTheme ? '#444444' : '#e0e0e0';
+    const codeBackgroundColor = isDarkTheme ? '#2d2d2d' : '#f8f9fa';
+    const blockquoteBackgroundColor = isDarkTheme ? '#1a1a1a' : '#f8f9fa';
 
     const htmlContent = `
       <!DOCTYPE html>
@@ -356,106 +419,198 @@ export default function ArticlePage() {
       <head>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <style>
-          * { box-sizing: border-box; }
+          * { 
+            box-sizing: border-box; 
+            margin: 0; 
+            padding: 0; 
+          }
+
           body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            font-size: 18px;
-            line-height: 1.8;
-            color: ${textColor} !important;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            font-size: 16px;
+            line-height: 1.6;
+            color: ${textColor};
             background-color: ${backgroundColor};
-            margin: 0;
-            padding: 0;
+            padding: 16px;
             word-wrap: break-word;
             overflow-wrap: break-word;
-            width: 100%;
           }
+
+          /* CKEditor paragraph styles */
           p {
             margin: 0 0 16px 0;
             text-align: justify;
-            color: ${textColor} !important;
+            color: ${textColor};
           }
+
+          /* CKEditor heading styles */
           h1, h2, h3, h4, h5, h6 {
-            color: ${textColor} !important;
-            margin: 24px 0 12px 0;
             font-weight: bold;
+            color: ${textColor};
+            margin: 24px 0 16px 0;
+            line-height: 1.2;
           }
-          h1 { font-size: 28px; }
-          h2 { font-size: 26px; }
+          h1 { font-size: 32px; }
+          h2 { font-size: 28px; }
           h3 { font-size: 24px; }
-          h4 { font-size: 22px; }
-          h5 { font-size: 20px; }
-          h6 { font-size: 18px; }
-          strong, b { font-weight: bold; color: ${textColor} !important; }
-          em, i { font-style: italic; color: ${textColor} !important; }
-          ul, ol { margin: 16px 0; padding-left: 24px; }
-          li { margin: 6px 0; color: ${textColor} !important; }
-          blockquote {
-            border-left: 4px solid ${primaryColor};
-            margin: 16px 0;
-            padding: 12px 20px;
-            background-color: ${isDarkTheme ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)'};
-            font-style: italic;
-            color: ${textColor} !important;
+          h4 { font-size: 20px; }
+          h5 { font-size: 18px; }
+          h6 { font-size: 16px; }
+
+          /* CKEditor text formatting */
+          strong, b { 
+            font-weight: bold; 
+            color: ${textColor}; 
           }
+          em, i { 
+            font-style: italic; 
+            color: ${textColor}; 
+          }
+          u { 
+            text-decoration: underline; 
+          }
+          s, del { 
+            text-decoration: line-through; 
+          }
+
+          /* CKEditor list styles */
+          ul, ol {
+            margin: 16px 0;
+            padding-left: 24px;
+          }
+          ul li {
+            list-style-type: disc;
+            margin: 8px 0;
+            color: ${textColor};
+          }
+          ol li {
+            list-style-type: decimal;
+            margin: 8px 0;
+            color: ${textColor};
+          }
+          li p {
+            margin: 4px 0;
+          }
+
+          /* CKEditor blockquote styles */
+          blockquote {
+            border-left: 4px solid ${linkColor};
+            background-color: ${blockquoteBackgroundColor};
+            margin: 16px 0;
+            padding: 16px 20px;
+            font-style: italic;
+            border-radius: 0 8px 8px 0;
+            color: ${textColor};
+          }
+
+          /* CKEditor link styles */
+          a {
+            color: ${linkColor};
+            text-decoration: none;
+            border-bottom: 1px solid transparent;
+            transition: border-bottom 0.2s;
+          }
+          a:hover {
+            border-bottom: 1px solid ${linkColor};
+          }
+
+          /* CKEditor image styles */
           img {
             max-width: 100%;
             height: auto;
-            border-radius: 12px;
+            border-radius: 8px;
             margin: 16px 0;
+            display: block;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
           }
+
           figure {
             margin: 20px 0;
             text-align: center;
           }
           figure img {
-            max-width: 100%;
-            height: auto;
-            border-radius: 12px;
+            margin: 0 auto;
           }
           figcaption {
-            color: ${secondaryTextColor} !important;
-            font-size: 16px;
-            margin-top: 12px;
+            font-size: 14px;
+            color: ${isDarkTheme ? '#cccccc' : '#666666'};
             font-style: italic;
+            margin-top: 8px;
+            text-align: center;
           }
-          a { color: ${primaryColor} !important; text-decoration: none; }
-          a:hover { text-decoration: underline; }
-          pre {
-            background-color: ${codeBackgroundColor};
-            border: 1px solid ${borderColor};
-            border-radius: 8px;
-            padding: 16px;
-            overflow-x: auto;
-            font-family: 'Courier New', monospace;
-            font-size: 16px;
-            margin: 16px 0;
-            color: ${textColor} !important;
-          }
-          code {
-            background-color: ${codeBackgroundColor};
-            border: 1px solid ${borderColor};
-            border-radius: 4px;
-            padding: 4px 6px;
-            font-family: 'Courier New', monospace;
-            font-size: 16px;
-            color: ${textColor} !important;
-          }
+
+          /* CKEditor table styles */
           table {
             width: 100%;
             border-collapse: collapse;
             margin: 20px 0;
+            background-color: ${backgroundColor};
           }
           th, td {
             border: 1px solid ${borderColor};
-            padding: 12px 16px;
+            padding: 12px;
             text-align: left;
-            color: ${textColor} !important;
+            color: ${textColor};
           }
           th {
             background-color: ${codeBackgroundColor};
             font-weight: bold;
           }
+
+          /* CKEditor code styles */
+          pre {
+            background-color: ${codeBackgroundColor};
+            border: 1px solid ${borderColor};
+            border-radius: 6px;
+            padding: 16px;
+            overflow-x: auto;
+            font-family: 'Courier New', Monaco, monospace;
+            font-size: 14px;
+            margin: 16px 0;
+            color: ${textColor};
+            line-height: 1.4;
+          }
+          code {
+            background-color: ${codeBackgroundColor};
+            border: 1px solid ${borderColor};
+            border-radius: 4px;
+            padding: 2px 6px;
+            font-family: 'Courier New', Monaco, monospace;
+            font-size: 14px;
+            color: ${textColor};
+          }
+
+          /* CKEditor horizontal rule */
+          hr {
+            border: none;
+            height: 1px;
+            background-color: ${borderColor};
+            margin: 24px 0;
+          }
+
+          /* CKEditor alignment classes */
+          .text-center { text-align: center; }
+          .text-left { text-align: left; }
+          .text-right { text-align: right; }
+          .text-justify { text-align: justify; }
         </style>
+        <script>
+          function sendHeight() {
+            const height = Math.max(
+              document.body.scrollHeight,
+              document.documentElement.scrollHeight
+            ) + 50;
+            window.ReactNativeWebView.postMessage(JSON.stringify({
+              type: 'height',
+              height: height
+            }));
+          }
+
+          window.addEventListener('load', function() {
+            setTimeout(sendHeight, 300);
+            setTimeout(sendHeight, 1000);
+          });
+        </script>
       </head>
       <body>
         ${html}
@@ -463,35 +618,32 @@ export default function ArticlePage() {
       </html>
     `;
 
-    // Рассчитываем высоту контента
-    const contentHeight = calculateContentHeight(html);
+    const onMessage = useCallback((event: any) => {
+      try {
+        const data = JSON.parse(event.nativeEvent.data);
+        if (data.type === 'height' && data.height > 0) {
+          setWebViewHeight(Math.min(Math.max(data.height, 400), 4000));
+        }
+      } catch (error) {
+        console.log('Error parsing WebView message:', error);
+      }
+    }, []);
 
     return (
-      <WebView
-        source={{ html: htmlContent }}
-        style={{ 
-          height: contentHeight,
-          backgroundColor: theme.background
-        }}
-        scrollEnabled={false}
-        showsVerticalScrollIndicator={false}
-        showsHorizontalScrollIndicator={false}
-        onShouldStartLoadWithRequest={() => false}
-        javaScriptEnabled={false}
-        domStorageEnabled={false}
-        androidLayerType="software"
-        mixedContentMode="compatibility"
-        startInLoadingState={true}
-        automaticallyAdjustContentInsets={false}
-        renderLoading={() => (
-          <View style={{ height: contentHeight, justifyContent: 'center', alignItems: 'center' }}>
-            <ActivityIndicator size="large" color={theme.primary} />
-            <Text style={{ color: theme.textSecondary, marginTop: 10 }}>
-              Загрузка статьи...
-            </Text>
-          </View>
-        )}
-      />
+      <View style={{ height: webViewHeight }}>
+        <WebView
+          source={{ html: htmlContent }}
+          style={{ flex: 1 }}
+          scrollEnabled={false}
+          showsVerticalScrollIndicator={false}
+          showsHorizontalScrollIndicator={false}
+          javaScriptEnabled={true}
+          domStorageEnabled={false}
+          onMessage={onMessage}
+          startInLoadingState={false}
+          onShouldStartLoadWithRequest={() => false}
+        />
+      </View>
     );
   };
 
@@ -543,37 +695,12 @@ export default function ArticlePage() {
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Красивая шапка статьи */}
+        <ArticleHeader article={article} theme={theme} />
+
         {/* Контент статьи */}
         <View style={styles.articleContent}>
-          <HtmlRenderer html={`
-            <div style="padding: 16px; width: 100%; box-sizing: border-box;">
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-                <span style="background-color: ${theme.primary}; color: white; padding: 6px 12px; border-radius: 8px; font-size: 14px; font-weight: bold;">
-                  ${article.category.title}
-                </span>
-                <span style="color: ${theme.textSecondary}; font-size: 14px; font-style: italic;">
-                  ${formatDate(article.updated)}
-                </span>
-              </div>
-
-              <h1 style="font-size: 28px; font-weight: bold; color: ${theme.text}; margin-bottom: 16px; line-height: 1.2;">
-                ${article.title}
-              </h1>
-
-              <div style="padding-bottom: 20px; border-bottom: 1px solid ${theme.border}; margin-bottom: 20px;">
-                <div style="margin-bottom: 8px; font-size: 14px; color: ${theme.textSecondary};">
-                  📅 Создано: ${formatDate(article.created)}
-                </div>
-                ${article.updated !== article.created ? `
-                  <div style="font-size: 14px; color: ${theme.textSecondary};">
-                    🔄 Обновлено: ${formatDate(article.updated)}
-                  </div>
-                ` : ''}
-              </div>
-
-              ${article.content}
-            </div>
-          `} theme={theme} />
+          <HtmlRenderer html={article.content} theme={theme} />
         </View>
 
         {/* Секция комментариев середины экрана */}
@@ -777,6 +904,64 @@ const createStyles = (theme: Theme) => StyleSheet.create({
   },
   articleContent: {
     backgroundColor: theme.background,
+  },
+  articleHeaderContainer: {
+    paddingVertical: 16,
+    marginBottom: 8,
+  },
+  categoryDateRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    marginBottom: 12,
+  },
+  categoryBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  categoryBadgeText: {
+    color: 'white',
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  headerDate: {
+    fontSize: 13,
+    fontStyle: 'italic',
+  },
+  articleHeaderTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    lineHeight: 28,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  metaContainer: {
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
+  metaRow: {
+    marginBottom: 4,
+  },
+  metaItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  metaText: {
+    fontSize: 14,
+    marginLeft: 8,
+  },
+  headerDivider: {
+    height: 1,
+    marginHorizontal: 16,
+    marginTop: 8,
   },
   loadingContainer: {
     flex: 1,
