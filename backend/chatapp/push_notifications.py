@@ -98,6 +98,15 @@ class PushNotificationService:
         """Отправляет Push-уведомления через Expo Push Service"""
         logger.info(f"📱 [EXPO] Starting Expo push notification to {len(expo_tokens)} tokens")
 
+        # Проверяем конфигурацию Expo
+        from django.conf import settings
+        has_expo_token = hasattr(settings, 'EXPO_ACCESS_TOKEN') and settings.EXPO_ACCESS_TOKEN
+        logger.info(f"📱 [EXPO] 🔧 Configuration check: Expo Access Token {'✅ Present' if has_expo_token else '❌ Missing'}")
+
+        if not has_expo_token:
+            logger.warning("📱 [EXPO] ⚠️ No EXPO_ACCESS_TOKEN in settings. This might cause InvalidCredentials errors.")
+            logger.warning("📱 [EXPO] 💡 To fix: Add EXPO_ACCESS_TOKEN to your Django settings with your Expo access token")
+
         # Ограничиваем длину текста сообщения
         truncated_text = message_text[:100] + "..." if len(message_text) > 100 else message_text
 
@@ -160,6 +169,12 @@ class PushNotificationService:
                 headers['Authorization'] = f'Bearer {settings.EXPO_ACCESS_TOKEN}'
                 logger.debug("📱 [EXPO] 🔐 Using Expo Access Token for authentication")
 
+                # Проверяем формат токена
+                token_preview = settings.EXPO_ACCESS_TOKEN[:20] + "..." if len(settings.EXPO_ACCESS_TOKEN) > 20 else settings.EXPO_ACCESS_TOKEN
+                logger.debug(f"📱 [EXPO] 🔑 Token preview: {token_preview}")
+            else:
+                logger.warning("📱 [EXPO] 🔓 Sending requests without Expo Access Token - this may cause InvalidCredentials errors")
+
             # Отправляем батчами по 100 (лимит Expo)
             batch_size = 100
             success_count = 0
@@ -194,6 +209,15 @@ class PushNotificationService:
                                     if error_message in ['DeviceNotRegistered', 'InvalidCredentials', 'MessageTooBig', 'MessageRateExceeded']:
                                         failed_tokens.append(token)
                                         logger.warning(f"📱 [EXPO] 🗑️ Marking token as invalid: {token[:30]}... (reason: {error_message})")
+
+                                        # Специальная обработка для InvalidCredentials
+                                        if error_message == 'InvalidCredentials':
+                                            logger.error("📱 [EXPO] 🚨 InvalidCredentials error detected!")
+                                            logger.error("📱 [EXPO] 🔧 Possible solutions:")
+                                            logger.error("📱 [EXPO]   1. Check if EXPO_ACCESS_TOKEN is set in Django settings")
+                                            logger.error("📱 [EXPO]   2. Verify your Expo project is properly configured for push notifications")
+                                            logger.error("📱 [EXPO]   3. Ensure the mobile app is using the correct Expo SDK version")
+                                            logger.error("📱 [EXPO]   4. Check if the Expo project has push notification permissions")
                     else:
                         logger.error(f"📱 [EXPO] HTTP error: {response.status_code} - {response.text}")
 
