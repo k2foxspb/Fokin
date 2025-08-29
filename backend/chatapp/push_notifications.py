@@ -1,5 +1,6 @@
 import logging
 import time
+import requests
 from typing import List, Optional
 from django.conf import settings
 import firebase_admin
@@ -73,12 +74,114 @@ class PushNotificationService:
 
         if fcm_tokens_only:
             logger.info(f"🔥 [FCM] ✅ Found {len(fcm_tokens_only)} valid FCM tokens")
-        else:
-            logger.error(f"🔥 [FCM] ❌ No valid FCM tokens found! All tokens are Expo tokens.")
+
+        # Отправляем уведомления через оба сервиса
+        fcm_success = False
+        expo_success = False
+
+        # Отправляем через Firebase FCM если есть FCM токены
+        if fcm_tokens_only:
+            fcm_success = cls._send_firebase_notification(fcm_tokens_only, sender_name, message_text, chat_id)
+
+        # Отправляем через Expo если есть Expo токены
+        if expo_tokens:
+            expo_success = cls._send_expo_notification(expo_tokens, sender_name, message_text, chat_id)
+
+        # Возвращаем успех если хотя бы один из сервисов отработал
+        overall_success = fcm_success or expo_success
+        logger.info(f"🔔 [PUSH] === OVERALL PUSH RESULT: FCM={fcm_success}, Expo={expo_success}, Overall={overall_success} ===")
+
+        return overall_success
+
+    @classmethod
+    def _send_expo_notification(cls, expo_tokens: List[str], sender_name: str, message_text: str, chat_id: Optional[int] = None):
+        """Отправляет Push-уведомления через Expo Push Service"""
+        logger.info(f"📱 [EXPO] Starting Expo push notification to {len(expo_tokens)} tokens")
+
+        # Ограничиваем длину текста сообщения
+        truncated_text = message_text[:100] + "..." if len(message_text) > 100 else message_text
+
+        # Подготавливаем сообщения для Expo
+        messages = []
+        for token in expo_tokens:
+            message = {
+                "to": token,
+                "title": f"💬 {sender_name}",
+                "body": truncated_text,
+                "data": {
+                    "type": "message_notification",
+                    "chatId": str(chat_id) if chat_id else "",
+                    "timestamp": str(int(time.time())),
+                    "sender_name": sender_name,
+                },
+                "sound": "default",
+                "badge": 1,
+                "channelId": "messages"
+            }
+            messages.append(message)
+
+        try:
+            # Отправляем в Expo Push API
+            expo_url = "https://exp.host/--/api/v2/push/send"
+            headers = {
+                'Accept': 'application/json',
+                'Accept-encoding': 'gzip, deflate',
+                'Content-Type': 'application/json'
+            }
+
+            # Отправляем батчами по 100 (лимит Expo)
+            batch_size = 100
+            success_count = 0
+            failed_tokens = []
+
+            for i in range(0, len(messages), batch_size):
+                batch_messages = messages[i:i + batch_size]
+                logger.info(f"📱 [EXPO] Sending batch {i // batch_size + 1} with {len(batch_messages)} notifications")
+
+                try:
+                    response = requests.post(expo_url, json=batch_messages, headers=headers, timeout=30)
+
+                    if response.status_code == 200:
+                        result = response.json()
+
+                        if 'data' in result:
+                            for idx, ticket in enumerate(result['data']):
+                                if ticket.get('status') == 'ok':
+                                    success_count += 1
+                                else:
+                                    error_details = ticket.get('details', {})
+                                    error_message = error_details.get('error', 'Unknown error')
+                                    token = expo_tokens[i + idx]
+                                    logger.error(f"📱 [EXPO] Failed to send to token {token[:30]}...: {error_message}")
+
+                                    # Проверяем, является ли токен недействительным
+                                    if error_message in ['DeviceNotRegistered', 'InvalidCredentials']:
+                                        failed_tokens.append(token)
+                    else:
+                        logger.error(f"📱 [EXPO] HTTP error: {response.status_code} - {response.text}")
+
+                except requests.exceptions.RequestException as e:
+                    logger.error(f"📱 [EXPO] Request error: {str(e)}")
+                    continue
+                except Exception as e:
+                    logger.error(f"📱 [EXPO] Unexpected error in batch: {str(e)}")
+                    continue
+
+            # Удаляем недействительные токены
+            for token in failed_tokens:
+                cls._handle_invalid_expo_token(token)
+
+            logger.info(f"📱 [EXPO] === EXPO PUSH COMPLETED: {success_count} successful ===")
+            return success_count > 0
+
+        except Exception as e:
+            logger.error(f"📱 [EXPO] Error in Expo push notification: {str(e)}")
             return False
 
-        # Продолжаем только с FCM токенами
-        fcm_tokens = fcm_tokens_only
+    @classmethod
+    def _send_firebase_notification(cls, fcm_tokens: List[str], sender_name: str, message_text: str, chat_id: Optional[int] = None):
+        """Отправляет Push-уведомления через Firebase FCM"""
+        logger.info(f"🔥 [FCM] Starting Firebase push notification to {len(fcm_tokens)} tokens")
 
         # Инициализируем Firebase
         try:
@@ -213,3 +316,21 @@ class PushNotificationService:
 
         except Exception as e:
             logger.error(f"Error handling invalid FCM token {token}: {str(e)}")
+
+    @classmethod
+    def _handle_invalid_expo_token(cls, token: str):
+        """Обрабатывает недействительные Expo токены"""
+        try:
+            # Импорт здесь, чтобы избежать циклических зависимостей
+            from authapp.models import CustomUser
+
+            # Находим пользователя с этим токеном и удаляем его
+            # Предполагаем, что Expo токены также хранятся в fcm_token поле
+            users = CustomUser.objects.filter(fcm_token=token)
+            for user in users:
+                logger.info(f"📱 [EXPO] Removing invalid Expo token for user {user.username}")
+                user.fcm_token = None
+                user.save()
+
+        except Exception as e:
+            logger.error(f"📱 [EXPO] Error handling invalid Expo token {token}: {str(e)}")
