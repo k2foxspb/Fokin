@@ -238,7 +238,14 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
         await self.broadcast_user_status(self.user.id, 'online')
 
         await self.accept()
-        await self.mark_messages_as_read()
+
+        # Помечаем сообщения как прочитанные и обновляем счетчики
+        messages_updated = await self.mark_messages_as_read()
+        if messages_updated:
+            # Отправляем обновления счетчиков уведомлений
+            await self.send_notification_updates()
+            # Отправляем обновления списка чатов
+            await self.send_chat_list_updates()
 
     @database_sync_to_async
     def mark_messages_as_read(self):
@@ -254,10 +261,14 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
             if unread_count > 0:
                 unread_messages.update(read=True)
                 logger.info(f"Marked {unread_count} messages as read for user {self.user.id} in room {self.room_name}")
+                return True  # Возвращаем True, если были обновления
+            return False
         except PrivateChatRoom.DoesNotExist:
             logger.error(f"Room {self.room_name} does not exist")
+            return False
         except Exception as e:
             logger.error(f"Error marking messages as read: {e}")
+            return False
 
     async def disconnect(self, close_code):
         # Удаляем пользователя из списка активных
@@ -463,6 +474,96 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
             logger.error(f"Error getting chat users for status: {e}")
             return []
 
+    async def send_notification_updates(self):
+        """Отправляем обновления счетчиков уведомлений"""
+        try:
+            # Отправляем триггер для обновления уведомлений текущему пользователю
+            await self.channel_layer.group_send(
+                f'notifications_{self.user.id}',
+                {
+                    'type': 'new_message_notification',
+                    'sender_id': self.user.id,
+                    'trigger_update': True  # Флаг для принудительного обновления
+                }
+            )
+            logger.info(f"Sent notification update trigger for user {self.user.id}")
+        except Exception as e:
+            logger.error(f"Error sending notification updates: {e}")
+
+    async def send_chat_list_updates(self):
+        """Отправляем обновления списка чатов"""
+        try:
+            # Получаем обновленный список чатов
+            chat_data = await self.get_user_chats_for_update(self.user.id)
+
+            # Отправляем обновление списка чатов текущему пользователю через ChatListConsumer
+            await self.channel_layer.group_send(
+                f'chat_list_{self.user.id}',
+                {
+                    'type': 'chat_list_update',
+                    'chat_data': chat_data
+                }
+            )
+            logger.info(f"Sent chat list update for user {self.user.id}")
+        except Exception as e:
+            logger.error(f"Error sending chat list updates: {e}")
+
+    @database_sync_to_async
+    def get_user_chats_for_update(self, user_id):
+        """Получаем обновленный список чатов пользователя"""
+        try:
+            User = get_user_model()
+            user = User.objects.get(id=user_id)
+
+            # Получаем все чаты пользователя
+            rooms = PrivateChatRoom.objects.filter(
+                Q(user1=user) | Q(user2=user)
+            ).select_related('user1', 'user2')
+
+            chat_data = []
+            for room in rooms:
+                # Определяем собеседника
+                other_user = room.user2 if room.user1 == user else room.user1
+
+                # Получаем последнее сообщение
+                last_message = PrivateMessage.objects.filter(
+                    room=room
+                ).order_by('-timestamp').first()
+
+                if last_message:  # Показываем только чаты с сообщениями
+                    # Считаем непрочитанные сообщения
+                    unread_count = PrivateMessage.objects.filter(
+                        room=room,
+                        recipient=user,
+                        read=False
+                    ).count()
+
+                    chat_info = {
+                        'id': room.id,
+                        'other_user': {
+                            'id': other_user.id,
+                            'username': other_user.username,
+                            'first_name': getattr(other_user, 'first_name', ''),
+                            'last_name': getattr(other_user, 'last_name', ''),
+                            'avatar': other_user.avatar.url if hasattr(other_user,
+                                                                       'avatar') and other_user.avatar else None,
+                            'gender': getattr(other_user, 'gender', 'male'),
+                            'is_online': getattr(other_user, 'is_online', 'offline')
+                        },
+                        'last_message': last_message.message,
+                        'last_message_time': last_message.timestamp.isoformat(),
+                        'unread_count': unread_count
+                    }
+                    chat_data.append(chat_info)
+
+            # Сортируем по времени последнего сообщения
+            chat_data.sort(key=lambda x: x['last_message_time'], reverse=True)
+            return chat_data
+
+        except Exception as e:
+            logger.error(f"Error getting user chats for update: {e}")
+            return []
+
     async def send_push_notification_if_needed(self, message_instance):
         """
         НОВОЕ: Отправляем push-уведомление если получатель не в сети
@@ -656,6 +757,12 @@ class NotificationConsumer(AsyncWebsocketConsumer):
         """
         try:
             logger.info(f"Processing new message notification for user {self.user_id}")
+
+            # Если это принудительное обновление (например, после прочтения сообщений)
+            if event.get('trigger_update'):
+                # Сбрасываем кеш для принудительного обновления
+                self.previous_messages_cache = {}
+                logger.info(f"Forced notification update triggered for user {self.user_id}")
 
             # Получаем обновленные данные
             unread_sender_count = await self.get_unique_senders_count(self.user_id)
@@ -955,6 +1062,12 @@ class ChatListConsumer(AsyncWebsocketConsumer):
                 self.user = token_obj.user
                 self.user_id = token_obj.user.id
 
+                # Подписываемся на группу обновлений списка чатов
+                await self.channel_layer.group_add(
+                    f'chat_list_{self.user_id}',
+                    self.channel_name
+                )
+
                 # Устанавливаем статус пользователя онлайн
                 await self.set_user_online(self.user_id)
                 await self.broadcast_user_status(self.user_id, 'online')
@@ -966,8 +1079,14 @@ class ChatListConsumer(AsyncWebsocketConsumer):
             await self.close()
 
     async def disconnect(self, close_code):
-        # Устанавливаем статус пользователя офлайн
+        # Отписываемся от группы обновлений списка чатов
         if self.user_id:
+            await self.channel_layer.group_discard(
+                f'chat_list_{self.user_id}',
+                self.channel_name
+            )
+
+            # Устанавливаем статус пользователя офлайн
             await self.set_user_offline(self.user_id)
             await self.broadcast_user_status(self.user_id, 'offline')
 
