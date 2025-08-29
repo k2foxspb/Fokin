@@ -51,9 +51,9 @@ class PushNotificationService:
     def send_message_notification(cls, fcm_tokens: List[str], sender_name: str, message_text: str,
                                   chat_id: Optional[int] = None):
         """
-        Отправляет Push-уведомление о новом сообщении через Firebase
+        Отправляет Push-уведомление о новом сообщении ТОЛЬКО через Firebase FCM
         """
-        logger.info(f"🔔 [PUSH] === STARTING FIREBASE PUSH NOTIFICATION ===")
+        logger.info(f"🔔 [PUSH] === STARTING FIREBASE FCM PUSH NOTIFICATION ===")
         logger.info(f"🔔 [PUSH] Tokens count: {len(fcm_tokens)}")
         logger.info(f"🔔 [PUSH] Sender: {sender_name}")
         logger.info(f"🔔 [PUSH] Message: {message_text[:50]}...")
@@ -63,195 +63,35 @@ class PushNotificationService:
             logger.warning("🔥 [FCM] ❌ No FCM tokens provided")
             return False
 
-        # Проверяем типы токенов
+        # Фильтруем и удаляем Expo токены из базы данных
         expo_tokens = [token for token in fcm_tokens if token.startswith('ExponentPushToken')]
         fcm_tokens_only = [token for token in fcm_tokens if not token.startswith('ExponentPushToken')]
 
+        # Массово удаляем все найденные Expo токены
         if expo_tokens:
-            logger.warning(f"🔥 [FCM] ⚠️ Detected {len(expo_tokens)} Expo tokens - these cannot be used with Firebase FCM!")
-            for token in expo_tokens[:3]:  # Показываем только первые 3 для диагностики
-                logger.warning(f"🔥 [FCM] ⚠️ Expo token: {token[:30]}...")
+            logger.warning(f"🔥 [FCM] 🚨 Обнаружено {len(expo_tokens)} Expo токенов - начинаем очистку из БД")
+            cls._cleanup_expo_tokens(expo_tokens)
 
-        if fcm_tokens_only:
-            logger.info(f"🔥 [FCM] ✅ Found {len(fcm_tokens_only)} valid FCM tokens")
+            # Также выполняем полную очистку всех Expo токенов
+            cls._cleanup_all_expo_tokens()
 
-        # Отправляем уведомления через оба сервиса
-        fcm_success = False
-        expo_success = False
-
-        # Отправляем через Firebase FCM если есть FCM токены
-        if fcm_tokens_only:
-            fcm_success = cls._send_firebase_notification(fcm_tokens_only, sender_name, message_text, chat_id)
-
-        # Отправляем через Expo если есть Expo токены
-        if expo_tokens:
-            expo_success = cls._send_expo_notification(expo_tokens, sender_name, message_text, chat_id)
-
-        # Возвращаем успех если хотя бы один из сервисов отработал
-        overall_success = fcm_success or expo_success
-        logger.info(f"🔔 [PUSH] === OVERALL PUSH RESULT: FCM={fcm_success}, Expo={expo_success}, Overall={overall_success} ===")
-
-        return overall_success
-
-    @classmethod
-    def _send_expo_notification(cls, expo_tokens: List[str], sender_name: str, message_text: str, chat_id: Optional[int] = None):
-        """Отправляет Push-уведомления через Expo Push Service"""
-        logger.info(f"📱 [EXPO] Starting Expo push notification to {len(expo_tokens)} tokens")
-
-        # Проверяем конфигурацию Expo
-        from django.conf import settings
-        has_expo_token = hasattr(settings, 'EXPO_ACCESS_TOKEN') and settings.EXPO_ACCESS_TOKEN
-        logger.info(f"📱 [EXPO] 🔧 Configuration check: Expo Access Token {'✅ Present' if has_expo_token else '❌ Missing'}")
-
-        if not has_expo_token:
-            logger.warning("📱 [EXPO] ⚠️ No EXPO_ACCESS_TOKEN in settings. This might cause InvalidCredentials errors.")
-            logger.warning("📱 [EXPO] 💡 To fix: Add EXPO_ACCESS_TOKEN to your Django settings with your Expo access token")
-            logger.warning("📱 [EXPO] 🔄 Alternative: Consider switching to Firebase FCM tokens in your mobile app")
-
-            # Проверяем, стоит ли пропускать отправку без токена
-            skip_expo_without_token = getattr(settings, 'SKIP_EXPO_WITHOUT_ACCESS_TOKEN', False)
-            if skip_expo_without_token:
-                logger.info("📱 [EXPO] ⏭️ Skipping Expo notification due to SKIP_EXPO_WITHOUT_ACCESS_TOKEN=True")
-                return False
-
-        # Ограничиваем длину текста сообщения
-        truncated_text = message_text[:100] + "..." if len(message_text) > 100 else message_text
-
-        # Подготавливаем сообщения для Expo
-        messages = []
-        for token in expo_tokens:
-            message = {
-                "to": token,
-                "title": f"💬 {sender_name}",
-                "body": truncated_text,
-                "data": {
-                    "type": "message_notification",
-                    "chatId": str(chat_id) if chat_id else "",
-                    "timestamp": str(int(time.time())),
-                    "sender_name": sender_name,
-                },
-                "sound": "default",
-                "badge": 1,
-                "channelId": "messages"
-            }
-            messages.append(message)
-
-        # Валидируем Expo токены перед отправкой
-        valid_messages = []
-        invalid_tokens = []
-
-        for i, message in enumerate(messages):
-            token = message["to"]
-            # Проверяем формат Expo токена
-            if not token.startswith('ExponentPushToken[') or not token.endswith(']'):
-                logger.warning(f"📱 [EXPO] ⚠️ Invalid token format: {token[:30]}...")
-                invalid_tokens.append(token)
-            else:
-                valid_messages.append(message)
-
-        if invalid_tokens:
-            logger.warning(f"📱 [EXPO] 🔍 Found {len(invalid_tokens)} invalid tokens, will be removed")
-            for token in invalid_tokens:
-                cls._handle_invalid_expo_token(token)
-
-        if not valid_messages:
-            logger.warning("📱 [EXPO] ⚠️ No valid tokens to send notifications")
+        if not fcm_tokens_only:
+            logger.warning("🔥 [FCM] ❌ No valid FCM tokens found after filtering")
+            if expo_tokens:
+                logger.warning("🔥 [FCM] ❌ All tokens were Expo tokens - they have been removed")
+                logger.warning("🔥 [FCM] 💡 Users need to restart app to get new FCM tokens")
             return False
 
-        logger.info(f"📱 [EXPO] 📤 Proceeding with {len(valid_messages)} valid tokens")
+        logger.info(f"🔥 [FCM] ✅ Proceeding with {len(fcm_tokens_only)} valid FCM tokens")
 
-        try:
-            # Отправляем в Expo Push API
-            expo_url = "https://exp.host/--/api/v2/push/send"
-            headers = {
-                'Accept': 'application/json',
-                'Accept-encoding': 'gzip, deflate',
-                'Content-Type': 'application/json',
-                'User-Agent': 'Django-Expo-Push-Client/1.0'
-            }
+        # Отправляем ТОЛЬКО через Firebase FCM
+        fcm_success = cls._send_firebase_notification(fcm_tokens_only, sender_name, message_text, chat_id)
 
-            # Добавляем Expo Access Token если доступен
-            from django.conf import settings
-            if hasattr(settings, 'EXPO_ACCESS_TOKEN') and settings.EXPO_ACCESS_TOKEN:
-                headers['Authorization'] = f'Bearer {settings.EXPO_ACCESS_TOKEN}'
-                logger.debug("📱 [EXPO] 🔐 Using Expo Access Token for authentication")
+        logger.info(f"🔔 [PUSH] === FCM PUSH RESULT: {fcm_success} ===")
+        return fcm_success
 
-                # Проверяем формат токена
-                token_preview = settings.EXPO_ACCESS_TOKEN[:20] + "..." if len(settings.EXPO_ACCESS_TOKEN) > 20 else settings.EXPO_ACCESS_TOKEN
-                logger.debug(f"📱 [EXPO] 🔑 Token preview: {token_preview}")
-            else:
-                # Пытаемся найти альтернативные способы аутентификации
-                expo_project_id = getattr(settings, 'EXPO_PROJECT_ID', '7a408a11-ebbd-48ac-8f31-e0eb0f1bf1d7')
-                logger.warning("📱 [EXPO] 🔓 No EXPO_ACCESS_TOKEN found")
-                logger.warning("📱 [EXPO] 💡 Your Expo Project ID: " + expo_project_id)
-                logger.warning("📱 [EXPO] 📋 To get Access Token:")
-                logger.warning("📱 [EXPO]   1. Go to https://expo.dev/accounts/k2foxspb/settings/access-tokens")
-                logger.warning("📱 [EXPO]   2. Create new token with push permissions")
-                logger.warning("📱 [EXPO]   3. Add EXPO_ACCESS_TOKEN=your_token to Django settings")
-
-            # Отправляем батчами по 100 (лимит Expo)
-            batch_size = 100
-            success_count = 0
-            failed_tokens = []
-
-            for i in range(0, len(valid_messages), batch_size):
-                batch_messages = valid_messages[i:i + batch_size]
-                logger.info(f"📱 [EXPO] 📦 Sending batch {i // batch_size + 1}/{(len(valid_messages) - 1) // batch_size + 1} with {len(batch_messages)} notifications")
-
-                try:
-                    response = requests.post(expo_url, json=batch_messages, headers=headers, timeout=30)
-
-                    if response.status_code == 200:
-                        result = response.json()
-
-                        if 'data' in result:
-                            for idx, ticket in enumerate(result['data']):
-                                if ticket.get('status') == 'ok':
-                                    success_count += 1
-                                    logger.debug(f"📱 [EXPO] ✅ Successfully sent to token {expo_tokens[i + idx][:30]}...")
-                                else:
-                                    error_details = ticket.get('details', {})
-                                    error_message = error_details.get('error', 'Unknown error')
-                                    token = expo_tokens[i + idx]
-
-                                    # Подробное логирование ошибок
-                                    logger.error(f"📱 [EXPO] ❌ Failed to send to token {token[:30]}...: {error_message}")
-                                    if error_details:
-                                        logger.error(f"📱 [EXPO] Error details: {error_details}")
-
-                                    # Проверяем, является ли токен недействительным
-                                    if error_message in ['DeviceNotRegistered', 'InvalidCredentials', 'MessageTooBig', 'MessageRateExceeded']:
-                                        failed_tokens.append(token)
-                                        logger.warning(f"📱 [EXPO] 🗑️ Marking token as invalid: {token[:30]}... (reason: {error_message})")
-
-                                        # Специальная обработка для InvalidCredentials
-                                        if error_message == 'InvalidCredentials':
-                                            logger.error("📱 [EXPO] 🚨 InvalidCredentials error detected!")
-                                            logger.error("📱 [EXPO] 🔧 Possible solutions:")
-                                            logger.error("📱 [EXPO]   1. Check if EXPO_ACCESS_TOKEN is set in Django settings")
-                                            logger.error("📱 [EXPO]   2. Verify your Expo project is properly configured for push notifications")
-                                            logger.error("📱 [EXPO]   3. Ensure the mobile app is using the correct Expo SDK version")
-                                            logger.error("📱 [EXPO]   4. Check if the Expo project has push notification permissions")
-                    else:
-                        logger.error(f"📱 [EXPO] HTTP error: {response.status_code} - {response.text}")
-
-                except requests.exceptions.RequestException as e:
-                    logger.error(f"📱 [EXPO] Request error: {str(e)}")
-                    continue
-                except Exception as e:
-                    logger.error(f"📱 [EXPO] Unexpected error in batch: {str(e)}")
-                    continue
-
-            # Удаляем недействительные токены
-            for token in failed_tokens:
-                cls._handle_invalid_expo_token(token)
-
-            logger.info(f"📱 [EXPO] === EXPO PUSH COMPLETED: {success_count} successful ===")
-            return success_count > 0
-
-        except Exception as e:
-            logger.error(f"📱 [EXPO] Error in Expo push notification: {str(e)}")
-            return False
+    # Метод удален - используется только Firebase FCM
+    # Expo токены больше не поддерживаются
 
     @classmethod
     def _send_firebase_notification(cls, fcm_tokens: List[str], sender_name: str, message_text: str, chat_id: Optional[int] = None):
@@ -411,6 +251,24 @@ class PushNotificationService:
             logger.error(f"🚨 [CLEANUP] Ошибка удаления Expo токена {token}: {str(e)}")
 
     @classmethod
+    def _cleanup_expo_tokens(cls, expo_tokens: List[str]):
+        """Очистка конкретных Expo токенов из базы данных"""
+        try:
+            from authapp.models import CustomUser
+
+            for token in expo_tokens:
+                users = CustomUser.objects.filter(fcm_token=token)
+                for user in users:
+                    logger.warning(f"🚨 [CLEANUP] Удаление Expo токена для пользователя {user.username}")
+                    user.fcm_token = None
+                    user.save()
+
+            logger.info(f"🚨 [CLEANUP] Очищено {len(expo_tokens)} конкретных Expo токенов")
+
+        except Exception as e:
+            logger.error(f"🚨 [CLEANUP] Ошибка при очистке Expo токенов: {str(e)}")
+
+    @classmethod
     def _cleanup_all_expo_tokens(cls):
         """Полная очистка всех Expo токенов из базы данных"""
         try:
@@ -423,13 +281,14 @@ class PushNotificationService:
 
             count = users_with_expo_tokens.count()
             if count > 0:
-                logger.warning(f"🚨 [CLEANUP] Найдено {count} пользователей с Expo токенами - начинаем очистку")
+                logger.warning(f"🚨 [CLEANUP] Найдено {count} пользователей с Expo токенами - начинаем массовую очистку")
 
                 # Массовое обновление - очищаем все Expo токены
                 updated_count = users_with_expo_tokens.update(fcm_token=None)
 
                 logger.info(f"🚨 [CLEANUP] ✅ Очищено {updated_count} Expo токенов из базы данных")
                 logger.info(f"🚨 [CLEANUP] ✅ Пользователи должны перезапустить приложение для получения новых FCM токенов")
+                logger.info(f"🚨 [CLEANUP] 💡 Expo токены больше не поддерживаются - только Firebase FCM")
             else:
                 logger.info("🚨 [CLEANUP] ✅ Expo токены в базе данных не найдены")
 
