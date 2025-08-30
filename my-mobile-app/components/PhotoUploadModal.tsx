@@ -280,7 +280,6 @@ export default function PhotoUploadModal({
       }
 
     } catch (error) {
-      console.error('General upload error:', error);
       Alert.alert('Ошибка', 'Произошла неожиданная ошибка при загрузке');
     } finally {
       setUploading(false);

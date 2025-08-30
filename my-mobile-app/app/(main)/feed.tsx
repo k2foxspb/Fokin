@@ -70,7 +70,7 @@ export default function Feed() {
                     return;
                 }
             } catch (error) {
-                console.error('Ошибка проверки токена:', error);
+                // Ошибка проверки токена
                 router.replace('/(auth)/login');
             }
         };
@@ -208,7 +208,7 @@ export default function Feed() {
                         a.id === article.id ? {...a, isLoading: false, loadError: true} : a
                     );
                     setArticles(updatedArticles);
-                    console.error('Error fetching article content:', error);
+                    // Ошибка получения контента статьи
                 }
             }
 

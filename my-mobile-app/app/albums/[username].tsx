@@ -68,7 +68,7 @@ export default function UserAlbums() {
             );
             setCurrentUser(response.data.username);
         } catch (error) {
-            console.log('Error fetching current user:', error);
+            // Ошибка получения текущего пользователя
         }
     };
 

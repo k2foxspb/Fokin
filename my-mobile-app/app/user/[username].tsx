@@ -56,7 +56,7 @@ export default function UserProfile() {
             setCurrentUserId(response.data.id);
             setCurrentUsername(response.data.username);
         } catch (error) {
-            console.error('Error fetching current user:', error);
+            // Ошибка получения текущего пользователя
         }
     };
 
@@ -129,7 +129,7 @@ export default function UserProfile() {
             // Переходим в чат с room ID
             router.push(`/chat/${roomId}`);
         } catch (error) {
-            console.error('Error creating/getting chat:', error);
+            // Ошибка создания/получения чата
             Alert.alert('Ошибка', 'Не удалось открыть чат');
         } finally {
             setIsLoadingChat(false);

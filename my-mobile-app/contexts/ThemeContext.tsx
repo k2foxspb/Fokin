@@ -6,10 +6,10 @@ export type ThemeType = 'light' | 'dark';
 
 interface ThemeColors {
   // Основные цвета
-    surfacePressed: any;
   primary: string;
   background: string;
   surface: string;
+  surfacePressed: string;
   text: string;
   textSecondary: string;
   border: string;
@@ -47,34 +47,11 @@ interface ThemeContextType {
   setTheme: (theme: ThemeType) => void;
 }
 
-const lightTheme: {
-    primary: string;
-    background: string;
-    surface: string;
-    text: string;
-    textSecondary: string;
-    border: string;
-    placeholder: string;
-    online: string;
-    offline: string;
-    success: string;
-    error: string;
-    warning: string;
-    card: string;
-    shadow: string;
-    overlay: string;
-    tabBarBackground: string;
-    tabBarBorder: string;
-    tabBarActive: string;
-    tabBarInactive: string;
-    tabBarBadge: string;
-    headerBackground: string;
-    headerText: string;
-    headerBorder: string
-} = {
+const lightTheme: ThemeColors = {
   primary: '#007AFF',
   background: '#F2F2F7',
   surface: '#FFFFFF',
+  surfacePressed: '#F0F0F5',
   text: '#000000',
   textSecondary: '#6D6D80',
   border: '#E5E5EA',
@@ -101,34 +78,11 @@ const lightTheme: {
   headerBorder: '#E0E0E0',
 };
 
-const darkTheme: {
-    primary: string;
-    background: string;
-    surface: string;
-    text: string;
-    textSecondary: string;
-    border: string;
-    placeholder: string;
-    online: string;
-    offline: string;
-    success: string;
-    error: string;
-    warning: string;
-    card: string;
-    shadow: string;
-    overlay: string;
-    tabBarBackground: string;
-    tabBarBorder: string;
-    tabBarActive: string;
-    tabBarInactive: string;
-    tabBarBadge: string;
-    headerBackground: string;
-    headerText: string;
-    headerBorder: string
-} = {
+const darkTheme: ThemeColors = {
   primary: '#0A84FF',
   background: '#000000',
   surface: '#1C1C1E',
+  surfacePressed: '#2C2C2E',
   text: '#FFFFFF',
   textSecondary: '#8E8E93',
   border: '#38383A',

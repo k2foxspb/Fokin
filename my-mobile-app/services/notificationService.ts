@@ -138,7 +138,7 @@ const setupAndroidNotificationChannels = async () => {
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
     });
   } catch (error) {
-    console.error('❌ Error setting up Android notification channels:', getErrorDetails(error));
+    // Тихо обрабатываем ошибки
   }
 };
 
@@ -180,7 +180,6 @@ export const requestNotificationPermissions = async (): Promise<boolean> => {
 
     return finalStatus === 'granted';
   } catch (error) {
-    console.error('Error requesting notification permissions:', getErrorDetails(error));
     return false;
   }
 };

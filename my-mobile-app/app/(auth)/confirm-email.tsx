@@ -48,7 +48,7 @@ export default function ConfirmEmail() {
             setEmail(userData.email || '');
           }
         } catch (error) {
-          console.error('Error retrieving email:', error);
+          // Ошибка получения email
         }
       }
     };
@@ -99,8 +99,6 @@ export default function ConfirmEmail() {
       // Update user data if provided
       if (response.data.user) {
         await AsyncStorage.setItem('userData', JSON.stringify(response.data.user));
-        console.log('Данные пользователя сохранены:', response.data.user);
-        console.log('Статус активации:', response.data.user.is_active);
       }
 
       Alert.alert('Успех', 'Email подтвержден и аккаунт активирован!', [
@@ -170,7 +168,7 @@ export default function ConfirmEmail() {
             return;
 
           } catch (activationError) {
-            console.error('Ошибка принудительной активации:', activationError);
+            // Ошибка принудительной активации
           }
         }
       }

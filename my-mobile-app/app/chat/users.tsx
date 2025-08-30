@@ -82,7 +82,6 @@ export default function UsersScreen() {
   }, []);
 
   const renderUser = ({ item }: { item: User }) => (
-      console.log(item.is_online),
 
       <TouchableOpacity
       style={styles.userItem}
@@ -122,6 +121,8 @@ export default function UsersScreen() {
     </TouchableOpacity>
   );
 
+  const styles = createStyles(theme);
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -130,8 +131,6 @@ export default function UsersScreen() {
       </View>
     );
   }
-
-  const styles = createStyles(theme);
 
   return (
     <View style={styles.container}>

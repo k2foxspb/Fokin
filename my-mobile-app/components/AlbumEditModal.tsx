@@ -135,7 +135,7 @@ export default function AlbumEditModal({
       onAlbumUpdated();
       onClose();
     } catch (error) {
-      console.error('Error updating album:', error);
+        // Ошибка обновления альбома
       Alert.alert('Ошибка', 'Не удалось обновить альбом');
     } finally {
       setLoading(false);

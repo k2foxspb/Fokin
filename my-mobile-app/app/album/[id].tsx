@@ -338,7 +338,7 @@ export default function AlbumDetail() {
                 photos: filteredPhotos
             });
         } catch (error) {
-            console.error('Error fetching album:', error);
+                // Ошибка получения альбома
             Alert.alert('Ошибка', 'Не удалось загрузить альбом');
             router.back();
         } finally {

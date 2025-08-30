@@ -25,7 +25,7 @@ export default function Index() {
         }
 
       } catch (error) {
-        console.error('Ошибка при инициализации:', error);
+        // Ошибка при инициализации
         router.replace('/(auth)/login');
       }
     };

@@ -10,5 +10,3 @@ export const API_CONFIG = {
 };
 
 // Добавьте отладку для продакшена
-console.log('Environment:', process.env.NODE_ENV);
-console.log('API Config:', API_CONFIG);

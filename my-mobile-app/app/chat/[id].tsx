@@ -406,7 +406,7 @@ export default function ChatScreen() {
                 console.log('🧪 [CHAT-TEST] 3 seconds passed - did server respond?');
             }, 3000);
         } catch (error) {
-            console.error('🧪 [CHAT-TEST] Error sending ping:', error);
+            // Ошибка отправки ping сообщения
         }
     };
 
