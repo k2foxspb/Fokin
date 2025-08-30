@@ -47,7 +47,7 @@ export default function MessagesScreen() {
       const token = await AsyncStorage.getItem('userToken');
 
       if (!token) {
-        router.replace('/login');
+        router.replace('/(auth)/login');
         return;
       }
 
@@ -68,7 +68,7 @@ export default function MessagesScreen() {
         if (error.response?.status === 401) {
           // Удаляем тот же ключ
           await AsyncStorage.removeItem('userToken');
-          router.replace('/login');
+          router.replace('/(auth)/login');
           return;
         }
         setError(error.response?.data?.detail || 'Ошибка при загрузке чатов');

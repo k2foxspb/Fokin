@@ -85,7 +85,7 @@ export default function Profile() {
                         try {
                             await AsyncStorage.removeItem('userToken');
                             delete axios.defaults.headers.common['Authorization'];
-                            router.replace('/login');
+                            router.replace('/(auth)/login');
                         } catch (error) {
                             Alert.alert('Ошибка', 'Не удалось выйти из системы');
                         }

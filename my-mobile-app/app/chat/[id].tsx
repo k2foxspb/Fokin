@@ -239,7 +239,7 @@ export default function ChatScreen() {
         } catch (error) {
             if (axios.isAxiosError(error) && error.response?.status === 401) {
                 Alert.alert('Ошибка', 'Сессия истекла. Войдите снова.');
-                router.replace('/login');
+                router.replace('/(auth)/login');
             }
             return null;
         }
@@ -271,7 +271,7 @@ export default function ChatScreen() {
         } catch (error) {
             if (axios.isAxiosError(error) && error.response?.status === 401) {
                 Alert.alert('Ошибка', 'Сессия истекла. Войдите снова.');
-                router.replace('/login');
+                router.replace('/(auth)/login');
             }
             return null;
         }
@@ -330,7 +330,7 @@ export default function ChatScreen() {
         } catch (error) {
             if (axios.isAxiosError(error) && error.response?.status === 401) {
                 Alert.alert('Ошибка', 'Сессия истекла. Войдите снова.');
-                router.replace('/login');
+                router.replace('/(auth)/login');
             }
         }
     };

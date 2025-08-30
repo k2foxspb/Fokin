@@ -65,6 +65,7 @@ export default function RootLayout() {
         <ThemeProvider>
           <NotificationProvider>
             <Stack screenOptions={{ headerShown: false }} ref={navigationRef}>
+              <Stack.Screen name="index" />
               <Stack.Screen name="(main)" />
               <Stack.Screen name="(auth)" />
               <Stack.Screen name="chat/[id]" />
