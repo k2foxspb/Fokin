@@ -11,7 +11,7 @@ interface WebSocketOptions {
 }
 
 export const useWebSocket = (url: string | string[], options: WebSocketOptions = {}) => {
-    const [isConnected, setIsConnected] = useState(false);
+    const isConnectedRef = useRef<boolean>(false);
     const wsRef = useRef<WebSocket | null>(null);
     const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const isConnectingRef = useRef<boolean>(false);
@@ -30,7 +30,7 @@ export const useWebSocket = (url: string | string[], options: WebSocketOptions =
 
             console.log('🔌 [WS] 🚀 Starting connection attempt #' + connectionAttempts.current);
             console.log('🔌 [WS] 📊 Current state:', {
-                isConnected: isConnected,
+                isConnected: isConnectedRef.current,
                 existingConnection: !!wsRef.current,
                 connectionState: wsRef.current?.readyState,
                 url: url
@@ -111,7 +111,7 @@ export const useWebSocket = (url: string | string[], options: WebSocketOptions =
                     wsRef.current = ws; // Исправляем ссылку
                 }
 
-                setIsConnected(true);
+                isConnectedRef.current = true;
                 isConnectingRef.current = false;
                 connectionAttempts.current = 0; // Reset counter on success
 
@@ -126,7 +126,7 @@ export const useWebSocket = (url: string | string[], options: WebSocketOptions =
                 console.log('🔌 [WS] 🔍 Pre-callback state check:', {
                     wsRefExists: !!wsRef.current,
                     wsRefReadyState: wsRef.current?.readyState,
-                    isConnectedFlag: isConnected
+                    isConnectedFlag: isConnectedRef.current
                 });
 
                 if (options.onOpen) options.onOpen(event);
@@ -136,7 +136,7 @@ export const useWebSocket = (url: string | string[], options: WebSocketOptions =
                     console.log('🔌 [WS] 🔍 Post-callback state check:', {
                         wsRefExists: !!wsRef.current,
                         wsRefReadyState: wsRef.current?.readyState,
-                        isConnectedFlag: isConnected
+                        isConnectedFlag: isConnectedRef.current
                     });
 
                     if (!wsRef.current) {
@@ -190,7 +190,7 @@ export const useWebSocket = (url: string | string[], options: WebSocketOptions =
                     attempt: connectionAttempts.current
                 });
 
-                setIsConnected(false);
+                isConnectedRef.current = false;
                 wsRef.current = null;
                 isConnectingRef.current = false;
 
@@ -220,14 +220,14 @@ export const useWebSocket = (url: string | string[], options: WebSocketOptions =
                     attempt: connectionAttempts.current
                 });
 
-                setIsConnected(false);
+                isConnectedRef.current = false;
                 console.log('🔌 [WS] 📤 Calling onError callback...');
                 if (options.onError) options.onError(error);
             };
 
         } catch (error) {
             console.error('Error connecting to WebSocket:', error);
-            setIsConnected(false);
+            isConnectedRef.current = false;
             if (options.onError) options.onError(error as Event);
         }
     };
@@ -237,7 +237,7 @@ export const useWebSocket = (url: string | string[], options: WebSocketOptions =
         console.log('🔌 [WS] 📊 Pre-disconnect state:', {
             wsRefExists: !!wsRef.current,
             wsRefReadyState: wsRef.current?.readyState,
-            isConnectedFlag: isConnected,
+            isConnectedFlag: isConnectedRef.current,
             hasReconnectTimeout: !!reconnectTimeoutRef.current
         });
 
@@ -266,7 +266,7 @@ export const useWebSocket = (url: string | string[], options: WebSocketOptions =
             console.log('🔌 [WS] 📝 No WebSocket to disconnect');
         }
 
-        setIsConnected(false);
+        isConnectedRef.current = false;
         isConnectingRef.current = false;
         console.log('🔌 [WS] ✅ Disconnect completed');
     };
@@ -291,7 +291,7 @@ export const useWebSocket = (url: string | string[], options: WebSocketOptions =
             hasType: !!message.type,
             messageSize: JSON.stringify(message).length,
             wsState: wsRef.current?.readyState,
-            isConnected: isConnected
+            isConnected: isConnectedRef.current
         });
 
         if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -310,7 +310,7 @@ export const useWebSocket = (url: string | string[], options: WebSocketOptions =
             console.warn('🔌 [WS] 📊 Connection state:', {
                 wsExists: !!wsRef.current,
                 readyState: wsRef.current?.readyState ?? 'null',
-                isConnectedFlag: isConnected,
+                isConnectedFlag: isConnectedRef.current,
                 stateNames: {
                     0: 'CONNECTING',
                     1: 'OPEN', 
@@ -324,7 +324,7 @@ export const useWebSocket = (url: string | string[], options: WebSocketOptions =
     const reconnect = () => {
         console.log('🔄 [WS] ========== RECONNECT INITIATED ==========');
         console.log('🔄 [WS] Current state before reconnect:', {
-            isConnected: isConnected,
+            isConnected: isConnectedRef.current,
             wsExists: !!wsRef.current,
             wsReadyState: wsRef.current?.readyState,
             isConnecting: isConnectingRef.current,
@@ -333,7 +333,7 @@ export const useWebSocket = (url: string | string[], options: WebSocketOptions =
 
         // Принудительная очистка состояния
         console.log('🔄 [WS] 🧹 Forcing state cleanup...');
-        setIsConnected(false);
+        isConnectedRef.current = false;
         isConnectingRef.current = false;
 
         if (reconnectTimeoutRef.current) {
@@ -361,11 +361,11 @@ export const useWebSocket = (url: string | string[], options: WebSocketOptions =
     };
 
     const isConnectedState = () => {
-        const result = isConnected && wsRef.current && wsRef.current.readyState === WebSocket.OPEN;
+        const result = isConnectedRef.current && wsRef.current && wsRef.current.readyState === WebSocket.OPEN;
 
         // Подробная диагностика для отладки
         const diagnostics = {
-            isConnectedFlag: isConnected,
+            isConnectedFlag: isConnectedRef.current,
             wsExists: !!wsRef.current,
             wsReadyState: wsRef.current?.readyState,
             wsReadyStateString: wsRef.current ? {

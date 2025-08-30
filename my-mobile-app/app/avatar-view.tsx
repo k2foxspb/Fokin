@@ -1,7 +1,6 @@
 import React from 'react';
 import {
   View,
-  Image,
   StyleSheet,
   TouchableOpacity,
   Text,
@@ -10,6 +9,7 @@ import {
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import CachedImage from '../components/CachedImage';
 
 const { width, height } = Dimensions.get('window');
 
@@ -47,12 +47,8 @@ export default function AvatarView() {
 
       {/* Full-screen avatar */}
       <View style={styles.imageContainer}>
-        <Image
-          source={
-            isDefaultAvatar === 'true' || !avatarUrl
-              ? require('../assets/avatar/male.png') // Default fallback
-              : { uri: avatarUrl }
-          }
+        <CachedImage
+          uri={avatarUrl || ''}
           style={styles.avatar}
           resizeMode="contain"
         />

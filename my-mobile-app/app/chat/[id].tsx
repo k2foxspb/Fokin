@@ -11,7 +11,6 @@ import {
     Platform,
     Alert,
     ActivityIndicator,
-    Image,
     TouchableOpacity,
     SafeAreaView,
 } from 'react-native';
@@ -22,6 +21,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {MaterialIcons} from '@expo/vector-icons';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useNotifications } from '../../contexts/NotificationContext';
+import CachedImage from '../../components/CachedImage';
 import {API_CONFIG} from '../../config';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -564,24 +564,15 @@ export default function ChatScreen() {
 
                     {/* Мини аватарка */}
                     <View style={styles.miniAvatarContainer}>
-                        <Image
-                            source={
+                        <CachedImage
+                            uri={
                                 recipient?.avatar
-                                    ? { 
-                                        uri: recipient.avatar.startsWith('http') 
-                                          ? recipient.avatar 
-                                          : `${API_CONFIG.BASE_URL}${recipient.avatar}` 
-                                      }
-                                    : recipient?.gender === 'male'
-                                    ? require('../../assets/avatar/male.png')
-                                    : require('../../assets/avatar/female.png')
+                                    ? recipient.avatar.startsWith('http') 
+                                      ? recipient.avatar 
+                                      : `${API_CONFIG.BASE_URL}${recipient.avatar}`
+                                    : ''
                             }
                             style={styles.miniAvatar}
-                            defaultSource={
-                                recipient?.gender === 'male'
-                                    ? require('../../assets/avatar/male.png')
-                                    : require('../../assets/avatar/female.png')
-                            }
                         />
                     </View>
 

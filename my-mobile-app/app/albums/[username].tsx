@@ -7,7 +7,6 @@ import {
     StyleSheet,
     FlatList,
     TouchableOpacity,
-    Image,
     ActivityIndicator,
     RefreshControl,
     Alert,
@@ -17,6 +16,7 @@ import {router, useLocalSearchParams} from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import {Ionicons} from '@expo/vector-icons';
+import CachedImage from '../../components/CachedImage';
 import AlbumCreateModal from '../../components/AlbumCreateModal';
 import AlbumEditModal from '../../components/AlbumEditModal';
 import {API_CONFIG} from "../../config";
@@ -139,8 +139,8 @@ export default function UserAlbums() {
         >
             <View style={styles.albumCover}>
                 {item.cover_photo ? (
-                    <Image
-                        source={{uri: item.cover_photo.thumbnail_url}}
+                        <CachedImage
+                            uri={item.cover_photo.thumbnail_url}
                         style={styles.coverImage}
                         resizeMode="cover"
                     />

@@ -7,7 +7,6 @@ import {
     StyleSheet,
     FlatList,
     TouchableOpacity,
-    Image,
     ActivityIndicator,
     RefreshControl,
     Alert,
@@ -29,6 +28,7 @@ import PhotoUploadModal from '../../components/PhotoUploadModal';
 import AlbumEditModal from '../../components/AlbumEditModal';
 import {API_CONFIG} from '../../config';
 import {useTheme} from '../../contexts/ThemeContext';
+import CachedImage from "../../components/CachedImage";
 
 const {width, height} = Dimensions.get('window');
 const photoSize = (width - 48) / 3; // 3 columns with margins
@@ -500,8 +500,8 @@ export default function AlbumDetail() {
                 }}
                 activeOpacity={0.8}
             >
-                <Image
-                    source={{uri: item.thumbnail_url}}
+                    <CachedImage
+                        uri={item.thumbnail_url}
                     style={styles.photoImage}
                     resizeMode="cover"
                     onError={(error) => console.log('Image load error:', error)}

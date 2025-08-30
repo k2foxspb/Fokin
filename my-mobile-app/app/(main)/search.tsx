@@ -5,7 +5,6 @@ import {
   StyleSheet,
   FlatList,
   TouchableOpacity,
-  Image,
   ActivityIndicator,
   RefreshControl,
   TextInput,
@@ -18,6 +17,7 @@ import axios from 'axios';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useNotifications } from '../../contexts/NotificationContext';
+import CachedImage from "@/components/CachedImage";
 
 interface User {
   id: number;
@@ -76,7 +76,6 @@ export default function SearchScreen() {
   // Функция для получения актуального статуса пользователя
   const getUserStatus = (user: User) => {
     const realtimeStatus = userStatuses.get(user.id);
-    console.log(`👥 [SEARCH] Getting status for user ${user.id}: realtime=${realtimeStatus}, original=${user.is_online}`);
 
     if (realtimeStatus !== undefined && realtimeStatus !== null) {
       return realtimeStatus;
@@ -166,14 +165,8 @@ export default function SearchScreen() {
         onPress={() => navigateToProfile(item.username)}
       >
         <View style={styles.avatarContainer}>
-          <Image
-            source={
-              item.avatar
-                ? { uri: item.avatar }
-                : item.gender === 'male'
-                ? require('../../assets/avatar/male.png')
-                : require('../../assets/avatar/female.png')
-            }
+          <CachedImage
+            uri={item.avatar || ''}
             style={styles.avatar}
           />
           <View style={[

@@ -8,7 +8,6 @@ import {
   Alert,
   ActivityIndicator,
   ScrollView,
-  Image,
   Platform,
   Modal,
 } from 'react-native';
@@ -20,6 +19,7 @@ import { API_CONFIG } from '../../config';
 import * as ImagePicker from 'expo-image-picker';
 import { Picker } from '@react-native-picker/picker';
 import { useTheme } from '../../contexts/ThemeContext';
+import CachedImage from "../../components/CachedImage";
 
 interface Theme {
   background: string;
@@ -320,18 +320,10 @@ export default function Register() {
         onPress={pickImage}
         disabled={loading}
       >
-        {avatar ? (
-          <Image source={{ uri: avatar.uri }} style={styles.avatar} />
-        ) : (
-          <Image 
-            source={
-              gender === 'male'
-                ? require('../../assets/avatar/male.png')
-                : require('../../assets/avatar/female.png')
-            }
-            style={styles.avatar}
-          />
-        )}
+        <CachedImage 
+          uri={avatar ? avatar.uri : ""}
+          style={styles.avatar}
+        />
         <Text style={[styles.avatarHint, { color: theme.textSecondary }]}>Нажмите для выбора фото</Text>
       </TouchableOpacity>
 

@@ -3,7 +3,6 @@ import {
     View,
     Text,
     StyleSheet,
-    Image,
     TouchableOpacity,
     ScrollView,
     Alert,
@@ -18,6 +17,7 @@ import {Ionicons} from '@expo/vector-icons';
 import {useTheme} from '../../contexts/ThemeContext';
 import {API_CONFIG} from "../../config";
 import TabBar from '../../components/TabBar';
+import CachedImage from '../../components/CachedImage';
 
 interface UserProfile {
     id: number;
@@ -178,14 +178,9 @@ export default function UserProfile() {
 
                         <View style={styles.avatarSection}>
                             <TouchableOpacity onPress={() => setAvatarModalVisible(true)} style={styles.avatarContainer}>
-                                <Image
-                                    source={
-                                        profile.avatar
-                                            ? {uri: profile.avatar}
-                                            : profile.gender === 'male'
-                                            ? require('../../assets/avatar/male.png')
-                                            : require('../../assets/avatar/female.png')
-                                    }
+                                <CachedImage
+                                    uri={profile.avatar || ''}
+
                                     style={styles.avatar}
                                 />
 
@@ -350,14 +345,9 @@ export default function UserProfile() {
                     >
                         <View style={styles.modalContent}>
                             <View style={styles.imageContainer}>
-                                <Image
-                                    source={
-                                        profile.avatar
-                                            ? {uri: profile.avatar}
-                                            : profile.gender === 'male'
-                                            ? require('../../assets/avatar/male.png')
-                                            : require('../../assets/avatar/female.png')
-                                    }
+                                <CachedImage
+                                    uri={profile.avatar || ''}
+
                                     style={styles.fullImage}
                                     resizeMode="contain"
                                 />

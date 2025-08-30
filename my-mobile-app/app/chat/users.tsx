@@ -5,7 +5,6 @@ import {
   StyleSheet,
   FlatList,
   TouchableOpacity,
-  Image,
   ActivityIndicator,
   RefreshControl,
   TextInput,
@@ -16,6 +15,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../contexts/ThemeContext';
+import CachedImage from '../../components/CachedImage';
 import {API_CONFIG} from "../../config";
 
 interface User {
@@ -88,16 +88,18 @@ export default function UsersScreen() {
       onPress={() => navigateToProfile(item.username)}
     >
       <View style={styles.avatarContainer}>
-        <Image
-          source={
-            item.avatar
-              ? { uri: item.avatar }
-              : item.gender === 'male'
-              ? require('../../assets/avatar/male.png')
-              : require('../../assets/avatar/female.png')
-          }
-          style={styles.avatar}
-        />
+        {item.avatar ? (
+          <CachedImage
+            uri={item.avatar}
+            style={styles.avatar}
+          />
+        ) : (
+          <CachedImage
+            uri=""
+            style={styles.avatar}
+
+          />
+        )}
         <View style={[
           styles.onlineIndicator,
           { backgroundColor: item.is_online === 'online' ? theme.online : theme.offline }

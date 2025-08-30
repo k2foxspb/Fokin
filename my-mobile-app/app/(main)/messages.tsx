@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, FlatList, StyleSheet, Pressable, Text, Image, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, FlatList, StyleSheet, Pressable, Text, ActivityIndicator, RefreshControl } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import axios from 'axios';
@@ -9,6 +9,7 @@ import { useNotifications } from '../../contexts/NotificationContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { NotificationPermissionManager } from '../../components/NotificationPermissionManager';
 import { API_CONFIG } from '../../config';
+import CachedImage from "@/components/CachedImage";
 
 interface User {
   gender: string;
@@ -344,24 +345,15 @@ export default function MessagesScreen() {
                   }}
                 >
                   <View style={styles.avatarContainer}>
-                    <Image
-                      source={
+                    <CachedImage
+                      uri={
                         item.other_user.avatar 
-                          ? { 
-                              uri: item.other_user.avatar.startsWith('http') 
-                                ? item.other_user.avatar 
-                                : `${API_CONFIG.BASE_URL}${item.other_user.avatar}` 
-                            }
-                          : item.other_user.gender === 'male'
-                          ? require('../../assets/avatar/male.png')
-                          : require('../../assets/avatar/female.png')
+                          ? item.other_user.avatar.startsWith('http') 
+                            ? item.other_user.avatar 
+                            : `${API_CONFIG.BASE_URL}${item.other_user.avatar}`
+                          : ''
                       }
                       style={styles.avatar}
-                      defaultSource={
-                        item.other_user.gender === 'male'
-                          ? require('../../assets/avatar/male.png')
-                          : require('../../assets/avatar/female.png')
-                      }
                     />
                     <View style={[
                       styles.onlineIndicator,

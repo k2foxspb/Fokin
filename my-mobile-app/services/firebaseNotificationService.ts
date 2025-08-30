@@ -97,6 +97,27 @@ class FirebaseNotificationService {
         const firebase = require('@react-native-firebase/app').default;
         console.log('🔥 [FCM] Firebase App module imported successfully');
 
+        // Проверяем конфигурацию Firebase
+        const app = firebase.app();
+        console.log('🔥 [FCM] Firebase App Name:', app.name);
+        console.log('🔥 [FCM] Firebase Project ID:', app.options.projectId);
+
+        // Дополнительная проверка для Android
+        if (Platform.OS === 'android') {
+          console.log('🔥 [FCM] Android Package Name:', app.options.appId);
+          if (!app.options.projectId || !app.options.appId) {
+            throw new Error('Missing Firebase Android configuration');
+          }
+        }
+
+        // Дополнительная проверка для iOS  
+        if (Platform.OS === 'ios') {
+          console.log('🔥 [FCM] iOS Bundle ID:', app.options.appId);
+          if (!app.options.projectId || !app.options.appId) {
+            console.warn('🔥 [FCM] ⚠️ iOS Firebase configuration may be incomplete');
+          }
+        }
+
         // Проверяем статус Firebase App
         const apps = firebase.apps;
         console.log('🔥 [FCM] Firebase apps count:', apps.length);

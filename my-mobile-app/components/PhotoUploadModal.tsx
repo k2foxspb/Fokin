@@ -8,7 +8,6 @@ import {
   TouchableOpacity,
   Alert,
   ActivityIndicator,
-  Image,
   Platform,
   FlatList,
   ScrollView,
@@ -20,6 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { API_CONFIG } from '../config';
 import { useTheme } from '../contexts/ThemeContext';
+import CachedImage from "./CachedImage";
 
 const { width } = Dimensions.get('window');
 const imagePreviewSize = (width - 60) / 3; // 3 images per row with margins
@@ -66,7 +66,6 @@ export default function PhotoUploadModal({
         cameraGranted: cameraPermission.status === 'granted'
       };
     } catch (error) {
-      console.error('Error requesting permissions:', error);
       return { mediaGranted: false, cameraGranted: false };
     }
   };
@@ -98,10 +97,8 @@ export default function PhotoUploadModal({
         }));
 
         setSelectedImages(prev => [...prev, ...newImages]);
-        console.log('Selected images:', newImages.length);
       }
     } catch (error) {
-      console.error('Error picking images:', error);
       Alert.alert('Ошибка', 'Не удалось выбрать изображения');
     }
   };
@@ -133,10 +130,8 @@ export default function PhotoUploadModal({
         };
 
         setSelectedImages(prev => [...prev, newImage]);
-        console.log('Captured photo:', newImage);
       }
     } catch (error) {
-      console.error('Error taking photo:', error);
       Alert.alert('Ошибка', 'Не удалось сделать фото');
     }
   };
@@ -237,7 +232,6 @@ export default function PhotoUploadModal({
             },
           });
 
-          console.log(`Upload successful for image ${image.id}:`, response.data);
           successCount++;
 
           // Помечаем как завершенную
@@ -247,7 +241,6 @@ export default function PhotoUploadModal({
           }));
 
         } catch (error: any) {
-          console.error(`Upload error for image ${image.id}:`, error.response?.data || error.message);
           errorCount++;
 
           // Помечаем как ошибку
@@ -302,7 +295,11 @@ export default function PhotoUploadModal({
 
     return (
       <View style={styles.imagePreview}>
-        <Image source={{ uri: item.uri }} style={styles.previewImage} />
+        <CachedImage 
+          uri={item.uri} 
+          style={styles.previewImage}
+          showLoader={false}
+        />
 
         {/* Прогресс или статус */}
         {uploading && (

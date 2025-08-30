@@ -3,7 +3,6 @@ import {
     View,
     Text,
     StyleSheet,
-    Image,
     TouchableOpacity,
     ScrollView,
     Alert,
@@ -15,6 +14,7 @@ import {router} from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import {Ionicons} from '@expo/vector-icons';
+import CachedImage from '../../components/CachedImage';
 import ProfileEditModal from '../../components/ProfileEditModal';
 import {useTheme} from '../../contexts/ThemeContext';
 import {API_CONFIG} from "../../config";
@@ -137,14 +137,9 @@ export default function Profile() {
                 <View style={styles.header}>
                     <View style={styles.avatarSection}>
                         <TouchableOpacity onPress={() => setAvatarModalVisible(true)} style={styles.avatarContainer}>
-                            <Image
-                                source={
-                                    profile.avatar
-                                        ? {uri: profile.avatar}
-                                        : profile.gender === 'male'
-                                            ? require('../../assets/avatar/male.png')
-                                            : require('../../assets/avatar/female.png')
-                                }
+                            <CachedImage
+                                uri={profile.avatar || ''}
+
                                 style={styles.avatar}
                             />
                             <View style={styles.editAvatarOverlay}>
@@ -316,14 +311,8 @@ export default function Profile() {
                     >
                         <View style={styles.modalContent}>
                             <View style={styles.imageContainer}>
-                                <Image
-                                    source={
-                                        profile.avatar
-                                            ? {uri: profile.avatar}
-                                            : profile.gender === 'male'
-                                                ? require('../../assets/avatar/male.png')
-                                                : require('../../assets/avatar/female.png')
-                                    }
+                                <CachedImage
+                                    uri={profile.avatar || ''}
                                     style={styles.fullImage}
                                     resizeMode="contain"
                                 />

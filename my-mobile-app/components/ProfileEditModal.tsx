@@ -8,7 +8,6 @@ import {
   TouchableOpacity,
   Alert,
   ActivityIndicator,
-  Image,
   ScrollView,
   Platform
 } from 'react-native';
@@ -18,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { Picker } from '@react-native-picker/picker';
 import { API_CONFIG } from '../config';
+import CachedImage from './CachedImage';
 
 interface UserProfile {
   id: number;
@@ -273,18 +273,11 @@ const handleSave = async () => {
           {/* Avatar Section */}
           <View style={styles.avatarSection}>
             <TouchableOpacity onPress={pickImage} style={styles.avatarContainer}>
-              {avatar ? (
-                <Image source={{ uri: avatar }} style={styles.avatar} />
-              ) : (
-                <Image 
-                  source={
-                    profile && profile.gender === 'male'
-                      ? require('../assets/avatar/male.png')
-                      : require('../assets/avatar/female.png')
-                  }
-                  style={styles.avatar}
-                />
-              )}
+              <CachedImage
+                uri={avatar || ''}
+
+                style={styles.avatar}
+              />
               <View style={styles.avatarOverlay}>
                 <Ionicons name="camera" size={20} color="white" />
               </View>

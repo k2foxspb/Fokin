@@ -15,15 +15,18 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.k2foxspb.fokinfun",
+      "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "NSCameraUsageDescription": "Приложение использует камеру для создания фотографий",
         "NSPhotoLibraryUsageDescription": "Приложение использует галерею для выбора фотографий",
         "NSMicrophoneUsageDescription": "Приложение использует микрофон для записи аудио",
         "UIBackgroundModes": [
           "remote-notification",
-          "background-fetch"
+          "background-fetch",
+          "background-processing"
         ],
-        "FirebaseAppDelegateProxyEnabled": true
+        "FirebaseAppDelegateProxyEnabled": true,
+        "FirebaseMessagingAutoInitEnabled": true
       }
     },
     "android": {
@@ -100,7 +103,11 @@
             "default_notification_color": "#222222",
             "notification_foreground_service": {
               "enabled": true
-            }
+            },
+            "requestPermissionsOnAndroid": true
+          },
+          "ios": {
+            "useProvisionalNotifications": true
           },
           "backgroundMessageHandler": "./firebaseBackgroundHandler.js"
         }
