@@ -18,6 +18,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Picker } from '@react-native-picker/picker';
 import { API_CONFIG } from '../config';
 import CachedImage from './CachedImage';
+import { useTheme } from '../contexts/ThemeContext';
 
 interface UserProfile {
   id: number;
@@ -44,6 +45,7 @@ export default function ProfileEditModal({
   onClose, 
   onProfileUpdated 
 }: ProfileEditModalProps) {
+  const { theme } = useTheme();
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [gender, setGender] = useState('male');
@@ -250,21 +252,21 @@ const handleSave = async () => {
       presentationStyle="pageSheet"
       onRequestClose={handleClose}
     >
-      <View style={styles.container}>
-        <View style={styles.header}>
+      <View style={[styles.container, { backgroundColor: theme.background }]}>
+        <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
           <TouchableOpacity onPress={handleClose} style={styles.cancelButton}>
-            <Text style={styles.cancelButtonText}>Отмена</Text>
+            <Text style={[styles.cancelButtonText, { color: theme.primary }]}>Отмена</Text>
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Редактировать профиль</Text>
+          <Text style={[styles.headerTitle, { color: theme.text }]}>Редактировать профиль</Text>
           <TouchableOpacity 
             onPress={handleSave} 
             style={styles.saveButton}
             disabled={loading}
           >
             {loading ? (
-              <ActivityIndicator size="small" color="#007AFF" />
+              <ActivityIndicator size="small" color={theme.primary} />
             ) : (
-              <Text style={styles.saveButtonText}>Сохранить</Text>
+              <Text style={[styles.saveButtonText, { color: theme.primary }]}>Сохранить</Text>
             )}
           </TouchableOpacity>
         </View>
@@ -278,33 +280,43 @@ const handleSave = async () => {
 
                 style={styles.avatar}
               />
-              <View style={styles.avatarOverlay}>
-                <Ionicons name="camera" size={20} color="white" />
+              <View style={[styles.avatarOverlay, { backgroundColor: theme.primary }]}>
+                <Ionicons name="camera" size={20} color={theme.surface} />
               </View>
             </TouchableOpacity>
-            <Text style={styles.avatarText}>Нажмите, чтобы изменить фото</Text>
+            <Text style={[styles.avatarText, { color: theme.textSecondary }]}>Нажмите, чтобы изменить фото</Text>
           </View>
 
           {/* Name Section */}
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Имя</Text>
+            <Text style={[styles.label, { color: theme.text }]}>Имя</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, { 
+                backgroundColor: theme.surface, 
+                borderColor: theme.border,
+                color: theme.text
+              }]}
               value={firstName}
               onChangeText={setFirstName}
               placeholder="Введите имя"
+              placeholderTextColor={theme.placeholder}
               maxLength={150}
               editable={!loading}
             />
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Фамилия</Text>
+            <Text style={[styles.label, { color: theme.text }]}>Фамилия</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, { 
+                backgroundColor: theme.surface, 
+                borderColor: theme.border,
+                color: theme.text
+              }]}
               value={lastName}
               onChangeText={setLastName}
               placeholder="Введите фамилию"
+              placeholderTextColor={theme.placeholder}
               maxLength={150}
               editable={!loading}
             />
@@ -312,13 +324,16 @@ const handleSave = async () => {
 
           {/* Gender Section */}
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Пол</Text>
-            <View style={styles.pickerContainer}>
+            <Text style={[styles.label, { color: theme.text }]}>Пол</Text>
+            <View style={[styles.pickerContainer, { 
+              backgroundColor: theme.surface, 
+              borderColor: theme.border 
+            }]}>
               <Picker
                 selectedValue={gender}
                 onValueChange={setGender}
                 enabled={!loading}
-                style={styles.picker}
+                style={[styles.picker, { color: theme.text }]}
               >
                 <Picker.Item label="Мужчина" value="male" />
                 <Picker.Item label="Женщина" value="female" />
@@ -328,30 +343,35 @@ const handleSave = async () => {
 
           {/* Birthday Section */}
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>День рождения</Text>
+            <Text style={[styles.label, { color: theme.text }]}>День рождения</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, { 
+                backgroundColor: theme.surface, 
+                borderColor: theme.border,
+                color: theme.text
+              }]}
               value={birthday}
               onChangeText={setBirthday}
               placeholder="ГГГГ-ММ-ДД"
+              placeholderTextColor={theme.placeholder}
               maxLength={10}
               editable={!loading}
             />
-            <Text style={styles.inputHint}>Формат: ГГГГ-ММ-ДД (например, 1990-01-15)</Text>
+            <Text style={[styles.inputHint, { color: theme.textSecondary }]}>Формат: ГГГГ-ММ-ДД (например, 1990-01-15)</Text>
           </View>
 
           {/* Username and Email (Read-only) */}
-          <View style={styles.readOnlySection}>
-            <Text style={styles.sectionTitle}>Информация аккаунта</Text>
-            
-            <View style={styles.readOnlyGroup}>
-              <Text style={styles.readOnlyLabel}>Логин</Text>
-              <Text style={styles.readOnlyValue}>@{profile?.username}</Text>
+          <View style={[styles.readOnlySection, { borderTopColor: theme.border }]}>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Информация аккаунта</Text>
+
+            <View style={[styles.readOnlyGroup, { backgroundColor: theme.surface }]}>
+              <Text style={[styles.readOnlyLabel, { color: theme.textSecondary }]}>Логин</Text>
+              <Text style={[styles.readOnlyValue, { color: theme.text }]}>@{profile?.username}</Text>
             </View>
 
-            <View style={styles.readOnlyGroup}>
-              <Text style={styles.readOnlyLabel}>Email</Text>
-              <Text style={styles.readOnlyValue}>{profile?.email}</Text>
+            <View style={[styles.readOnlyGroup, { backgroundColor: theme.surface }]}>
+              <Text style={[styles.readOnlyLabel, { color: theme.textSecondary }]}>Email</Text>
+              <Text style={[styles.readOnlyValue, { color: theme.text }]}>{profile?.email}</Text>
             </View>
           </View>
         </ScrollView>
@@ -363,7 +383,6 @@ const handleSave = async () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
   },
   header: {
     flexDirection: 'row',
@@ -371,14 +390,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: 'white',
     borderBottomWidth: 1,
-    borderBottomColor: '#e1e5e9',
   },
   headerTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#1a1a1a',
   },
   cancelButton: {
     paddingVertical: 8,
@@ -386,7 +402,6 @@ const styles = StyleSheet.create({
   },
   cancelButtonText: {
     fontSize: 16,
-    color: '#007AFF',
   },
   saveButton: {
     paddingVertical: 8,
@@ -395,7 +410,6 @@ const styles = StyleSheet.create({
   saveButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#007AFF',
   },
   content: {
     flex: 1,
@@ -413,33 +427,30 @@ const styles = StyleSheet.create({
     width: 100,
     height: 100,
     borderRadius: 50,
+    backgroundColor: 'rgba(0, 0, 0, 0.05)',
+    overflow: 'hidden',
   },
   avatarPlaceholder: {
     width: 100,
     height: 100,
     borderRadius: 50,
-    backgroundColor: '#f0f0f0',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#e1e5e9',
   },
   avatarOverlay: {
     position: 'absolute',
     bottom: 0,
     right: 0,
-    backgroundColor: '#007AFF',
     borderRadius: 15,
     width: 30,
     height: 30,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 2,
+    borderWidth: 1.5,
     borderColor: 'white',
   },
   avatarText: {
     fontSize: 14,
-    color: '#666',
     textAlign: 'center',
   },
   inputGroup: {
@@ -448,29 +459,22 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 16,
     fontWeight: '500',
-    color: '#1a1a1a',
     marginBottom: 8,
   },
   input: {
-    backgroundColor: 'white',
     borderWidth: 1,
-    borderColor: '#e1e5e9',
     borderRadius: 8,
     paddingHorizontal: 16,
     paddingVertical: 12,
     fontSize: 16,
-    color: '#1a1a1a',
   },
   inputHint: {
     fontSize: 12,
-    color: '#666',
     marginTop: 4,
     paddingHorizontal: 4,
   },
   pickerContainer: {
-    backgroundColor: 'white',
     borderWidth: 1,
-    borderColor: '#e1e5e9',
     borderRadius: 8,
     overflow: 'hidden',
   },
@@ -481,16 +485,13 @@ const styles = StyleSheet.create({
     marginTop: 24,
     paddingTop: 24,
     borderTopWidth: 1,
-    borderTopColor: '#e1e5e9',
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#1a1a1a',
     marginBottom: 16,
   },
   readOnlyGroup: {
-    backgroundColor: 'white',
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderRadius: 8,
@@ -498,12 +499,10 @@ const styles = StyleSheet.create({
   },
   readOnlyLabel: {
     fontSize: 14,
-    color: '#666',
     marginBottom: 4,
   },
   readOnlyValue: {
     fontSize: 16,
-    color: '#1a1a1a',
     fontWeight: '500',
   },
 });

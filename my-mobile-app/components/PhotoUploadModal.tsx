@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,7 +11,8 @@ import {
   Platform,
   FlatList,
   ScrollView,
-  Dimensions
+  Dimensions,
+  Linking
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
@@ -20,6 +21,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { API_CONFIG } from '../config';
 import { useTheme } from '../contexts/ThemeContext';
 import CachedImage from "./CachedImage";
+import {opacity} from "react-native-reanimated/src/Colors";
 
 const { width } = Dimensions.get('window');
 const imagePreviewSize = (width - 60) / 3; // 3 images per row with margins
@@ -56,83 +58,107 @@ export default function PhotoUploadModal({
 
   const styles = createStyles(theme);
 
-  const requestPermissions = async () => {
-    try {
-      const mediaPermission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      const cameraPermission = await ImagePicker.requestCameraPermissionsAsync();
-
-      return {
-        mediaGranted: mediaPermission.status === 'granted',
-        cameraGranted: cameraPermission.status === 'granted'
-      };
-    } catch (error) {
-      return { mediaGranted: false, cameraGranted: false };
-    }
-  };
+  // Функция handlePermissionOnAndroid удалена, так как больше не используется
 
   const pickImages = async () => {
     try {
-      const permissions = await requestPermissions();
-      if (!permissions.mediaGranted) {
-        Alert.alert('Ошибка', 'Необходимо разрешение для доступа к галерее');
-        return;
-      }
+        // Самый простой вариант с минимумом параметров
+        console.log('Starting image picker with minimal configuration...');
+        let pickerResult = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        });
 
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsMultipleSelection: true,
-        quality: 0.8,
-        selectionLimit: 10, // максимум 10 фотографий за раз
-      });
+        console.log('Picker result:', pickerResult.canceled ? 'canceled' : 'not canceled');
 
-      if (!result.canceled && result.assets) {
-        const newImages: SelectedImage[] = result.assets.map((asset, index) => ({
-          uri: asset.uri,
-          width: asset.width,
-          height: asset.height,
-          type: asset.type,
-          fileName: asset.fileName,
-          caption: '',
-          id: `${Date.now()}_${index}`, // уникальный ID
-        }));
+        if (!pickerResult.canceled) {
+            console.log('Assets:', pickerResult.assets ? `found ${pickerResult.assets.length} assets` : 'no assets');
 
-        setSelectedImages(prev => [...prev, ...newImages]);
-      }
+            if (pickerResult.assets && pickerResult.assets.length > 0) {
+                Alert.alert('Выбрано', `Выбрано ${pickerResult.assets.length} изображений`);
+
+                const newImages: SelectedImage[] = pickerResult.assets.map((asset, i) => {
+                    // Упрощенный подход для создания объектов изображений
+                    return {
+                        uri: asset.uri,
+                        width: 100,
+                        height: 100,
+                        type: 'image/jpeg',
+                        fileName: `simple_${i}.jpg`,
+                        caption: '',
+                        id: `simple_${Date.now()}_${i}`,
+                    };
+                });
+
+                console.log(`Created ${newImages.length} image objects`);
+                setSelectedImages(prev => [...prev, ...newImages]);
+            } else {
+                Alert.alert('Внимание', 'Не удалось получить выбранные изображения');
+            }
+        } else {
+            console.log('User cancelled image picker');
+        }
     } catch (error) {
-      Alert.alert('Ошибка', 'Не удалось выбрать изображения');
+        console.error('Error picking images:', error);
+        Alert.alert('Ошибка', 'Не удалось выбрать изображения. Попробуйте еще раз.');
     }
   };
 
   const takePhoto = async () => {
     try {
-      const permissions = await requestPermissions();
-      if (!permissions.cameraGranted) {
-        Alert.alert('Ошибка', 'Необходимо разрешение для доступа к камере');
-        return;
-      }
+        // Проверяем специфичные для Android настройки
+        if (Platform.OS === 'android') {
+            const androidPermissionOk = await handlePermissionOnAndroid();
+            if (!androidPermissionOk) return;
+        }
 
-      const result = await ImagePicker.launchCameraAsync({
-        allowsEditing: true,
-        aspect: [4, 3],
-        quality: 0.8,
-      });
+        // Запрашиваем разрешение для камеры
+        const cameraPermission = await ImagePicker.requestCameraPermissionsAsync();
+        console.log('Camera permission result:', cameraPermission);
 
-      if (!result.canceled && result.assets && result.assets[0]) {
-        const asset = result.assets[0];
-        const newImage: SelectedImage = {
-          uri: asset.uri,
-          width: asset.width,
-          height: asset.height,
-          type: asset.type,
-          fileName: asset.fileName,
-          caption: '',
-          id: `camera_${Date.now()}`,
-        };
+        if (cameraPermission.status !== 'granted') {
+            Alert.alert('Ошибка', 'Необходимо разрешение для доступа к камере');
+            return;
+        }
 
-        setSelectedImages(prev => [...prev, newImage]);
-      }
+        console.log('Launching camera...');
+        const result = await ImagePicker.launchCameraAsync({
+            allowsEditing: true,
+            aspect: [1, 1],
+            quality: 0.7,
+            mediaTypes: ImagePicker.MediaTypeOptions.Images
+        });
+
+        console.log('Camera result:', {
+            canceled: result.canceled,
+            hasAssets: result.assets ? result.assets.length > 0 : false
+        });
+
+        if (!result.canceled && result.assets && result.assets[0]) {
+            const asset = result.assets[0];
+            console.log('Photo captured:', {
+                uri: asset.uri.substring(0, 50) + '...',
+                width: asset.width,
+                height: asset.height
+            });
+
+            const newImage: SelectedImage = {
+                uri: asset.uri,
+                width: asset.width || 200,
+                height: asset.height || 200,
+                type: 'image/jpeg',
+                fileName: `camera_${Date.now()}.jpg`,
+                caption: '',
+                id: `camera_${Date.now()}`,
+            };
+
+            setSelectedImages(prev => [...prev, newImage]);
+            console.log('Camera photo added to state');
+        } else {
+            console.log('Camera canceled or failed');
+        }
     } catch (error) {
-      Alert.alert('Ошибка', 'Не удалось сделать фото');
+        console.error('Error taking photo:', error);
+        Alert.alert('Ошибка камеры', 'Не удалось сделать фото. Проверьте разрешения.');
     }
   };
 
@@ -284,6 +310,23 @@ export default function PhotoUploadModal({
       setSelectedImages([]);
       setGlobalCaption('');
       setUploadProgress({});
+
+          // Проверяем доступность разрешений при открытии модального окна
+          const checkPermissions = async () => {
+            try {
+              const mediaLibrary = await ImagePicker.getMediaLibraryPermissionsAsync();
+              const camera = await ImagePicker.getCameraPermissionsAsync();
+
+              console.log('Current permissions status:', {
+                mediaLibrary: mediaLibrary.status,
+                camera: camera.status
+              });
+            } catch (error) {
+              console.error('Error checking permissions:', error);
+            }
+          };
+
+          checkPermissions();
       onClose();
     }
   };
@@ -354,11 +397,14 @@ export default function PhotoUploadModal({
     <Modal
       visible={visible}
       animationType="slide"
-      transparent={true}
+      transparent={false}
+      presentationStyle="fullScreen"
       onRequestClose={handleClose}
     >
       <View style={styles.modalContainer}>
         <View style={styles.modalContent}>
+          {/* Тестовая кнопка удалена */}
+
           {/* Заголовок */}
           <View style={styles.header}>
             <Text style={styles.headerTitle}>
@@ -372,23 +418,115 @@ export default function PhotoUploadModal({
           <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
             {/* Кнопки выбора */}
             {!uploading && (
-              <View style={styles.actionButtons}>
-                <TouchableOpacity style={styles.actionButton} onPress={pickImages}>
-                  <Ionicons name="images" size={20} color={theme.primary} />
-                  <Text style={styles.actionButtonText}>Выбрать из галереи</Text>
-                </TouchableOpacity>
+              <View>
+                <View style={styles.actionButtons}>
+                  <TouchableOpacity 
+                    style={[styles.actionButton, { backgroundColor: theme.primary }]} 
+                    onPress={async () => {
+                      try {
+                        console.log("Открытие галереи для выбора фотографий...");
 
-                <TouchableOpacity style={styles.actionButton} onPress={takePhoto}>
-                  <Ionicons name="camera" size={20} color={theme.primary} />
-                  <Text style={styles.actionButtonText}>Сделать фото</Text>
-                </TouchableOpacity>
-              </View>
+                        // Добавляем поддержку выбора нескольких фотографий
+                        const result = await ImagePicker.launchImageLibraryAsync({
+                          allowsMultipleSelection: true,
+                          selectionLimit: 10, // Максимум 10 фотографий за раз
+                          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                          quality: 0.8
+                        });
+
+                        console.log("Результат выбора:", 
+                          result.canceled ? "отменено" : `выбрано ${result.assets?.length || 0} фото`);
+
+                        if (!result.canceled && result.assets && result.assets.length > 0) {
+                          const newImages = result.assets.map((asset, index) => ({
+                            uri: asset.uri,
+                            width: asset.width || 100,
+                            height: asset.height || 100,
+                            type: "image/jpeg",
+                            fileName: `gallery_${index}.jpg`,
+                            caption: '',
+                            id: `gallery_${Date.now()}_${index}`,
+                          }));
+
+                          setSelectedImages(prev => [...prev, ...newImages]);
+                          Alert.alert("Успех", `Выбрано ${newImages.length} фотографий`);
+                        }
+                      } catch (error) {
+                        console.error("Ошибка при выборе фотографий:", error);
+                        Alert.alert("Ошибка", "Не удалось выбрать фотографии");
+                      }
+                    }}
+                  >
+                    <Ionicons name="images" size={36} color="white" />
+                    <Text style={[styles.actionButtonText, { color: "white" }]}>Выбрать из галереи</Text>
+                    <Text style={[styles.actionButtonSubtext, { color: "rgba(255, 255, 255, 0.8)" }]}>
+                      Можно выбрать несколько
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity 
+                    style={[styles.actionButton, { backgroundColor: '#34C759' }]}
+                    onPress={async () => {
+                      try {
+                        console.log("Запуск камеры...");
+
+                        // Запрашиваем разрешение на камеру, это обязательно
+                        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+
+                        if (status !== 'granted') {
+                          Alert.alert("Ошибка", "Необходимо разрешение для доступа к камере");
+                          return;
+                        }
+
+                        const result = await ImagePicker.launchCameraAsync({
+                          quality: 0.8,
+                          allowsEditing: true,
+                          aspect: [4, 3]
+                        });
+
+                        console.log("Результат съемки:", 
+                          result.canceled ? "отменено" : "фото сделано");
+
+                        if (!result.canceled && result.assets && result.assets[0]) {
+                          const asset = result.assets[0];
+                          const newImage = {
+                            uri: asset.uri,
+                            width: asset.width || 100,
+                            height: asset.height || 100,
+                            type: "image/jpeg",
+                            fileName: `camera_${Date.now()}.jpg`,
+                            caption: '',
+                            id: `camera_${Date.now()}`,
+                          };
+
+                          setSelectedImages(prev => [...prev, newImage]);
+                          Alert.alert("Успех", "Фото сделано");
+                        }
+                      } catch (error) {
+                        console.error("Ошибка при съемке фото:", error);
+                        Alert.alert("Ошибка", "Не удалось сделать фото");
+                      }
+                    }}
+                  >
+                    <Ionicons name="camera" size={36} color="white" />
+                    <Text style={[styles.actionButtonText, { color: "white" }]}>
+                      Сделать фото
+                    </Text>
+                    <Text style={[styles.actionButtonSubtext, { color: "rgba(255, 255, 255, 0.8)" }]}>
+                      С помощью камеры
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                            </View>
             )}
 
             {/* Превью выбранных изображений */}
             {selectedImages.length > 0 && (
               <>
-                <Text style={styles.sectionTitle}>Выбранные фотографии:</Text>
+                <Text style={styles.sectionTitle}>
+                  Выбранные фотографии: {selectedImages.length}
+                </Text>
+
                 <FlatList
                   data={selectedImages}
                   renderItem={renderImage}
@@ -397,6 +535,17 @@ export default function PhotoUploadModal({
                   scrollEnabled={false}
                   contentContainerStyle={styles.imagesGrid}
                 />
+
+                <View style={{marginTop: 10, padding: 10, backgroundColor: theme.background, borderRadius: 8, borderWidth: 1, borderColor: theme.border}}>
+                  <Text style={{fontSize: 12, color: theme.text}}>
+                    Выбрано {selectedImages.length} фото
+                  </Text>
+                  {selectedImages.length > 0 && selectedImages[0].uri && (
+                    <Text style={{fontSize: 10, color: theme.textSecondary, marginTop: 5}}>
+                      URI: {selectedImages[0].uri.substring(0, 40)}...
+                    </Text>
+                  )}
+                </View>
               </>
             )}
 
@@ -467,14 +616,11 @@ export default function PhotoUploadModal({
 const createStyles = (theme: any) => StyleSheet.create({
   modalContainer: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    justifyContent: 'flex-end',
+    backgroundColor: theme.background,
   },
   modalContent: {
+    flex: 1,
     backgroundColor: theme.surface,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: '90%',
     elevation: 8,
     shadowColor: theme.text,
     shadowOffset: { width: 0, height: -4 },
@@ -486,18 +632,19 @@ const createStyles = (theme: any) => StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: 20,
+    paddingTop: 50, // Учитываем статус-бар на iOS
     borderBottomWidth: 1,
     borderBottomColor: theme.border,
   },
   headerTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: 'bold',
     color: theme.text,
   },
   closeButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: theme.border,
     justifyContent: 'center',
     alignItems: 'center',
@@ -508,25 +655,34 @@ const createStyles = (theme: any) => StyleSheet.create({
   },
   actionButtons: {
     flexDirection: 'row',
-    gap: 12,
-    marginBottom: 20,
+    gap: 15,
+    marginBottom: 30,
+    marginTop: 20,
   },
   actionButton: {
     flex: 1,
-    flexDirection: 'row',
+    flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: theme.primary + '15',
-    padding: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: theme.primary + '30',
+    padding: 20,
+    borderRadius: 20,
+    borderWidth: 0,
+    elevation: 4,
+    shadowColor: theme.text,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
   },
   actionButtonText: {
-    color: theme.primary,
-    fontSize: 14,
-    fontWeight: '600',
-    marginLeft: 8,
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginTop: 10,
+    textAlign: 'center',
+  },
+  actionButtonSubtext: {
+    fontSize: 12,
+    marginTop: 4,
+    textAlign: 'center',
   },
   sectionTitle: {
     fontSize: 16,
@@ -581,12 +737,12 @@ const createStyles = (theme: any) => StyleSheet.create({
     fontWeight: 'bold',
   },
   errorIndicator: {
-    backgroundColor: 'rgba(255, 59, 48, 0.9)',
+    backgroundColor: theme.error || 'rgba(255, 59, 48, 0.9)',
     borderRadius: 12,
     padding: 8,
   },
   successIndicator: {
-    backgroundColor: 'rgba(52, 199, 89, 0.9)',
+    backgroundColor: theme.success || 'rgba(52, 199, 89, 0.9)',
     borderRadius: 12,
     padding: 8,
   },
@@ -634,7 +790,7 @@ const createStyles = (theme: any) => StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: 'white',
+    backgroundColor: theme.background,
   },
   switchThumbActive: {
     alignSelf: 'flex-end',
@@ -679,7 +835,7 @@ const createStyles = (theme: any) => StyleSheet.create({
     opacity: 0.6,
   },
   uploadButtonText: {
-    color: 'white',
+    color: theme.buttonText || 'white',
     fontSize: 16,
     fontWeight: '600',
     marginLeft: 8,

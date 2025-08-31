@@ -14,7 +14,8 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { Ionicons } from '@expo/vector-icons';
-import {API_CONFIG} from "../config";
+import { API_CONFIG } from "../config";
+import { useTheme } from '../contexts/ThemeContext';
 
 interface Album {
   id: number;
@@ -36,12 +37,14 @@ const DeleteAlbumConfirmModal = ({
   visible,
   onCancel,
   onConfirm,
-  loading
+  loading,
+  theme
 }: {
   visible: boolean;
   onCancel: () => void;
   onConfirm: () => void;
   loading: boolean;
+  theme: any;
 }) => (
   <Modal
     visible={visible}
@@ -49,34 +52,91 @@ const DeleteAlbumConfirmModal = ({
     animationType="fade"
     onRequestClose={onCancel}
   >
-    <View style={styles.deleteModalContainer}>
-      <View style={styles.deleteModalContent}>
-        <Ionicons name="warning" size={48} color="#ff3b30" style={styles.deleteModalIcon} />
-        <Text style={styles.deleteModalTitle}>Удалить альбом?</Text>
-        <Text style={styles.deleteModalMessage}>
+    <View style={{
+      flex: 1,
+      backgroundColor: 'rgba(0, 0, 0, 0.7)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingHorizontal: 20,
+    }}>
+      <View style={{
+        backgroundColor: theme.surface,
+        borderRadius: 16,
+        padding: 24,
+        width: '100%',
+        maxWidth: 340,
+        alignItems: 'center',
+      }}>
+        <Ionicons name="warning" size={48} color={theme.error || "#ff3b30"} style={{ marginBottom: 16 }} />
+        <Text style={{
+          fontSize: 20,
+          fontWeight: 'bold',
+          color: theme.text,
+          marginBottom: 12,
+          textAlign: 'center',
+        }}>Удалить альбом?</Text>
+        <Text style={{
+          fontSize: 16,
+          color: theme.textSecondary,
+          marginBottom: 24,
+          textAlign: 'center',
+          lineHeight: 22,
+        }}>
           Вы уверены, что хотите удалить этот альбом?{'\n'}
           Все фотографии в нем также будут удалены.{'\n'}
           Это действие нельзя отменить.
         </Text>
 
-        <View style={styles.deleteModalButtons}>
+        <View style={{
+          flexDirection: 'row',
+          width: '100%',
+          gap: 12,
+        }}>
           <TouchableOpacity
-            style={[styles.deleteModalButton, styles.cancelButton]}
+            style={{
+              flex: 1,
+              paddingVertical: 12,
+              paddingHorizontal: 20,
+              borderRadius: 8,
+              alignItems: 'center',
+              justifyContent: 'center',
+              minHeight: 44,
+              borderWidth: 1,
+              borderColor: theme.border,
+              backgroundColor: theme.background,
+            }}
             onPress={onCancel}
             disabled={loading}
           >
-            <Text style={styles.cancelButtonText}>Отмена</Text>
+            <Text style={{
+              color: theme.primary,
+              fontSize: 16,
+              fontWeight: '600',
+            }}>Отмена</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.deleteModalButton, styles.confirmButton]}
+            style={{
+              flex: 1,
+              paddingVertical: 12,
+              paddingHorizontal: 20,
+              borderRadius: 8,
+              alignItems: 'center',
+              justifyContent: 'center',
+              minHeight: 44,
+              backgroundColor: theme.error || '#ff3b30',
+            }}
             onPress={onConfirm}
             disabled={loading}
           >
             {loading ? (
               <ActivityIndicator size="small" color="white" />
             ) : (
-              <Text style={styles.confirmButtonText}>Удалить</Text>
+              <Text style={{
+                color: 'white',
+                fontSize: 16,
+                fontWeight: '600',
+              }}>Удалить</Text>
             )}
           </TouchableOpacity>
         </View>
@@ -92,10 +152,13 @@ export default function AlbumEditModal({
   onAlbumUpdated,
   onAlbumDeleted
 }: AlbumEditModalProps) {
+  const { theme } = useTheme();
   const [title, setTitle] = useState('');
   const [hiddenFlag, setHiddenFlag] = useState(false);
   const [loading, setLoading] = useState(false);
   const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
+
+  const styles = createStyles(theme);
 
   useEffect(() => {
     if (album) {
@@ -143,14 +206,12 @@ export default function AlbumEditModal({
   };
 
   const handleDeletePress = () => {
-    console.log('🗑️ Delete album button pressed');
     setDeleteConfirmVisible(true);
   };
 
   const handleDeleteConfirm = async () => {
     if (!album) return;
 
-    console.log('✅ Delete album confirmed');
     setLoading(true);
 
     try {
@@ -160,8 +221,6 @@ export default function AlbumEditModal({
         return;
       }
 
-      console.log('🔗 Sending DELETE request for album:', album.id);
-
       await axios.delete(
         `${API_CONFIG.BASE_URL}/photo/api/album/${album.id}/`,
         {
@@ -169,7 +228,6 @@ export default function AlbumEditModal({
         }
       );
 
-      console.log('✅ Album deleted successfully');
       Alert.alert('Успех', 'Альбом успешно удален');
 
       // Закрываем модальные окна
@@ -177,7 +235,7 @@ export default function AlbumEditModal({
       onAlbumDeleted();
       onClose();
     } catch (error) {
-      console.error('❌ Error deleting album:', error);
+      console.error('Error deleting album:', error);
       Alert.alert('Ошибка', 'Не удалось удалить альбом');
     } finally {
       setLoading(false);
@@ -185,7 +243,6 @@ export default function AlbumEditModal({
   };
 
   const handleDeleteCancel = () => {
-    console.log('❌ Delete album cancelled');
     setDeleteConfirmVisible(false);
   };
 
@@ -208,70 +265,78 @@ export default function AlbumEditModal({
         presentationStyle="pageSheet"
         onRequestClose={handleClose}
       >
-        <View style={styles.container}>
-          <View style={styles.header}>
+        <View style={[styles.container, { backgroundColor: theme.background }]}>
+          <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
             <TouchableOpacity onPress={handleClose} style={styles.cancelButton}>
-              <Text style={styles.cancelButtonText}>Отмена</Text>
+              <Text style={[styles.cancelButtonText, { color: theme.primary }]}>Отмена</Text>
             </TouchableOpacity>
-            <Text style={styles.headerTitle}>Редактировать альбом</Text>
+            <Text style={[styles.headerTitle, { color: theme.text }]}>Редактировать альбом</Text>
             <TouchableOpacity
               onPress={handleSave}
               style={styles.saveButton}
               disabled={loading}
             >
               {loading ? (
-                <ActivityIndicator size="small" color="#007AFF" />
+                <ActivityIndicator size="small" color={theme.primary} />
               ) : (
-                <Text style={styles.saveButtonText}>Сохранить</Text>
+                <Text style={[styles.saveButtonText, { color: theme.primary }]}>Сохранить</Text>
               )}
             </TouchableOpacity>
           </View>
 
           <View style={styles.content}>
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Название альбома</Text>
+              <Text style={[styles.label, { color: theme.text }]}>Название альбома</Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, { 
+                  backgroundColor: theme.surface, 
+                  borderColor: theme.border,
+                  color: theme.text
+                }]}
                 value={title}
                 onChangeText={setTitle}
                 placeholder="Введите название альбома"
+                placeholderTextColor={theme.textSecondary}
                 maxLength={255}
                 editable={!loading}
               />
             </View>
 
-            <View style={styles.switchGroup}>
+            <View style={[styles.switchGroup, { backgroundColor: theme.surface }]}>
               <View style={styles.switchLabelContainer}>
                 <Ionicons
                   name={hiddenFlag ? "eye-off" : "eye"}
                   size={20}
-                  color="#666"
+                  color={theme.textSecondary}
                   style={styles.switchIcon}
                 />
-                <Text style={styles.switchLabel}>Скрытый альбом</Text>
+                <Text style={[styles.switchLabel, { color: theme.text }]}>Скрытый альбом</Text>
               </View>
               <Switch
                 value={hiddenFlag}
                 onValueChange={setHiddenFlag}
                 disabled={loading}
-                trackColor={{ false: '#767577', true: '#81b0ff' }}
-                thumbColor={hiddenFlag ? '#007AFF' : '#f4f3f4'}
+                trackColor={{ false: theme.border, true: theme.primary + '80' }}
+                thumbColor={hiddenFlag ? theme.primary : theme.surface}
               />
             </View>
 
-            <Text style={styles.switchDescription}>
+            <Text style={[styles.switchDescription, { color: theme.textSecondary }]}>
               Скрытые альбомы видны только вам
             </Text>
 
-            <View style={styles.dangerZone}>
-              <Text style={styles.dangerZoneTitle}>Опасная зона</Text>
+            <View style={[styles.dangerZone, { borderTopColor: theme.border }]}>
+              <Text style={[styles.dangerZoneTitle, { color: theme.error || '#FF3B30' }]}>Опасная зона</Text>
               <TouchableOpacity
-                style={styles.deleteButton}
+                style={[styles.deleteButton, { 
+                  backgroundColor: theme.surface,
+                  borderColor: theme.error || '#FF3B30' 
+                }]}
                 onPress={handleDeletePress}
                 disabled={loading}
               >
-                <Ionicons name="trash-outline" size={20} color="#FF3B30" />
-                <Text style={styles.deleteButtonText}>Удалить альбом</Text>
+                <Ionicons name="trash-outline" size={20} color={theme.error || '#FF3B30'} />
+                <Text style={[styles.deleteButtonText, { color: theme.error || '#FF3B30' }]}>Удалить альбом</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -284,47 +349,44 @@ export default function AlbumEditModal({
         onCancel={handleDeleteCancel}
         onConfirm={handleDeleteConfirm}
         loading={loading}
+        theme={theme}
       />
     </>
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: any) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
+    paddingHorizontal: 10,
     paddingVertical: 12,
-    backgroundColor: 'white',
     borderBottomWidth: 1,
-    borderBottomColor: '#e1e5e9',
   },
   headerTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '600',
-    color: '#1a1a1a',
+    flex: 1,
+    textAlign: 'center',
   },
   cancelButton: {
     paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingHorizontal: 8,
   },
   cancelButtonText: {
-    fontSize: 16,
-    color: '#007AFF',
+    fontSize: 14,
   },
   saveButton: {
     paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingHorizontal: 8,
   },
   saveButtonText: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
-    color: '#007AFF',
   },
   content: {
     flex: 1,
@@ -336,24 +398,19 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 16,
     fontWeight: '500',
-    color: '#1a1a1a',
     marginBottom: 8,
   },
   input: {
-    backgroundColor: 'white',
     borderWidth: 1,
-    borderColor: '#e1e5e9',
     borderRadius: 8,
     paddingHorizontal: 16,
     paddingVertical: 12,
     fontSize: 16,
-    color: '#1a1a1a',
   },
   switchGroup: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: 'white',
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderRadius: 8,
@@ -369,11 +426,9 @@ const styles = StyleSheet.create({
   },
   switchLabel: {
     fontSize: 16,
-    color: '#1a1a1a',
   },
   switchDescription: {
     fontSize: 14,
-    color: '#666',
     marginBottom: 32,
     paddingHorizontal: 4,
   },
@@ -381,84 +436,24 @@ const styles = StyleSheet.create({
     marginTop: 'auto',
     paddingTop: 24,
     borderTopWidth: 1,
-    borderTopColor: '#e1e5e9',
   },
   dangerZoneTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#FF3B30',
     marginBottom: 12,
   },
   deleteButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'white',
     borderWidth: 1,
-    borderColor: '#FF3B30',
     borderRadius: 8,
     paddingVertical: 12,
     paddingHorizontal: 16,
   },
   deleteButtonText: {
     fontSize: 16,
-    color: '#FF3B30',
     marginLeft: 8,
     fontWeight: '500',
-  },
-  // Стили для модального окна подтверждения удаления альбома
-  deleteModalContainer: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-  },
-  deleteModalContent: {
-    backgroundColor: 'white',
-    borderRadius: 16,
-    padding: 24,
-    width: '100%',
-    maxWidth: 340,
-    alignItems: 'center',
-  },
-  deleteModalIcon: {
-    marginBottom: 16,
-  },
-  deleteModalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 12,
-    textAlign: 'center',
-  },
-  deleteModalMessage: {
-    fontSize: 16,
-    color: '#666',
-    marginBottom: 24,
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-  deleteModalButtons: {
-    flexDirection: 'row',
-    width: '100%',
-    gap: 12,
-  },
-  deleteModalButton: {
-    flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 44,
-  },
-  confirmButton: {
-    backgroundColor: '#ff3b30',
-  },
-  confirmButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
   },
 });

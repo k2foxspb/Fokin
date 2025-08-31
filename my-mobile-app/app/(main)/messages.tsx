@@ -430,12 +430,15 @@ const styles = StyleSheet.create({
   avatarContainer: {
     marginRight: 15,
     position: 'relative',
+    borderRadius: 25,
+    overflow: 'hidden',
   },
   avatar: {
     width: 50,
     height: 50,
     borderRadius: 25,
     backgroundColor: '#f0f0f0', // Фон на случай загрузки
+    overflow: 'hidden',
   },
   onlineIndicator: {
     position: 'absolute',

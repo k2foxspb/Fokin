@@ -23,6 +23,11 @@ const CachedImage: React.FC<CachedImageProps> = ({
   const [imageSource, setImageSource] = useState<ImageProps['source'] | null>(null);
   const [error, setError] = useState(false);
 
+  // Проверяем, содержит ли стиль borderRadius
+  const hasBorderRadius = Array.isArray(style) 
+    ? style.some(s => s && typeof s === 'object' && 'borderRadius' in s)
+    : style && typeof style === 'object' && 'borderRadius' in style;
+
   useEffect(() => {
     let mounted = true;
 
@@ -115,7 +120,11 @@ const CachedImage: React.FC<CachedImageProps> = ({
   // Если нет источника изображения вообще
   if (!imageSource) {
     return (
-      <View style={[style, styles.placeholderContainer]}>
+      <View style={[
+        style, 
+        styles.placeholderContainer,
+        hasBorderRadius ? { borderRadius: 9999 } : undefined
+      ]}>
         {loading && showLoader && (
           <ActivityIndicator 
             size="small" 
@@ -130,14 +139,20 @@ const CachedImage: React.FC<CachedImageProps> = ({
     <View style={style}>
       <Image
         source={imageSource}
-        style={[StyleSheet.absoluteFill, style]}
+        style={[
+          StyleSheet.absoluteFill,
+          hasBorderRadius ? { borderRadius: 9999 } : undefined
+        ]}
         onLoadEnd={handleLoadEnd}
         onError={handleError}
         {...props}
       />
 
       {loading && showLoader && (
-        <View style={[styles.loaderContainer, style]}>
+        <View style={[
+          styles.loaderContainer,
+          hasBorderRadius ? { borderRadius: 9999 } : undefined
+        ]}>
           <ActivityIndicator 
             size="small" 
             color={theme.primary} 

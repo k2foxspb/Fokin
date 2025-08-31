@@ -210,10 +210,6 @@ export const registerForPushNotifications = async (): Promise<string | null> => 
 
     if (!token) {
       console.error('🔥 [FCM] Failed to get Firebase FCM token');
-      console.error('🔥 [FCM] Проверьте:');
-      console.error('🔥 [FCM] 1. google-services.json настроен корректно');
-      console.error('🔥 [FCM] 2. Firebase project имеет push notification разрешения');
-      console.error('🔥 [FCM] 3. @react-native-firebase/messaging установлен');
       return null;
     }
 

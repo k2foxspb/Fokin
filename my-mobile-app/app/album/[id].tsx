@@ -22,6 +22,7 @@ import Animated, {
     useSharedValue,
     useAnimatedStyle,
     withSpring,
+    withTiming,
     runOnJS
 } from 'react-native-reanimated';
 import PhotoUploadModal from '../../components/PhotoUploadModal';
@@ -123,7 +124,7 @@ export default function AlbumDetail() {
     const [editModalVisible, setEditModalVisible] = useState(false);
     const [deletingPhoto, setDeletingPhoto] = useState(false);
     const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
-    const [buttonsVisible, setButtonsVisible] = useState(true);
+    const [buttonsVisible, setButtonsVisible] = useState(false);
 
     // Анимационные значения для масштабирования
     const scale = useSharedValue(1);
@@ -136,24 +137,26 @@ export default function AlbumDetail() {
     // Состояние для отслеживания уровня масштабирования
     const [zoomLevel, setZoomLevel] = useState(0); // 0 - обычный, 1 - увеличенный, 2 - максимальный
 
-    // Функции навигации по фотографиям (объявляем с useCallback)
-    const goToNextPhoto = useCallback(() => {
-        if (!album || album.photos.length === 0) return;
+    // Анимированные значения для плавного появления кнопок
+    const buttonsOpacity = useSharedValue(0);
 
-        const nextIndex = (currentPhotoIndex + 1) % album.photos.length;
-        setCurrentPhotoIndex(nextIndex);
-        setSelectedPhoto(album.photos[nextIndex]);
+    // Функции навигации по фотографиям (объявляем с useCallback)
+    // Упрощенные функции навигации
+    const goToNextPhoto = useCallback(() => {
+        if (album && album.photos && currentPhotoIndex < album.photos.length - 1) {
+            setCurrentPhotoIndex(currentPhotoIndex + 1);
+            setSelectedPhoto(album.photos[currentPhotoIndex + 1]);
+        }
     }, [album, currentPhotoIndex]);
 
     const goToPreviousPhoto = useCallback(() => {
-        if (!album || album.photos.length === 0) return;
-
-        const prevIndex = (currentPhotoIndex - 1 + album.photos.length) % album.photos.length;
-        setCurrentPhotoIndex(prevIndex);
-        setSelectedPhoto(album.photos[prevIndex]);
+        if (album && album.photos && currentPhotoIndex > 0) {
+            setCurrentPhotoIndex(currentPhotoIndex - 1);
+            setSelectedPhoto(album.photos[currentPhotoIndex - 1]);
+        }
     }, [album, currentPhotoIndex]);
 
-    // Функция для сброса масштабирования
+    // Функция для сброса масштабирования без изменения состояния кнопок
     const resetZoom = useCallback(() => {
         scale.value = withSpring(1);
         translateX.value = withSpring(0);
@@ -162,6 +165,7 @@ export default function AlbumDetail() {
         lastTranslateX.value = 0;
         lastTranslateY.value = 0;
         setZoomLevel(0);
+        // Не меняем состояние кнопок здесь
     }, [scale, translateX, translateY, lastScale, lastTranslateX, lastTranslateY]);
 
     // Функция для установки конкретного уровня масштабирования
@@ -189,8 +193,10 @@ export default function AlbumDetail() {
 
     // Функция для переключения видимости кнопок
     const toggleButtonsVisibility = useCallback(() => {
-        setButtonsVisible(prev => !prev);
-    }, []);
+        const newValue = !buttonsVisible;
+        setButtonsVisible(newValue);
+        buttonsOpacity.value = withTiming(newValue ? 1 : 0, { duration: 500 });
+    }, [buttonsVisible, buttonsOpacity]);
 
     // Функция для изменения уровня масштабирования
     const handleDoubleTap = useCallback(() => {
@@ -202,12 +208,14 @@ export default function AlbumDetail() {
     const doubleTapGesture = Gesture.Tap()
         .numberOfTaps(2)
         .onEnd(() => {
+            // Правильное использование runOnJS с функцией без параметров
             runOnJS(handleDoubleTap)();
         });
 
     // Обработчик одиночного нажатия для показа/скрытия кнопок
     const singleTapGesture = Gesture.Tap()
         .numberOfTaps(1)
+        .maxDuration(250) // Короткое нажатие
         .onEnd(() => {
             runOnJS(toggleButtonsVisibility)();
         });
@@ -228,20 +236,29 @@ export default function AlbumDetail() {
                 runOnJS(setZoomLevel)(2);
             }
         });
-    const showButtonsDelayed = useCallback(() => {
-        setTimeout(() => {
-            setButtonsVisible(true);
-        }, 300);
-    }, []);
+    // Убираем неиспользуемую функцию
 
     // Обработчик жестов перетаскивания
-    const panGesture = Gesture.Pan()
-    .onStart(() => {
-        if (scale.value <= 1.2) {
-            runOnJS(setButtonsVisible)(false);
+    // Создаем простую функцию для навигации
+    const navigateToIndex = useCallback((newIndex: number) => {
+        if (album && newIndex >= 0 && newIndex < album.photos.length) {
+            setCurrentPhotoIndex(newIndex);
+            setSelectedPhoto(album.photos[newIndex]);
         }
+    }, [album]);
+
+    // Переменная для отслеживания расстояния свайпа
+    const translationX = useSharedValue(0);
+
+    const panGesture = Gesture.Pan()
+    .onBegin(() => {
+        // Сбрасываем расстояние при начале свайпа
+        translationX.value = 0;
     })
     .onUpdate((event) => {
+        // Сохраняем текущее смещение
+        translationX.value = event.translationX;
+
         if (scale.value > 1) {
             translateX.value = event.translationX + lastTranslateX.value;
             translateY.value = event.translationY + lastTranslateY.value;
@@ -251,32 +268,41 @@ export default function AlbumDetail() {
         lastTranslateX.value = translateX.value;
         lastTranslateY.value = translateY.value;
 
+        // Включаем перелистывание с простой реализацией
         if (scale.value <= 1.2) {
             const threshold = 50;
-            const velocity = Math.abs(event.velocityX);
 
-            if (Math.abs(event.translationX) > threshold || velocity > 500) {
-                if (event.translationX < -threshold || event.velocityX < -500) {
-                    runOnJS(goToNextPhoto)();
-                } else if (event.translationX > threshold || event.velocityX > 500) {
-                    runOnJS(goToPreviousPhoto)();
+            if (Math.abs(event.translationX) > threshold) {
+
+                if (event.translationX < -threshold) {
+                    // Следующее фото (свайп влево)
+                    runOnJS(navigateToIndex)(currentPhotoIndex + 1);
+                } else if (event.translationX > threshold) {
+                    // Предыдущее фото (свайп вправо)
+                    runOnJS(navigateToIndex)(currentPhotoIndex - 1);
                 }
-
-                // Вызываем функцию БЕЗ setTimeout внутри runOnJS
-                runOnJS(showButtonsDelayed)();
-            } else {
-                runOnJS(setButtonsVisible)(true);
             }
         }
     });
 
 
 
-    // Комбинированный жест
-    const combinedGesture = Gesture.Simultaneous(
-        Gesture.Exclusive(doubleTapGesture, singleTapGesture),
+    // Исключаем конфликты между тапом и свайпом
+    const tapGestures = Gesture.Exclusive(
+        doubleTapGesture,
+        singleTapGesture
+    );
+
+    // Комбинированный жест для масштабирования и панорамирования
+    const zoomPanGestures = Gesture.Simultaneous(
         pinchGesture,
         panGesture
+    );
+
+    // Используем Race, чтобы только один из жестов сработал
+    const combinedGesture = Gesture.Race(
+        tapGestures,
+        zoomPanGestures
     );
 
     // Анимированный стиль для изображения
@@ -287,6 +313,13 @@ export default function AlbumDetail() {
                 {translateX: translateX.value},
                 {translateY: translateY.value},
             ],
+        };
+    });
+
+    // Анимированный стиль для кнопок
+    const buttonsAnimatedStyle = useAnimatedStyle(() => {
+        return {
+            opacity: buttonsOpacity.value,
         };
     });
 
@@ -301,7 +334,6 @@ export default function AlbumDetail() {
                     headers: {Authorization: `Token ${token}`}
                 }
             );
-            console.log('Current user:', response.data.username);
             setCurrentUser(response.data.username);
         } catch (error) {
             console.log('Error fetching current user:', error);
@@ -316,7 +348,7 @@ export default function AlbumDetail() {
                 return;
             }
 
-            console.log('Fetching album with ID:', id);
+
             const response = await axios.get(
                 `${API_CONFIG.BASE_URL}/photo/api/album/${id}/`,
                 {
@@ -324,14 +356,14 @@ export default function AlbumDetail() {
                 }
             );
 
-            console.log('Full Album response:', JSON.stringify(response.data, null, 2));
+
 
             // Фильтруем фотографии, убираем те, у которых нет image_url
             const filteredPhotos = response.data.photos.filter((photo: Photo) =>
                 photo.image_url && photo.thumbnail_url
             );
 
-            console.log('Filtered photos:', filteredPhotos.length, 'from', response.data.photos.length);
+
 
             setAlbum({
                 ...response.data,
@@ -363,7 +395,7 @@ export default function AlbumDetail() {
 
             console.log('🔗 Sending DELETE request to:', `${API_CONFIG.BASE_URL}photo/${selectedPhoto.id}/`);
 
-            const response = await axios.delete(
+                await axios.delete(
                 `${API_CONFIG.BASE_URL}/photo/api/photo/${selectedPhoto.id}/`,
                 {
                     headers: {
@@ -375,7 +407,8 @@ export default function AlbumDetail() {
                 }
             );
 
-            console.log('✅ Delete response status:', response.status);
+            // Фотография успешно удалена
+            console.log('✅ Фотография успешно удалена');
             Alert.alert('Успех', 'Фотография удалена');
 
             // Закрываем все модальные окна
@@ -386,7 +419,8 @@ export default function AlbumDetail() {
             await fetchAlbum();
 
         } catch (error: any) {
-            console.error('❌ Error deleting photo:', error);
+            // Сохраняем только логирование ошибок
+            console.error('Error deleting photo:', error);
 
             let errorMessage = 'Не удалось удалить фотографию';
 
@@ -445,19 +479,31 @@ export default function AlbumDetail() {
         }
     }, [id]);
 
-    // Сброс масштабирования при смене фото
+    // Безопасный сброс масштабирования при смене фото
     useEffect(() => {
-        resetZoom();
-
-    }, [selectedPhoto, resetZoom]);
+        if (selectedPhoto) {
+            try {
+                // Безопасно сбрасываем масштаб
+                scale.value = 1;
+                translateX.value = 0;
+                translateY.value = 0;
+                lastScale.value = 1;
+                lastTranslateX.value = 0;
+                lastTranslateY.value = 0;
+                setZoomLevel(0);
+            } catch (error) {
+                console.error('Error resetting zoom:', error);
+            }
+        }
+    }, [selectedPhoto]);
 
     const handlePhotoPress = (photo: Photo, index: number) => {
         console.log('Photo pressed:', photo.id, 'at index:', index);
         setSelectedPhoto(photo);
         setCurrentPhotoIndex(index);
         setModalVisible(true);
-        setButtonsVisible(true)
-
+        setButtonsVisible(false);
+        buttonsOpacity.value = 0;
     };
 
     const closeModal = () => {
@@ -466,7 +512,8 @@ export default function AlbumDetail() {
         setSelectedPhoto(null);
         setDeleteConfirmVisible(false);
         resetZoom();
-        setButtonsVisible(true);
+        setButtonsVisible(false);
+        buttonsOpacity.value = 0;
     };
 
     const handleAlbumUpdated = () => {
@@ -483,14 +530,7 @@ export default function AlbumDetail() {
         currentUser === (album as any).creator?.username
     );
 
-    console.log('Owner check:', {
-        currentUser,
-        albumUser: album?.user?.username,
-        isOwner
-    });
-
     const renderPhoto = ({item, index}: { item: Photo; index: number }) => {
-        console.log(`Rendering photo ${index}:`, item.id, item.thumbnail_url);
         return (
             <TouchableOpacity
                 style={styles.photoItem}
@@ -504,15 +544,13 @@ export default function AlbumDetail() {
                         uri={item.thumbnail_url}
                     style={styles.photoImage}
                     resizeMode="cover"
-                    onError={(error) => console.log('Image load error:', error)}
+                    onError={(error) => console.error('Image load error:', error)}
                 />
             </TouchableOpacity>
         );
     };
 
     const albumId = id ? parseInt(id.toString(), 10) : undefined;
-    console.log('Parsed albumId:', albumId);
-
     const styles = createStyles(theme);
 
     if (loading) {
@@ -628,7 +666,7 @@ export default function AlbumDetail() {
                                 <Animated.View
                                     style={[
                                         styles.modalHeader,
-                                        {opacity: buttonsVisible ? 1 : 0}
+                                        buttonsAnimatedStyle
                                     ]}
                                 >
                                     {/* Кнопка удаления слева - показываем только владельцу */}
@@ -640,9 +678,15 @@ export default function AlbumDetail() {
                                             activeOpacity={0.7}
                                         >
                                             <Ionicons name="trash" size={24} color={theme.error}/>
-                                            <Text style={[styles.buttonText, {color: '#ffffff'}]}>Удалить</Text>
                                         </TouchableOpacity>
                                     )}
+
+                                    {/* Индикатор позиции фото по центру */}
+                                    <Animated.View style={styles.photoIndicator}>
+                                        <Text style={styles.photoIndicatorText}>
+                                            {currentPhotoIndex + 1} / {album.photos.length}
+                                        </Text>
+                                    </Animated.View>
 
                                     {/* Кнопка закрытия справа */}
                                     <TouchableOpacity
@@ -654,7 +698,6 @@ export default function AlbumDetail() {
                                         activeOpacity={0.7}
                                     >
                                         <Ionicons name="close" size={24} color="white"/>
-                                        <Text style={styles.buttonText}>Закрыть</Text>
                                     </TouchableOpacity>
                                 </Animated.View>
                             )}
@@ -671,28 +714,42 @@ export default function AlbumDetail() {
                                                 resizeMode="contain"
                                             />
 
-                                            {/* Индикатор позиции фото */}
-                                            {buttonsVisible && (
-                                                <Animated.View
-                                                    style={[
-                                                        styles.photoIndicator,
-                                                        {opacity: buttonsVisible ? 1 : 0}
-                                                    ]}
-                                                >
-                                                    <Text style={styles.photoIndicatorText}>
-                                                        {currentPhotoIndex + 1} / {album.photos.length}
-                                                    </Text>
-                                                </Animated.View>
-                                            )}
 
                                             {/* Индикатор масштабирования */}
                                             {zoomLevel > 0 && buttonsVisible && (
-                                                <Animated.View style={styles.zoomIndicator}>
+                                                <Animated.View 
+                                                    style={[
+                                                        styles.zoomIndicator,
+                                                        buttonsAnimatedStyle
+                                                    ]}
+                                                >
                                                     <Text style={styles.zoomIndicatorText}>
                                                         {zoomLevel === 1 ? '2x' : '3x'}
                                                     </Text>
                                                 </Animated.View>
                                             )}
+
+                                            {/* Дата поверх изображения */}
+                                            {buttonsVisible && selectedPhoto && (
+                                                <Animated.View
+                                                    style={[
+                                                        styles.photoDateOverlay,
+                                                        buttonsAnimatedStyle
+                                                    ]}
+                                                >
+                                                    <Text style={styles.photoDateOverlayText}>
+                                                        {new Date(selectedPhoto.uploaded_at).toLocaleDateString('ru-RU', {
+                                                            day: '2-digit',
+                                                            month: '2-digit',
+                                                            year: 'numeric',
+                                                            hour: '2-digit',
+                                                            minute: '2-digit'
+                                                        })}
+                                                    </Text>
+                                                </Animated.View>
+                                            )}
+
+
                                         </View>
                                     </GestureDetector>
                                 )}
@@ -702,29 +759,13 @@ export default function AlbumDetail() {
                                     <Animated.Text
                                         style={[
                                             styles.caption,
-                                            {opacity: buttonsVisible ? 1 : 0}
+                                            buttonsAnimatedStyle
                                         ]}
                                     >
                                         {selectedPhoto.caption}
                                     </Animated.Text>
                                 )}
 
-                                {buttonsVisible && selectedPhoto && (
-                                    <Animated.Text
-                                        style={[
-                                            styles.photoDate,
-                                            {opacity: buttonsVisible ? 1 : 0}
-                                        ]}
-                                    >
-                                        {new Date(selectedPhoto.uploaded_at).toLocaleDateString('ru-RU', {
-                                            day: '2-digit',
-                                            month: '2-digit',
-                                            year: 'numeric',
-                                            hour: '2-digit',
-                                            minute: '2-digit'
-                                        })}
-                                    </Animated.Text>
-                                )}
                             </View>
                         </View>
                     </GestureHandlerRootView>
@@ -906,19 +947,16 @@ const createStyles = (theme: any) => StyleSheet.create({
         zIndex: 10,
     },
     modalContent: {
+        flex: 1,
         width: '100%',
-        height: '100%',
         justifyContent: 'center',
         alignItems: 'center',
     },
     modalButton: {
-        flexDirection: 'row',
         alignItems: 'center',
         backgroundColor: 'rgba(0, 0, 0, 0.8)',
-        paddingHorizontal: 20,
-        paddingVertical: 12,
+        padding: 12,
         borderRadius: 25,
-        minWidth: 120,
         justifyContent: 'center',
         elevation: 5,
         shadowColor: '#000',
@@ -951,18 +989,20 @@ const createStyles = (theme: any) => StyleSheet.create({
         borderRadius: 12,
     },
     photoIndicator: {
-        position: 'absolute',
-        bottom: 20,
-        alignSelf: 'center',
-        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
         paddingHorizontal: 15,
         paddingVertical: 8,
-        borderRadius: 20,
+        marginHorizontal: 10,
     },
     photoIndicatorText: {
         color: 'white',
         fontSize: 16,
         fontWeight: 'bold',
+        textShadowColor: 'rgba(0, 0, 0, 0.75)',
+        textShadowOffset: {width: 1, height: 1},
+        textShadowRadius: 3,
     },
     zoomIndicator: {
         position: 'absolute',
@@ -982,10 +1022,13 @@ const createStyles = (theme: any) => StyleSheet.create({
         color: 'white',
         fontSize: 16,
         textAlign: 'center',
-        marginTop: 20,
-        paddingHorizontal: 20,
+        position: 'absolute',
+        bottom: 80,
+        left: 20,
+        right: 20,
         backgroundColor: 'rgba(0, 0, 0, 0.6)',
         paddingVertical: 10,
+        paddingHorizontal: 20,
         borderRadius: 8,
     },
     photoDate: {
@@ -997,6 +1040,20 @@ const createStyles = (theme: any) => StyleSheet.create({
         paddingHorizontal: 12,
         paddingVertical: 6,
         borderRadius: 12,
+    },
+    photoDateOverlay: {
+        position: 'absolute',
+        bottom: 20,
+        alignSelf: 'center',
+        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: 15,
+    },
+    photoDateOverlayText: {
+        color: 'white',
+        fontSize: 13,
+        fontWeight: '500',
     },
 });
 

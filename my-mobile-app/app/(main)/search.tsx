@@ -129,35 +129,20 @@ export default function SearchScreen() {
     fetchUsers();
   }, []);
 
-  // Автоматическое обновление интерфейса при изменении статусов пользователей
+  // Оптимизированное обновление интерфейса при изменении статусов пользователей
   useEffect(() => {
-    const statusEntries = Array.from(userStatuses.entries());
-    console.log('👥 [SEARCH] User statuses updated:', statusEntries);
-    console.log('👥 [SEARCH] Map size:', userStatuses.size);
-
-    // Принудительно обновляем компонент при изменении статусов
-    setForceUpdateTrigger(prev => prev + 1);
-
-    // Также обновляем массив пользователей для гарантированного перерендера
-    setUsers(prevUsers => {
-      console.log('👥 [SEARCH] Force updating users array, count:', prevUsers.length);
-      return [...prevUsers];
-    });
-  }, [userStatuses]);
-
-  // Дополнительный эффект для отслеживания изменений размера Map
-  useEffect(() => {
-    console.log('👥 [SEARCH] Force update trigger changed:', forceUpdateTrigger);
-  }, [forceUpdateTrigger]);
+    // Обновляем только, если есть пользователи и статусы изменились
+    if (users.length > 0) {
+      // Используем forceUpdateTrigger для обновления компонента
+      // без лишнего обновления массива users
+      setForceUpdateTrigger(prev => prev + 1);
+    }
+  }, [userStatuses, users.length]);
 
   const renderUser = ({ item }: { item: User }) => {
     const currentStatus = getUserStatus(item);
     const isOnline = currentStatus === 'online';
 
-    // Логирование для отладки (можно убрать в продакшене)
-    if (userStatuses.has(item.id)) {
-      console.log(`👥 [SEARCH] Rendering user ${item.username} with status: ${currentStatus} (realtime: ${userStatuses.get(item.id)}, original: ${item.is_online})`);
-    }
 
     return (
       <TouchableOpacity
@@ -302,8 +287,8 @@ const createStyles = (theme: any) => StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    borderWidth: 2,
-    borderColor: theme.border,
+    backgroundColor: 'rgba(0, 0, 0, 0.05)',
+    overflow: 'hidden',
   },
   onlineIndicator: {
     position: 'absolute',
@@ -312,7 +297,7 @@ const createStyles = (theme: any) => StyleSheet.create({
     width: 14,
     height: 14,
     borderRadius: 7,
-    borderWidth: 2,
+    borderWidth: 1.5,
     borderColor: theme.surface,
     elevation: 2,
     shadowColor: theme.text,

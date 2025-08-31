@@ -14,7 +14,6 @@ export default function TabBar() {
   useEffect(() => {
     const checkAndRequestPermissions = async () => {
       if (!debugInfo.hasPermission) {
-        console.log('🔔 [TabBar] No notification permissions detected, requesting...');
         try {
           const granted = await requestPermissions();
           if (!granted) {
