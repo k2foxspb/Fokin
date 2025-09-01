@@ -133,12 +133,6 @@ class PushNotificationService:
     @classmethod
     def _send_firebase_notification(cls, fcm_tokens: List[str], sender_name: str, message_text: str, chat_id: Optional[int] = None):
         """Отправляет Push-уведомления через Firebase FCM"""
-        logger.info(f"🔥 [FCM] === STARTING FIREBASE NOTIFICATION PROCESS ===")
-        logger.info(f"🔥 [FCM] Tokens to send to: {len(fcm_tokens)}")
-        logger.info(f"🔥 [FCM] First token preview: {fcm_tokens[0][:30] if fcm_tokens else 'None'}...")
-        logger.info(f"🔥 [FCM] Sender: {sender_name}")
-        logger.info(f"🔥 [FCM] Message: {message_text[:50]}...")
-        logger.info(f"🔥 [FCM] Chat ID: {chat_id}")
 
         # Проверяем, что токены переданы
         if not fcm_tokens:
@@ -229,44 +223,50 @@ class PushNotificationService:
                 logger.info(f"🔥 [FCM] === PROCESSING BATCH {batch_num} ===")
                 logger.info(f"🔥 [FCM] Batch {batch_num}: {len(batch_tokens)} tokens")
 
-                # Создаем multicast сообщение
-                logger.info(f"🔥 [FCM] Creating multicast message for batch {batch_num}...")
+                # Создаем список индивидуальных сообщений
+                logger.info(f"🔥 [FCM] Creating individual messages for batch {batch_num}...")
                 try:
-                    multicast_message = messaging.MulticastMessage(
-                        notification=notification,
-                        android=android_config,
-                        apns=apns_config,
-                        data=data_payload,
-                        tokens=batch_tokens
-                    )
-                    logger.info(f"🔥 [FCM] ✅ Multicast message created for batch {batch_num}")
+                    messages = []
+                    for token in batch_tokens:
+                        message = messaging.Message(
+                            notification=notification,
+                            android=android_config,
+                            apns=apns_config,
+                            data=data_payload,
+                            token=token
+                        )
+                        messages.append(message)
+                    logger.info(f"🔥 [FCM] ✅ {len(messages)} individual messages created for batch {batch_num}")
                 except Exception as msg_error:
-                    logger.error(f"🔥 [FCM] ❌ Error creating multicast message: {msg_error}")
+                    logger.error(f"🔥 [FCM] ❌ Error creating individual messages: {msg_error}")
                     continue
 
                 try:
                     logger.info(f"🔥 [FCM] Sending batch {batch_num} to Firebase...")
-                    # Отправляем батч
-                    response = messaging.send_multicast(multicast_message)
+                    # Отправляем сообщения по одному
+                    batch_success_count = 0
+                    batch_failed_count = 0
+
+                    for idx, message in enumerate(messages):
+                        try:
+                            message_id = messaging.send(message)
+                            batch_success_count += 1
+                            logger.debug(f"Message sent successfully to token {batch_tokens[idx][:20]}..., ID: {message_id}")
+                        except Exception as send_error:
+                            batch_failed_count += 1
+                            token = batch_tokens[idx]
+                            logger.error(f"Failed to send to token {token[:20]}...: {send_error}")
+
+                            # Проверяем, является ли токен недействительным
+                            error_str = str(send_error).lower()
+                            if 'unregistered' in error_str or 'invalid' in error_str or 'not found' in error_str:
+                                failed_tokens.append(token)
+                                logger.warning(f"Invalid token detected: {token[:20]}...")
 
                     logger.info(f"🔥 [FCM] ✅ Batch {batch_num} response received")
-                    logger.info(f"🔥 [FCM] Batch {batch_num} result: {response.success_count}/{len(batch_tokens)} successful")
+                    logger.info(f"🔥 [FCM] Batch {batch_num} result: {batch_success_count}/{len(batch_tokens)} successful")
 
-                    success_count += response.success_count
-
-                    # Обрабатываем ошибки
-                    if response.failure_count > 0:
-                        for idx, resp in enumerate(response.responses):
-                            if not resp.success:
-                                token = batch_tokens[idx]
-                                error = resp.exception
-                                logger.error(f"Failed to send to token {token[:20]}...: {error}")
-
-                                # Проверяем, является ли токен недействительным
-                                if hasattr(error, 'code'):
-                                    if error.code in ['UNREGISTERED', 'INVALID_ARGUMENT']:
-                                        failed_tokens.append(token)
-                                        logger.warning(f"Invalid token detected: {token[:20]}...")
+                    success_count += batch_success_count
 
                 except Exception as e:
                     logger.error(f"Error sending Firebase batch: {str(e)}")
