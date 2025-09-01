@@ -127,7 +127,7 @@ export default function ChatScreen() {
                 try {
                     const data = JSON.parse(event.data);
                     console.log('💬 [CHAT] Parsed data:', {
-                        type: data.type,
+                        type: data.type || 'chat_message', // Устанавливаем дефолтный тип для обычных сообщений
                         hasMessage: !!data.message,
                         hasError: !!data.error,
                         allKeys: Object.keys(data),
@@ -147,8 +147,8 @@ export default function ChatScreen() {
                         return;
                     }
 
-                    // Обработка сообщений чата
-                    if (data.message) {
+                    // Обработка сообщений чата (включая сообщения без типа)
+                    if (data.message && (!data.type || data.type === 'chat_message')) {
                         console.log('💬 [CHAT] Processing chat message:', {
                             id: data.id,
                             message: data.message,

@@ -105,8 +105,27 @@ const getErrorDetails = (error: unknown) => {
 };
 
 // ======== НАСТРОЙКА УВЕДОМЛЕНИЙ ========
-// Настройка обработчика уведомлений будет выполнена в Firebase сервисе
-// чтобы избежать конфликтов между Firebase и Expo
+// Показываем локальные уведомления ТОЛЬКО для активного приложения
+// Для закрытого приложения Firebase покажет системные уведомления автоматически
+Notifications.setNotificationHandler({
+  handleNotification: async (notification) => {
+    const AppState = require('react-native').AppState;
+    const isActive = AppState.currentState === 'active';
+
+    if (isActive) {
+      console.log('🔔 [EXPO] Showing local notification for active app');
+    } else {
+      console.log('🔔 [EXPO] Blocking local notification - Firebase will handle background notifications');
+    }
+
+    return {
+      shouldShowBanner: isActive,
+      shouldShowList: isActive, 
+      shouldPlaySound: isActive,
+      shouldSetBadge: true,
+    };
+  },
+});
 
 // Настройка Android каналов уведомлений
 const setupAndroidNotificationChannels = async () => {
@@ -249,46 +268,23 @@ export const addNotificationResponseListener = (handler: (response: Notification
   return Notifications.addNotificationResponseReceivedListener(handler);
 };
 
-// Отправка локального уведомления
-export const sendLocalNotification = async (notification: {
-  title: string;
-  body: string;
-  data?: any;
-  channelId?: string;
-}) => {
-  try {
-    const notificationContent: Notifications.NotificationContentInput = {
-      title: notification.title,
-      body: notification.body,
-      data: notification.data,
-      sound: 'default',
-      priority: Notifications.AndroidNotificationPriority.HIGH,
-      sticky: false,
-      autoDismiss: true,
-    };
-
-    if (Platform.OS === 'android') {
-      notificationContent.categoryIdentifier = notification.channelId || 'default';
-    }
-
-    const notificationId = await Notifications.scheduleNotificationAsync({
-      content: notificationContent,
-      trigger: null,
-    });
-
-    return notificationId;
-  } catch (error) {
-    throw error;
-  }
-};
-
-// Отправка уведомления высокого приоритета
+// Отправка уведомления высокого приоритета - только для активного приложения
 export const sendHighPriorityNotification = async (notification: {
   title: string;
   body: string;
   data?: any;
 }) => {
   try {
+    const AppState = require('react-native').AppState;
+    const isActive = AppState.currentState === 'active';
+
+    if (!isActive) {
+      console.log('🔔 [NOTIFICATION] Blocking local notification - app in background, Firebase will handle');
+      return 'blocked-background-mode';
+    }
+
+    console.log('🔔 [NOTIFICATION] Creating notification for active app:', notification.title);
+
     const notificationContent: Notifications.NotificationContentInput = {
       title: notification.title,
       body: notification.body,

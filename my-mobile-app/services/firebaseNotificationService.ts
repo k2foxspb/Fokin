@@ -2,19 +2,22 @@ import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { API_CONFIG } from '../config';
-import { 
-  requestPermission, 
-  getToken, 
-  onMessage, 
-  onTokenRefresh,
-  getInitialNotification,
-  onNotificationOpenedApp,
-  setBackgroundMessageHandler,
+import messaging, {
+  FirebaseMessagingTypes, 
   isDeviceRegisteredForRemoteMessages,
   registerDeviceForRemoteMessages,
-  AuthorizationStatus,
-  FirebaseMessagingTypes
+  getToken,
+  onMessage,
+  onNotificationOpenedApp,
+  getInitialNotification,
+  onTokenRefresh
 } from '@react-native-firebase/messaging';
+import {addNotificationReceivedListener, setNotificationHandler} from "expo-notifications";
+import {log} from "expo/build/devtools/logger";
+import {async} from "@firebase/util";
+
+// Импортируем типы отдельно
+const AuthorizationStatus = messaging.AuthorizationStatus;
 
 // Интерфейсы для типизации
 interface MessageData {
@@ -74,6 +77,7 @@ class FirebaseNotificationService {
   private lastChatId: string | null = null;
   private static navigationInProgress: boolean = false;
   private static lastGlobalNavigation: number = 0;
+  private processedNotifications: Set<string> = new Set();
 
   public static getInstance(): FirebaseNotificationService {
     if (!FirebaseNotificationService.instance) {
@@ -137,14 +141,22 @@ class FirebaseNotificationService {
         throw new Error(`Firebase App failed: ${appError}`);
       }
 
-      // Проверяем доступность Messaging модулей
+      // Проверяем доступность Messaging модулей через экземпляр
       console.log('🔥 [FCM] Checking Firebase Messaging modules...');
 
-      const isRequestPermissionAvailable = typeof requestPermission === 'function';
-      const isGetTokenAvailable = typeof getToken === 'function';
+      const messagingInstance = messaging();
+      console.log('🔥 [FCM] Messaging instance:', !!messagingInstance);
+
+      // Проверяем методы через экземпляр, а не импорты
+      // Проверяем методы напрямую через экземпляр
+      // Проверяем доступность ключевых методов
+      const isRequestPermissionAvailable = typeof messagingInstance.requestPermission === 'function';
+      const isGetTokenAvailable = typeof messagingInstance.getToken === 'function';
+      const isOnMessageAvailable = typeof messagingInstance.onMessage === 'function';
 
       console.log('🔥 [FCM] requestPermission available:', isRequestPermissionAvailable);
       console.log('🔥 [FCM] getToken available:', isGetTokenAvailable);
+      console.log('🔥 [FCM] onMessage available:', isOnMessageAvailable);
 
       if (!isRequestPermissionAvailable || !isGetTokenAvailable) {
         console.error('🔥 [FCM] ❌ Firebase Messaging functions not available');
@@ -160,7 +172,10 @@ class FirebaseNotificationService {
         // Для iOS - проверяем разрешения
         console.log('🔥 [FCM] iOS detected - checking permissions...');
         try {
-          const authStatus = await requestPermission();
+          const authStatus = await messaging().requestPermission();
+
+          // Используем константы из messaging()
+          const AuthorizationStatus = messaging.AuthorizationStatus;
           const hasFirebasePermissions = 
             authStatus === AuthorizationStatus.AUTHORIZED || 
             authStatus === AuthorizationStatus.PROVISIONAL;
@@ -180,27 +195,14 @@ class FirebaseNotificationService {
 
       console.log('🔥 [FCM] ✅ Firebase messaging is available');
 
-      // Настройка фонового обработчика
-      try {
-        setBackgroundMessageHandler(async (remoteMessage: FirebaseMessagingTypes.RemoteMessage) => {
-          console.log('🔥 [FCM] Background message received:', {
-            messageId: remoteMessage.messageId,
-            from: remoteMessage.from,
-            data: remoteMessage.data,
-            notification: remoteMessage.notification
-          });
-
-          try {
-            await this.handleBackgroundMessage(remoteMessage);
-          } catch (bgError: unknown) {
-            console.error('🔥 [FCM] Background message handler error:', bgError);
-          }
-        });
-
-        console.log('🔥 [FCM] ✅ Background message handler configured');
-      } catch (bgHandlerError) {
-        console.error('🔥 [FCM] Background handler setup failed:', bgHandlerError);
-      }
+      // Устанавливаем background handler для сохранения данных (без дублирующих уведомлений)
+      messaging().setBackgroundMessageHandler(async (remoteMessage) => {
+        console.log('🔥 [FCM] Background message received:', remoteMessage.messageId);
+        // Только сохраняем данные, НЕ создаем дополнительные уведомления
+        // Firebase уже показал системное уведомление автоматически
+        await this.handleBackgroundMessage(remoteMessage);
+      });
+      console.log('🔥 [FCM] Background message handler set (data-only, no duplicate notifications)');
 
       console.log('🔥 [FCM] === FIREBASE INITIALIZATION COMPLETED ===');
 
@@ -225,7 +227,8 @@ class FirebaseNotificationService {
         timestamp: new Date().toISOString()
       });
 
-      // Сохраняем информацию о новом сообщении без создания дополнительного уведомления
+      // Сохраняем информацию о новом сообщении БЕЗ создания дополнительного уведомления
+      // Firebase уже показал системное уведомление автоматически
       if (remoteMessage.data?.type === 'message_notification') {
         const messageInfo: BackgroundMessageInfo = {
           chatId: remoteMessage.data.chatId,
@@ -236,14 +239,15 @@ class FirebaseNotificationService {
         };
 
         await AsyncStorage.setItem('lastBackgroundMessage', JSON.stringify(messageInfo));
-        console.log('🔥 [FCM] Background message info saved to storage (no duplicate notification created)');
+        console.log('🔥 [FCM] Background message info saved - Firebase already showed system notification');
       }
 
-      // Увеличиваем счётчик бейджа
+      // Обновляем только бейдж без создания уведомления
       try {
         const Notifications = require('expo-notifications');
         const currentBadge: number = await Notifications.getBadgeCountAsync();
         await Notifications.setBadgeCountAsync(currentBadge + 1);
+        console.log('🔥 [FCM] Badge updated to:', currentBadge + 1);
       } catch (badgeError: unknown) {
         console.log('🔥 [FCM] Badge update error:', badgeError);
       }
@@ -290,19 +294,40 @@ class FirebaseNotificationService {
 
   // Запрос разрешений с Firebase приоритетом
   async requestPermissions(): Promise<boolean> {
-    console.log('🔔 [PUSH] Requesting permissions...');
+    console.log('🔔 [PUSH] === REQUESTING PERMISSIONS ===');
 
-    // Приоритет Firebase
+    // Сначала запрашиваем разрешения Expo для локальных уведомлений
+    try {
+      const Notifications = require('expo-notifications');
+      console.log('🔔 [PUSH] Requesting Expo notification permissions...');
+
+      const { status: currentStatus } = await Notifications.getPermissionsAsync();
+      console.log('🔔 [PUSH] Current Expo permissions:', currentStatus);
+
+      if (currentStatus !== 'granted') {
+        const { status: newStatus } = await Notifications.requestPermissionsAsync();
+        console.log('🔔 [PUSH] New Expo permissions:', newStatus);
+      }
+    } catch (expoError) {
+      console.warn('🔔 [PUSH] Expo permissions request failed:', expoError);
+    }
+
+    // Приоритет Firebase для remote notifications
     if (this.isFirebaseAvailable) {
       try {
-        const authStatus = await requestPermission();
+        console.log('🔥 [FCM] Requesting Firebase permissions...');
+        const authStatus = await messaging().requestPermission();
         const enabled =
           authStatus === AuthorizationStatus.AUTHORIZED ||
           authStatus === AuthorizationStatus.PROVISIONAL;
 
+        console.log('🔥 [FCM] Firebase auth status:', authStatus, 'enabled:', enabled);
+
         if (enabled && Platform.OS === 'ios') {
           const isRegistered = await isDeviceRegisteredForRemoteMessages();
+          console.log('🔥 [FCM] iOS device registered for remote messages:', isRegistered);
           if (!isRegistered) {
+            console.log('🔥 [FCM] Registering iOS device for remote messages...');
             await registerDeviceForRemoteMessages();
           }
         }
@@ -310,7 +335,7 @@ class FirebaseNotificationService {
         console.log('🔥 [FCM] Firebase permissions granted:', enabled);
         return enabled;
       } catch (error) {
-        console.log('🔥 [FCM] Firebase permissions failed:', error);
+        console.error('🔥 [FCM] Firebase permissions failed:', error);
       }
     }
 
@@ -322,7 +347,7 @@ class FirebaseNotificationService {
       console.log('📱 [EXPO] Expo permissions granted:', enabled);
       return enabled;
     } catch (error) {
-      console.log('🔔 [PUSH] All permission requests failed:', error);
+      console.error('🔔 [PUSH] All permission requests failed:', error);
       return false;
     }
   }
@@ -387,7 +412,7 @@ class FirebaseNotificationService {
       }
 
       console.log('🔥 [FCM] Requesting new Firebase FCM token...');
-      const fcmToken = await getToken();
+      const fcmToken = await messaging().getToken();
 
       if (!fcmToken) {
         throw new Error('Firebase getToken() returned null');
@@ -490,85 +515,206 @@ class FirebaseNotificationService {
   }
 
   // Настройка обработчиков уведомлений
-  private setupNotificationListeners(): void {
+  private async setupNotificationListeners(): Promise<void> {
+    console.log('🔥 [FCM] === setupNotificationListeners CALLED ===');
+    console.log('🔥 [FCM] Firebase available:', this.isFirebaseAvailable);
+
     if (!this.isFirebaseAvailable) {
+      console.log('🔥 [FCM] Firebase not available, setting up Expo listeners...');
       this.setupExpoListeners();
       return;
     }
 
+    console.log('🔥 [FCM] === STARTING FIREBASE LISTENERS SETUP ===');
+
     try {
-      console.log('🔥 [FCM] Setting up Firebase listeners...');
+      console.log('🔥 [FCM] Step 1: Setting up Firebase listeners...');
 
-      // Настраиваем единый обработчик уведомлений для Firebase
+      console.log('🔥 [FCM] Step 2: Importing Notifications module...');
       const Notifications = require('expo-notifications');
-      Notifications.setNotificationHandler({
-        handleNotification: async (notification: any) => {
-          console.log('🔥 [FCM] Handling Firebase notification display:', notification.request.identifier);
+      console.log('🔥 [FCM] ✅ Notifications module imported');
 
-          // Для Firebase уведомлений в фоне - не показываем дублирующие уведомления
-          const isBackground = notification.request.content.data?.fromBackground === true;
+      console.log('🔥 [FCM] Step 3: Skipping local notification handler - Firebase only mode');
 
-          return {
-            shouldShowList: !isBackground, // Не показываем если это фоновое уведомление
-            shouldPlaySound: true,
-            shouldSetBadge: true,
-            shouldShowBanner: !isBackground,
-          };
-        },
-      });
+      // ЛОКАЛЬНЫЕ УВЕДОМЛЕНИЯ ПОЛНОСТЬЮ ОТКЛЮЧЕНЫ
+      // Все уведомления приходят только через Firebase FCM
+      console.log('🔥 [FCM] ✅ Local notifications disabled - Firebase FCM only');
 
-      // Обработка уведомлений на переднем плане
-      onMessage(async (remoteMessage: FirebaseMessagingTypes.RemoteMessage) => {
-        console.log('🔥 [FCM] Foreground message received:', remoteMessage);
+      console.log('🔥 [FCM] Step 4: Platform-specific setup...');
+
+      // Дополнительно для Android - создаем высокоприоритетный канал
+      if (Platform.OS === 'android') {
+        console.log('🔥 [FCM] Step 4a: Creating Android notification channel...');
+        try {
+          await Notifications.setNotificationChannelAsync('urgent-messages', {
+            name: 'Срочные сообщения',
+            importance: Notifications.AndroidImportance.MAX, // Максимальная важность
+            vibrationPattern: [0, 250, 250, 250],
+            lightColor: '#FF0000',
+            sound: 'default',
+            enableVibrate: true,
+            showBadge: true,
+            lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+            bypassDnd: true, // Обход режима "Не беспокоить"
+          });
+          console.log('🔥 [FCM] ✅ High priority channel created');
+        } catch (channelError) {
+          console.error('🔥 [FCM] Failed to create notification channel:', channelError);
+        }
+      }
+
+      console.log('🔥 [FCM] Step 5: Setting up onMessage listener...');
+
+      // КРИТИЧНО: Сохраняем ссылку на unsubscribe функцию
+      try {
+        const onMessageUnsubscribe = messaging().onMessage(async (remoteMessage: FirebaseMessagingTypes.RemoteMessage) => {
+        console.log('🔥 [FCM] === 🚨 REAL-TIME FOREGROUND MESSAGE RECEIVED 🚨 ===');
+        console.log('🔥 [FCM] Message ID:', remoteMessage.messageId);
+        console.log('🔥 [FCM] From:', remoteMessage.from);
+        console.log('🔥 [FCM] Sent time:', remoteMessage.sentTime);
+        console.log('🔥 [FCM] Remote message FULL:', JSON.stringify(remoteMessage, null, 2));
 
         const messageData: MessageData = {
           title: remoteMessage.notification?.title || 'Новое сообщение',
-          body: remoteMessage.notification?.body || '',
+          body: remoteMessage.notification?.body || 'У вас новое сообщение',
           data: remoteMessage.data || {},
           isFirebase: true
         };
 
-        // Вызываем все зарегистрированные обработчики
-        this.messageHandlers.forEach(handler => {
+        console.log('🔥 [FCM] ===== PROCESSING HANDLERS =====');
+        console.log('🔥 [FCM] Available handlers:', this.messageHandlers.length);
+
+        // Вызываем handlers НЕМЕДЛЕННО
+        this.messageHandlers.forEach((handler, index) => {
           try {
+            console.log(`🔥 [FCM] 🎯 Executing handler ${index + 1}...`);
             handler(messageData);
+            console.log(`🔥 [FCM] ✅ Handler ${index + 1} executed`);
           } catch (error: unknown) {
-            console.error('🔥 [Firebase] Error in message handler:', error);
+            console.error(`🔥 [FCM] ❌ Handler ${index + 1} failed:`, error);
           }
         });
 
-        // Показываем локальное уведомление если нужно
-        if (remoteMessage.data?.type === 'message_notification') {
-          await this.showLocalNotification(messageData);
+        // ПРИНУДИТЕЛЬНОЕ уведомление для активного приложения
+        const AppState = require('react-native').AppState;
+        const currentState = AppState.currentState;
+        console.log('🔥 [FCM] Current app state:', currentState);
+
+        if (currentState === 'active') {
+          console.log('🔥 [FCM] App is active - creating local notification for user visibility');
+
+          try {
+            // Создаем локальное уведомление для активного приложения
+            const activeNotificationId = await Notifications.scheduleNotificationAsync({
+              content: {
+                title: messageData.title,
+                body: messageData.body,
+                data: {
+                  ...messageData.data,
+                  source: 'firebase_active',
+                  timestamp: Date.now(),
+                },
+                sound: 'default',
+                ...(Platform.OS === 'android' && {
+                  channelId: 'urgent-messages',
+                }),
+              },
+              trigger: null,
+            });
+
+            console.log('🔥 [FCM] ✅ Local notification created for active app:', activeNotificationId);
+
+          } catch (error) {
+            console.error('🔥 [FCM] ❌ Active app notification failed:', error);
+          }
+        } else {
+          console.log('🔥 [FCM] App in background - Firebase system notification will be shown automatically');
         }
       });
 
-      // Обработка открытия приложения через уведомление
-      onNotificationOpenedApp((remoteMessage: FirebaseMessagingTypes.RemoteMessage) => {
-        console.log('🔥 [FCM] Notification opened app:', remoteMessage);
-        this.handleNotificationTap(remoteMessage);
-      });
+        // ВАЖНО: Сохраняем unsubscribe функцию для очистки
+        (this as any).onMessageUnsubscribe = onMessageUnsubscribe;
 
-      // Проверка начального уведомления (если приложение было закрыто)
-      getInitialNotification()
-        .then((remoteMessage: FirebaseMessagingTypes.RemoteMessage | null) => {
-          if (remoteMessage) {
-            console.log('🔥 [FCM] Initial notification:', remoteMessage);
-            // Добавляем небольшую задержку для инициализации навигации
-            setTimeout(() => {
-              this.handleNotificationTap(remoteMessage);
-            }, 2000);
-          }
+        console.log('🔥 [FCM] ✅ onMessage listener ACTIVATED and READY for real-time messages');
+
+      } catch (onMessageError) {
+        console.error('🔥 [FCM] ❌ Failed to set up onMessage listener:', onMessageError);
+        throw onMessageError;
+      }
+
+      console.log('🔥 [FCM] Step 6: Setting up notification opened listeners...');
+
+      try {
+        // Обработка открытия приложения через уведомление
+        messaging().onNotificationOpenedApp((remoteMessage: FirebaseMessagingTypes.RemoteMessage) => {
+          console.log('🔥 [FCM] Notification opened app:', remoteMessage);
+          this.handleNotificationTap(remoteMessage);
         });
 
-      // Обработка обновления токена
-      onTokenRefresh(async (token: string) => {
-        console.log('🔥 [FCM] Token refreshed:', token.substring(0, 20) + '...');
-        await AsyncStorage.setItem('fcmToken', token);
-        await this.saveTokenToServer(token);
-      });
+        console.log('🔥 [FCM] ✅ onNotificationOpenedApp listener set');
 
-      console.log('🔥 [FCM] Firebase listeners configured');
+        // Проверка начального уведомления (если приложение было закрыто)
+        messaging().getInitialNotification()
+          .then((remoteMessage: FirebaseMessagingTypes.RemoteMessage | null) => {
+            if (remoteMessage) {
+              console.log('🔥 [FCM] Initial notification:', remoteMessage);
+              // Добавляем небольшую задержку для инициализации навигации
+              setTimeout(() => {
+                this.handleNotificationTap(remoteMessage);
+              }, 2000);
+            } else {
+              console.log('🔥 [FCM] No initial notification');
+            }
+          })
+          .catch((initialError) => {
+            console.error('🔥 [FCM] Error getting initial notification:', initialError);
+          });
+
+        console.log('🔥 [FCM] ✅ getInitialNotification listener set');
+
+        // Обработка обновления токена
+        messaging().onTokenRefresh(async (token: string) => {
+          console.log('🔥 [FCM] Token refreshed:', token.substring(0, 20) + '...');
+          await AsyncStorage.setItem('fcmToken', token);
+          await this.saveTokenToServer(token);
+        });
+
+        console.log('🔥 [FCM] ✅ onTokenRefresh listener set');
+
+      } catch (listenersError) {
+        console.error('🔥 [FCM] ❌ Error setting up notification listeners:', listenersError);
+      }
+
+      console.log('🔥 [FCM] === ALL FIREBASE LISTENERS CONFIGURED ===');
+
+      // КРИТИЧНО: Принудительная активация Firebase messaging
+      console.log('🔥 [FCM] === ACTIVATING FIREBASE MESSAGING ===');
+      try {
+        // Получаем экземпляр messaging для активации
+        const messagingInstance = messaging();
+        console.log('🔥 [FCM] Messaging instance active:', !!messagingInstance);
+
+        // Проверяем статус разрешений еще раз
+        const authStatus = await messagingInstance.hasPermission();
+        console.log('🔥 [FCM] Current permission status:', authStatus);
+
+        // Принудительно активируем токен
+        const currentToken = await messagingInstance.getToken();
+        console.log('🔥 [FCM] Current active token length:', currentToken?.length);
+
+        // ВАЖНО: Принудительно подписываемся на топик для тестирования
+        try {
+          await messagingInstance.subscribeToTopic('debug_notifications');
+          console.log('🔥 [FCM] ✅ Subscribed to debug topic');
+        } catch (topicError) {
+          console.log('🔥 [FCM] Topic subscription failed (normal):', topicError);
+        }
+
+        console.log('🔥 [FCM] ✅ Firebase messaging fully activated and listening');
+
+      } catch (activationError) {
+        console.error('🔥 [FCM] ❌ Firebase activation error:', activationError);
+      }
 
     } catch (error) {
       console.error('🔥 [Firebase] Error setting up Firebase listeners:', error);
@@ -576,7 +722,7 @@ class FirebaseNotificationService {
     }
   }
 
-  // Fallback Expo слушатели
+  // Fallback Expo слушатели  
   private setupExpoListeners(): void {
     try {
       const Notifications = require('expo-notifications');
@@ -585,10 +731,10 @@ class FirebaseNotificationService {
         handleNotification: async (notification) => {
           console.log('📱 [EXPO] Handling notification display:', notification.request.identifier);
           return {
+            shouldShowBanner: true,
             shouldShowList: true,
             shouldPlaySound: true,
             shouldSetBadge: true,
-            shouldShowBanner: true,
           };
         },
       });
@@ -650,61 +796,189 @@ class FirebaseNotificationService {
     }
   }
 
-  // Публичный метод для инициализации сервиса
+  // Публичный метод для инициализации сервиса с полной диагностикой
   async initialize(): Promise<InitResult> {
     try {
-      console.log('🔥 [Firebase] Initializing notification service...');
+      console.log('🔥 [Firebase] === FULL DIAGNOSTIC INITIALIZATION START ===');
+      console.log('🔥 [Firebase] Environment:', __DEV__ ? 'development' : 'PRODUCTION');
+      console.log('🔥 [Firebase] Platform:', Platform.OS);
+      console.log('🔥 [Firebase] Firebase available:', this.isFirebaseAvailable);
 
-      // Запрашиваем разрешения
+      // ПРИНУДИТЕЛЬНАЯ проверка Firebase конфигурации в продакшене
+      if (!__DEV__) {
+        console.log('🔥 [PROD] === PRODUCTION FIREBASE CHECK ===');
+        try {
+          const firebase = require('@react-native-firebase/app').default;
+          const app = firebase.app();
+          console.log('🔥 [PROD] Firebase Project ID:', app.options.projectId);
+          console.log('🔥 [PROD] Firebase App ID:', app.options.appId);
+
+          if (!app.options.projectId) {
+            console.error('🔥 [PROD] ❌ КРИТИЧЕСКАЯ ОШИБКА: Firebase Project ID не найден!');
+            console.error('🔥 [PROD] ❌ Проверьте google-services.json/GoogleService-Info.plist');
+          }
+        } catch (firebaseError) {
+          console.error('🔥 [PROD] ❌ Firebase configuration error:', firebaseError);
+        }
+      }
+
+      // ШАГ 1: Запрашиваем разрешения с детальной диагностикой
+      console.log('🔥 [Firebase] STEP 1: Requesting permissions...');
       const hasPermission = await this.requestPermissions();
+      console.log('🔥 [Firebase] Permission result:', hasPermission);
+
       if (!hasPermission) {
+        console.error('🔥 [Firebase] ❌ Permissions denied - stopping initialization');
+        // Тихо логируем ошибку разрешений - без алертов  
+        console.log('🔥 [Firebase] Permission denied - notifications disabled');
         return { success: false, error: 'Permission denied' };
       }
 
-      // Получаем токен
-      const token = await this.getToken();
+      // ШАГ 2: Получаем токен с повторными попытками
+      console.log('🔥 [Firebase] STEP 2: Getting token...');
+      let token = await this.getToken();
+
+      // Повторная попытка получения токена
       if (!token) {
+        console.warn('🔥 [Firebase] First token attempt failed, retrying...');
+        await new Promise(resolve => setTimeout(resolve, 2000)); // Ждем 2 секунды
+        token = await this.getToken();
+      }
+
+      if (!token) {
+        console.error('🔥 [Firebase] ❌ No token received after retry');
         return { success: false, error: 'No token received' };
       }
 
-      // ВАЖНО: Определяем реальный тип токена
+      // ШАГ 3: Проверяем и логируем тип токена
       const isRealFirebaseToken = !token.startsWith('ExponentPushToken');
       const tokenType = isRealFirebaseToken ? 'Native Firebase FCM' : 'Expo (Firebase unavailable)';
 
-      console.log(`🔔 [TOKEN TYPE] ${tokenType}`);
-      console.log(`🔔 [TOKEN] ${token.substring(0, 30)}...`);
+      console.log('🔔 [TOKEN] === TOKEN ANALYSIS ===');
+      console.log(`🔔 [TOKEN] Type: ${tokenType}`);
+      console.log(`🔔 [TOKEN] Length: ${token.length} characters`);
+      console.log(`🔔 [TOKEN] Preview: ${token.substring(0, 30)}...`);
+      console.log(`🔔 [TOKEN] Is Firebase: ${isRealFirebaseToken}`);
 
       if (!isRealFirebaseToken) {
         console.warn('⚠️ [WARNING] Using Expo token - Firebase FCM not available in this build');
         console.warn('⚠️ [WARNING] Background notifications will be limited');
+        console.warn('⚠️ [WARNING] Проверьте Firebase конфигурацию в продакшене');
       } else {
-        console.log('🔥 [FCM] ✅ Native Firebase FCM token detected!');
+        console.log('🔥 [FCM] ✅ Native Firebase FCM token detected - full functionality available!');
       }
 
-      // Сохраняем токен на сервере
-      const tokenSaved = await this.saveTokenToServer(token);
+      // ШАГ 4: Сохраняем токен на сервере с повторными попытками
+      console.log('🔥 [Firebase] STEP 4: Saving token to server...');
+      let tokenSaved = await this.saveTokenToServer(token);
+
+      // Повторная попытка сохранения
       if (!tokenSaved) {
-        console.warn('🔥 [Firebase] Token not saved to server, but continuing...');
+        console.warn('🔥 [Firebase] First save attempt failed, retrying...');
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        tokenSaved = await this.saveTokenToServer(token);
       }
 
-      // Настраиваем слушатели
-      this.setupNotificationListeners();
+      if (!tokenSaved) {
+        console.error('🔥 [Firebase] ❌ Token not saved to server after retry');
+        console.error('🔥 [Firebase] ❌ Push уведомления могут не работать');
+      } else {
+        console.log('🔥 [Firebase] ✅ Token successfully saved to server');
+      }
 
+      // ШАГ 5: СНАЧАЛА устанавливаем флаг инициализации
+      console.log('🔥 [Firebase] STEP 5: Setting initialization flag...');
       this.isInitialized = true;
 
-      console.log(`🔥 [Firebase] ✅ Notifications initialized successfully with ${tokenType}`);
+      // ШАГ 6: ЗАТЕМ настраиваем слушатели (это важно для правильного порядка)
+      console.log('🔥 [Firebase] STEP 6: Setting up notification listeners...');
+      try {
+        await this.setupNotificationListeners();
+        console.log('🔥 [Firebase] ✅ Notification listeners setup completed');
+      } catch (listenersError) {
+        console.error('🔥 [Firebase] ❌ Listeners setup failed:', listenersError);
+        // Не прерываем инициализацию из-за ошибки listeners
+      }
 
-      return { success: true, token, tokenType: isRealFirebaseToken ? 'fcm' : 'expo' };
+      // ШАГ 7: Проверяем итоговую конфигурацию ПОСЛЕ setup  
+      console.log('🔥 [Firebase] === FINAL CONFIGURATION CHECK ===');
+      console.log('🔥 [Firebase] Initialized:', this.isInitialized);
+      console.log('🔥 [Firebase] Firebase available:', this.isFirebaseAvailable);
+      console.log('🔥 [Firebase] Message handlers (after setup):', this.messageHandlers.length);
+      console.log('🔥 [Firebase] Token saved:', tokenSaved);
+
+      // В продакшене - дополнительная проверка
+      if (!__DEV__) {
+        console.log('🔥 [PROD] === PRODUCTION VERIFICATION ===');
+
+        // Сохраняем диагностическую информацию
+        const diagnosticInfo = {
+          timestamp: new Date().toISOString(),
+          platform: Platform.OS,
+          tokenType: isRealFirebaseToken ? 'fcm' : 'expo',
+          tokenLength: token.length,
+          firebaseAvailable: this.isFirebaseAvailable,
+          tokenSaved: tokenSaved,
+          hasPermissions: hasPermission
+        };
+
+        await AsyncStorage.setItem('notificationDiagnostic', JSON.stringify(diagnosticInfo));
+        console.log('🔥 [PROD] Diagnostic info saved to AsyncStorage');
+
+        // Показываем пользователю статус
+        const Alert = require('react-native').Alert;
+        Alert.alert(
+          'Уведомления настроены', 
+          `Тип: ${isRealFirebaseToken ? 'Firebase (полная поддержка)' : 'Expo (ограниченная поддержка)'}\nСтатус: ${tokenSaved ? 'Активны' : 'Проблемы с сервером'}`,
+          [{ text: 'OK' }]
+        );
+      }
+
+      console.log(`🔥 [Firebase] === INITIALIZATION COMPLETED SUCCESSFULLY ===`);
+      console.log(`🔥 [Firebase] Final status: ${tokenType}, Token saved: ${tokenSaved}`);
+
+      return { 
+        success: true, 
+        token, 
+        tokenType: isRealFirebaseToken ? 'fcm' : 'expo',
+        tokenSaved 
+      };
 
     } catch (error) {
-      console.error('🔥 [Firebase] Initialization error:', error);
+      console.error('🔥 [Firebase] ❌ CRITICAL INITIALIZATION ERROR:', error);
+      console.error('🔥 [Firebase] Error details:', String(error));
+
+      // В продакшене сохраняем ошибку для анализа
+      if (!__DEV__) {
+        try {
+          const errorInfo = {
+            timestamp: new Date().toISOString(),
+            error: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : 'No stack',
+            platform: Platform.OS
+          };
+          await AsyncStorage.setItem('notificationInitError', JSON.stringify(errorInfo));
+        } catch (saveError) {
+          console.error('🔥 [Firebase] Could not save error info:', saveError);
+        }
+      }
+
       return { success: false, error };
     }
   }
 
   // Метод для добавления обработчиков сообщений
   addMessageHandler(handler: MessageHandler): void {
+    console.log('🔥 [FCM] Adding message handler, current count:', this.messageHandlers.length);
     this.messageHandlers.push(handler);
+    console.log('🔥 [FCM] Message handler added, new count:', this.messageHandlers.length);
+  }
+
+  // Метод для очистки всех handlers
+  clearMessageHandlers(): void {
+    console.log('🔥 [FCM] Clearing all message handlers, current count:', this.messageHandlers.length);
+    this.messageHandlers = [];
+    console.log('🔥 [FCM] All message handlers cleared');
   }
 
   // Метод для установки навигационной ссылки
@@ -729,24 +1003,7 @@ class FirebaseNotificationService {
     }
   }
 
-  // Показ локального уведомления
-  private async showLocalNotification(messageData: MessageData): Promise<void> {
-    try {
-      const Notifications = require('expo-notifications');
-
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title: messageData.title,
-          body: messageData.body,
-          data: messageData.data,
-          sound: 'default',
-        },
-        trigger: null,
-      });
-    } catch (error: unknown) {
-      console.log('🔥 [Firebase] Could not show local notification:', error);
-    }
-  }
+  // ЛОКАЛЬНЫЕ УВЕДОМЛЕНИЯ ПОЛНОСТЬЮ УДАЛЕНЫ - ТОЛЬКО FIREBASE FCM
 
   // Проверка отложенной навигации
   private async checkPendingNavigation(): Promise<void> {
@@ -769,6 +1026,76 @@ class FirebaseNotificationService {
       }
     } catch (error) {
       console.log('🔥 [Firebase] Error checking pending navigation:', error);
+    }
+  }
+
+  // Тестовый метод для проверки активности Firebase
+  async testFirebaseConnection(): Promise<void> {
+    try {
+      console.log('🧪 [FCM-TEST] === TESTING FIREBASE CONNECTION ===');
+
+      const messagingInstance = messaging();
+      const token = await messagingInstance.getToken();
+      const hasPermission = await messagingInstance.hasPermission();
+
+      console.log('🧪 [FCM-TEST] Has permission:', hasPermission);
+      console.log('🧪 [FCM-TEST] Token active:', !!token);
+      console.log('🧪 [FCM-TEST] Handlers registered:', this.messageHandlers.length);
+      console.log('🧪 [FCM-TEST] Firebase available:', this.isFirebaseAvailable);
+
+      // Попытка отправить тестовое сообщение через Firebase Console
+      console.log('🧪 [FCM-TEST] Send test message to this token:');
+      console.log('🧪 [FCM-TEST] Token:', token);
+
+      // КРИТИЧНО: Тестируем onMessage handler принудительно
+      console.log('🧪 [FCM-TEST] === TESTING onMessage HANDLER MANUALLY ===');
+
+      try {
+        // Имитируем Firebase сообщение для тестирования handler
+        const testMessage = {
+          messageId: 'test-' + Date.now(),
+          notification: {
+            title: '🧪 Test Notification',
+            body: 'This is a test message to verify handlers work'
+          },
+          data: {
+            type: 'message_notification',
+            chatId: '46',
+            senderId: '9',
+            timestamp: Date.now()
+          },
+          from: 'test',
+          sentTime: Date.now()
+        };
+
+        console.log('🧪 [FCM-TEST] Simulating Firebase message...');
+        console.log('🧪 [FCM-TEST] Test message:', JSON.stringify(testMessage, null, 2));
+
+        // Вызываем handlers напрямую для тестирования
+        const messageData = {
+          title: testMessage.notification.title,
+          body: testMessage.notification.body,
+          data: testMessage.data,
+          isFirebase: true
+        };
+
+        console.log('🧪 [FCM-TEST] Calling handlers directly with test data...');
+        this.messageHandlers.forEach((handler, index) => {
+          try {
+            console.log(`🧪 [FCM-TEST] Testing handler ${index + 1}...`);
+            handler(messageData);
+            console.log(`🧪 [FCM-TEST] ✅ Handler ${index + 1} responded successfully`);
+          } catch (handlerError) {
+            console.error(`🧪 [FCM-TEST] ❌ Handler ${index + 1} failed:`, handlerError);
+          }
+        });
+
+      } catch (testError) {
+        console.error('🧪 [FCM-TEST] Manual handler test failed:', testError);
+      }
+
+    } catch (error) {
+      console.error('🧪 [FCM-TEST] Test failed:', error);
     }
   }
 

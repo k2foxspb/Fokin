@@ -78,18 +78,12 @@ export default function Feed() {
         checkAuth();
     }, []);
 
-    // Запрос разрешений на уведомления при первом запуске
+    // Тихо запрашиваем разрешения на уведомления при первом запуске
     useEffect(() => {
         const setupNotifications = async () => {
             if (debugInfo && !debugInfo.hasPermission) {
-                Alert.alert(
-                    'Уведомления',
-                    'Разрешите уведомления, чтобы получать информацию о новых сообщениях',
-                    [
-                        {text: 'Позже', style: 'cancel'},
-                        {text: 'Разрешить', onPress: () => requestPermissions()}
-                    ]
-                );
+                // Тихо запрашиваем разрешения без алерта
+                await requestPermissions();
             }
         };
 

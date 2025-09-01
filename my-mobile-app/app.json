@@ -33,7 +33,7 @@
       "package": "com.k2foxspb.fokinfun",
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/logo1024.png",
+        "foregroundImage": "./assets/images/logo.png",
         "backgroundColor": "#222222"
       },
       "permissions": [
@@ -99,15 +99,18 @@
         "@react-native-firebase/messaging",
         {
           "android": {
-            "default_notification_channel_id": "messages",
+            "default_notification_channel_id": "default",
             "default_notification_color": "#222222",
             "notification_foreground_service": {
               "enabled": true
             },
-            "requestPermissionsOnAndroid": true
+            "requestPermissionsOnAndroid": true,
+            "notification_android_priority": "high",
+            "notification_android_visibility": "public"
           },
           "ios": {
-            "useProvisionalNotifications": true
+            "useProvisionalNotifications": false,
+            "requestPermissionsOnInit": true
           },
           "backgroundMessageHandler": "./firebaseBackgroundHandler.js"
         }
@@ -118,7 +121,9 @@
       "color": "#222222",
       "androidMode": "default",
       "androidCollapsedTitle": "Новые сообщения",
-      "iosDisplayInForeground": true
+      "iosDisplayInForeground": true,
+      "androidSound": true,
+      "iosSound": true
     },
     "extra": {
       "eas": {

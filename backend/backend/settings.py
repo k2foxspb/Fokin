@@ -9,7 +9,13 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 env.read_env(os.path.join(BASE_DIR, ".env"))
 SECRET_KEY = env('SECRET_KEY')
 DEBUG = env('DEBUG')
-ALLOWED_HOSTS = env.list("ALLOWED_HOSTS")
+ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=[
+    '127.0.0.1',
+    'localhost',
+    '10.112.68.187',  # Ваш IP-адрес
+    '192.168.1.100',
+    '10.0.2.2'
+])
 ROOT_URLCONF = "backend.urls"
 
 CELERY_BROKER_URL = 'redis://127.0.0.1:6379'  # Redis URL

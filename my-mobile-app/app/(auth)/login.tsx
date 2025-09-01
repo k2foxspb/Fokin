@@ -50,11 +50,29 @@ export default function Login() { // Убираем параметр navigation,
     }
 
     setLoading(true);
+
+    // Отладочная информация
+    const loginUrl = `${API_CONFIG.BASE_URL}/authentication/api/login/`;
+    console.log('🔍 [LOGIN] Попытка входа...');
+    console.log('🔍 [LOGIN] URL:', loginUrl);
+    console.log('🔍 [LOGIN] Username:', username.trim());
+    console.log('🔍 [LOGIN] API_CONFIG:', API_CONFIG);
+
     try {
-      const response = await axios.post<LoginResponse>(`${API_CONFIG.BASE_URL}/authentication/api/login/`, {
+      console.log('🔍 [LOGIN] Отправка запроса...');
+
+      const response = await axios.post<LoginResponse>(loginUrl, {
         username: username.trim(),
         password,
+      }, {
+        timeout: 10000, // 10 секунд таймаут
+        headers: {
+          'Content-Type': 'application/json',
+        },
       });
+
+      console.log('✅ [LOGIN] Успешный ответ:', response.status);
+      console.log('✅ [LOGIN] Данные ответа:', response.data);
 
       const { token } = response.data;
 
@@ -64,14 +82,41 @@ export default function Login() { // Убираем параметр navigation,
       // Устанавливаем токен для будущих запросов
       axios.defaults.headers.common['Authorization'] = `Token ${token}`;
 
+      console.log('✅ [LOGIN] Токен сохранен, переход на feed');
       // Переходим на страницу новостей
       router.replace('/(main)/feed');
     } catch (error) {
-      const axiosError = error as AxiosError<{ error: string }>;
-      Alert.alert(
-        'Ошибка',
-        axiosError.response?.data?.error || 'Произошла ошибка при входе'
-      );
+      console.error('❌ [LOGIN] Ошибка входа:', error);
+
+      const axiosError = error as AxiosError<{ error: string; detail?: string }>;
+
+      // Подробная диагностика ошибки
+      if (axiosError.response) {
+        console.error('❌ [LOGIN] Ответ сервера:', axiosError.response.status);
+        console.error('❌ [LOGIN] Данные ошибки:', axiosError.response.data);
+        console.error('❌ [LOGIN] Заголовки:', axiosError.response.headers);
+      } else if (axiosError.request) {
+        console.error('❌ [LOGIN] Запрос отправлен, но нет ответа:', axiosError.request);
+        console.error('❌ [LOGIN] Возможные причины: сервер недоступен, проблемы с сетью');
+      } else {
+        console.error('❌ [LOGIN] Ошибка настройки запроса:', axiosError.message);
+      }
+
+      let errorMessage = 'Произошла ошибка при входе';
+
+      if (axiosError.response?.data?.error) {
+        errorMessage = axiosError.response.data.error;
+      } else if (axiosError.response?.data?.detail) {
+        errorMessage = axiosError.response.data.detail;
+      } else if (axiosError.code === 'NETWORK_ERROR' || axiosError.code === 'ERR_NETWORK') {
+        errorMessage = 'Не удается подключиться к серверу. Проверьте подключение к интернету и убедитесь, что сервер запущен.';
+      } else if (axiosError.code === 'ECONNREFUSED') {
+        errorMessage = 'Соединение отклонено. Убедитесь, что сервер запущен на порту 8000.';
+      } else if (axiosError.code === 'ETIMEDOUT' || axiosError.code === 'ECONNABORTED') {
+        errorMessage = 'Превышено время ожидания. Сервер не отвечает.';
+      }
+
+      Alert.alert('Ошибка', errorMessage);
     } finally {
       setLoading(false);
     }

@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { View, TouchableOpacity, Text, StyleSheet, Alert } from 'react-native';
+import { View, TouchableOpacity, Text, StyleSheet} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router, usePathname } from 'expo-router';
 import { useNotifications } from '../contexts/NotificationContext';
@@ -10,24 +10,13 @@ export default function TabBar() {
   const { unreadCount, requestPermissions, debugInfo } = useNotifications();
   const { theme } = useTheme();
 
-  // Запрашиваем разрешения при первом рендере TabBar
+  // Тихо запрашиваем разрешения при первом рендере TabBar
   useEffect(() => {
     const checkAndRequestPermissions = async () => {
       if (!debugInfo.hasPermission) {
         try {
-          const granted = await requestPermissions();
-          if (!granted) {
-            // Показываем пользователю информацию о необходимости разрешений
-            setTimeout(() => {
-              Alert.alert(
-                'Уведомления отключены',
-                'Для получения уведомлений о новых сообщениях разрешите приложению отправлять уведомления в настройках устройства.',
-                [
-                  { text: 'Понятно', style: 'default' }
-                ]
-              );
-            }, 2000);
-          }
+          await requestPermissions();
+          // Убираем алерт - уведомления приходят только через Firebase
         } catch (error) {
           console.error('❌ [TabBar] Error requesting permissions:', error);
         }
