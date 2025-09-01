@@ -2,6 +2,7 @@ import json
 import logging
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
+from asgiref.sync import sync_to_async
 from django.contrib.auth.models import AnonymousUser
 from django.contrib.auth import get_user_model
 from django.utils import timezone
@@ -10,6 +11,8 @@ from .models import Room, Message, PrivateChatRoom, PrivateMessage
 from django.db.models import Q, Count
 import asyncio
 from typing import Dict, List, Any
+
+from .push_notifications import PushNotificationService
 
 logger = logging.getLogger('chatapp.consumers')
 
@@ -570,58 +573,95 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
 
     async def send_push_notification_if_needed(self, message_instance):
         """
-        НОВОЕ: Отправляем push-уведомление если получатель не в сети
+        Отправляем push-уведомление если нужно
         """
+        logger.info(f"🔥 [PUSH] === CHECKING PUSH NOTIFICATION NEEDED ===")
+        logger.info(f"🔥 [PUSH] Message ID: {message_instance.id}")
+        logger.info(f"🔥 [PUSH] Sender: {message_instance.sender.username} (ID: {message_instance.sender.id})")
+        logger.info(f"🔥 [PUSH] Message: {message_instance.message[:50]}...")
+
         try:
-            logger.info(
-                f"🔔 [PUSH] Starting push notification check for message to {message_instance.recipient.username}")
+            # Получаем получателя сообщения
+            recipient = None
+            if hasattr(message_instance, 'recipient'):
+                recipient = message_instance.recipient
+                logger.info(f"🔥 [PUSH] Recipient from message.recipient: {recipient}")
+            else:
+                # Определяем получателя из участников комнаты (исключая отправителя)
+                room_users = message_instance.room.participants.exclude(id=message_instance.sender.id)
+                recipient = room_users.first() if room_users.exists() else None
+                logger.info(f"🔥 [PUSH] Room participants (excluding sender): {room_users.count()}")
+                if recipient:
+                    logger.info(f"🔥 [PUSH] Selected recipient: {recipient.username} (ID: {recipient.id})")
 
-            from .push_notifications import PushNotificationService
-
-            recipient = message_instance.recipient
-            sender = message_instance.sender
-
-            # Проверяем, есть ли у получателя push токен
-            if not hasattr(recipient, 'expo_push_token') or not recipient.expo_push_token:
-                logger.info(f"User {recipient.username} has no push token")
+            if not recipient:
+                logger.error(f"🔥 [PUSH] ❌ No recipient found for message {message_instance.id}")
                 return
-            logger.info(f"🔔 [PUSH] User {recipient.username} has push token: {recipient.expo_push_token[:20]}...")
 
-            # Проверяем, подключен ли получатель к WebSocket (онлайн)
-            recipient_online = await self.is_user_online(recipient.id)
-            logger.info(f"🔔 [PUSH] User {recipient.username} online status: {recipient_online}")
+            logger.info(f"🔥 [PUSH] ✅ Recipient determined: {recipient.username} (ID: {recipient.id})")
 
+            # Проверяем, онлайн ли получатель
+            recipient_online = self.is_user_online(recipient.id)
+            logger.info(f"🔥 [PUSH] Recipient {recipient.username} online status: {recipient_online}")
 
+            # КРИТИЧНО: Отправляем push уведомления НЕЗАВИСИМО от онлайн статуса для отладки
+            logger.info(f"🔥 [PUSH] === FORCING PUSH NOTIFICATION SEND FOR DEBUG ===")
+            logger.info(f"🔥 [PUSH] Normal logic would be: send only if offline ({not recipient_online})")
+            logger.info(f"🔥 [PUSH] DEBUG: Sending push notification regardless of online status")
 
-
-            # Отправляем push-уведомление в отдельном потоке
-            await database_sync_to_async(self._send_push_notification_sync)(
-                recipient.expo_push_token,
-                sender.username,
-                message_instance.message,
-                message_instance.room.id
-            )
+            # Отправляем push-уведомление асинхронно
+            try:
+                await sync_to_async(self._send_push_notification_sync)(message_instance, recipient)
+                logger.info(f"🔥 [PUSH] ✅ Push notification send attempt completed")
+            except Exception as send_error:
+                logger.error(f"🔥 [PUSH] ❌ Push notification send failed: {send_error}")
+                logger.error(f"🔥 [PUSH] ❌ Send error details: {str(send_error)}")
 
         except Exception as e:
-            logger.error(f"Error in send_push_notification_if_needed: {e}")
+            logger.error(f"🔥 [PUSH] ❌ Critical error in push notification logic: {e}")
+            logger.error(f"🔥 [PUSH] ❌ Error type: {type(e).__name__}")
+            logger.error(f"🔥 [PUSH] ❌ Error details: {str(e)}")
 
-    def _send_push_notification_sync(self, push_token, sender_name, message_text, chat_id):
+    def _send_push_notification_sync(self, message_instance, recipient):
         """
-        Синхронная функция для отправки push-уведомления
+        Синхронная версия отправки push-уведомления
         """
+        logger.info(f"🔥 [PUSH-SYNC] === SENDING PUSH NOTIFICATION ===")
+        logger.info(f"🔥 [PUSH-SYNC] Target user: {recipient.username} (ID: {recipient.id})")
+        logger.info(f"🔥 [PUSH-SYNC] Message: {message_instance.message}")
+        logger.info(f"🔥 [PUSH-SYNC] Sender: {message_instance.sender.username}")
+        logger.info(f"🔥 [PUSH-SYNC] Chat ID: {message_instance.room.id}")
+
+        # Получаем push токены получателя
+        logger.info(f"🔥 [PUSH-SYNC] Initializing PushNotificationService...")
+        push_service = PushNotificationService()
+
         try:
-            from .push_notifications import PushNotificationService
+            logger.info(f"🔥 [PUSH-SYNC] Calling send_message_notification with:")
+            logger.info(f"🔥 [PUSH-SYNC]   recipient_id: {recipient.id}")
+            logger.info(f"🔥 [PUSH-SYNC]   sender_name: {message_instance.sender.username}")
+            logger.info(f"🔥 [PUSH-SYNC]   message: {message_instance.message[:100]}...")
+            logger.info(f"🔥 [PUSH-SYNC]   chat_id: {message_instance.room.id}")
+            logger.info(f"🔥 [PUSH-SYNC]   sender_id: {message_instance.sender.id}")
 
-            PushNotificationService.send_message_notification(
-                fcm_tokens=[push_token],
-                sender_name=sender_name,
-                message_text=message_text,
-                chat_id=chat_id
+            # Отправляем уведомление
+            result = push_service.send_message_notification(
+                recipient_id=recipient.id,
+                sender_name=message_instance.sender.username,
+                message=message_instance.message,
+                chat_id=message_instance.room.id,
+                sender_id=message_instance.sender.id
             )
-            logger.info(f"Push notification sent successfully to {sender_name}")
+
+            logger.info(f"🔥 [PUSH-SYNC] ✅ Push notification service returned: {result}")
+            logger.info(f"🔥 [PUSH-SYNC] ✅ Push notification for {recipient.username} sent successfully")
 
         except Exception as e:
-            logger.error(f"Error sending push notification: {e}")
+            logger.error(f"🔥 [PUSH-SYNC] ❌ Error sending push notification for {recipient.username}: {e}")
+            logger.error(f"🔥 [PUSH-SYNC] ❌ Error type: {type(e).__name__}")
+            logger.error(f"🔥 [PUSH-SYNC] ❌ Error details: {str(e)}")
+            import traceback
+            logger.error(f"🔥 [PUSH-SYNC] ❌ Traceback: {traceback.format_exc()}")
 
     async def is_user_online(self, user_id):
         """
