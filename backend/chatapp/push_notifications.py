@@ -54,47 +54,76 @@ class PushNotificationService:
         Отправляет Push-уведомление о новом сообщении ТОЛЬКО через Firebase FCM
         """
         logger.info(f"🔔 [PUSH] === STARTING FIREBASE FCM PUSH NOTIFICATION ===")
-        logger.info(f"🔔 [PUSH] Tokens count: {len(fcm_tokens)}")
-        logger.info(f"🔔 [PUSH] Sender: {sender_name}")
-        logger.info(f"🔔 [PUSH] Message: {message_text[:50]}...")
-        logger.info(f"🔔 [PUSH] Chat ID: {chat_id}")
+        logger.info(f"🔔 [PUSH] Received parameters:")
+        logger.info(f"🔔 [PUSH]   fcm_tokens: {fcm_tokens}")
+        logger.info(f"🔔 [PUSH]   tokens count: {len(fcm_tokens)}")
+        logger.info(f"🔔 [PUSH]   sender_name: {sender_name}")
+        logger.info(f"🔔 [PUSH]   message_text: {message_text[:100]}...")
+        logger.info(f"🔔 [PUSH]   chat_id: {chat_id}")
 
+        # ПРОВЕРКА 1: Есть ли токены вообще?
         if not fcm_tokens:
-            logger.warning("🔥 [FCM] ❌ No FCM tokens provided")
+            logger.error("🔥 [FCM] ❌ EARLY RETURN: No FCM tokens provided")
             cls._suggest_token_migration()
             return False
 
-        # Фильтруем и удаляем Expo токены из базы данных
+        logger.info(f"🔔 [PUSH] ✅ CHECK 1 PASSED: {len(fcm_tokens)} tokens provided")
+
+        # ПРОВЕРКА 2: Фильтруем и удаляем Expo токены из базы данных
+        logger.info(f"🔔 [PUSH] === TOKEN FILTERING ===")
         expo_tokens = [token for token in fcm_tokens if token.startswith('ExponentPushToken')]
         fcm_tokens_only = [token for token in fcm_tokens if not token.startswith('ExponentPushToken')]
 
+        logger.info(f"🔔 [PUSH] Filtering results:")
+        logger.info(f"🔔 [PUSH]   Original tokens: {len(fcm_tokens)}")
+        logger.info(f"🔔 [PUSH]   Expo tokens found: {len(expo_tokens)}")
+        logger.info(f"🔔 [PUSH]   FCM tokens remaining: {len(fcm_tokens_only)}")
+
         # Массово удаляем все найденные Expo токены
         if expo_tokens:
-            logger.warning(f"🔥 [FCM] 🚨 Обнаружено {len(expo_tokens)} Expo токенов - начинаем очистку из БД")
-            cls._cleanup_expo_tokens(expo_tokens)
+            logger.warning(f"🔥 [FCM] 🚨 FOUND {len(expo_tokens)} Expo tokens - cleaning from DB")
+            for i, token in enumerate(expo_tokens):
+                logger.warning(f"🔥 [FCM] Expo token {i+1}: {token[:30]}...")
 
-            # Также выполняем полную очистку всех Expo токенов
+            cls._cleanup_expo_tokens(expo_tokens)
             cls._cleanup_all_expo_tokens()
 
+        # ПРОВЕРКА 3: Остались ли валидные FCM токены?
         if not fcm_tokens_only:
-            logger.warning("🔥 [FCM] ❌ No valid FCM tokens found after filtering")
+            logger.error("🔥 [FCM] ❌ EARLY RETURN: No valid FCM tokens found after filtering")
             if expo_tokens:
-                logger.warning("🔥 [FCM] ❌ All tokens were Expo tokens - they have been removed")
-                logger.warning("🔥 [FCM] 💡 Users need to restart app to get new FCM tokens")
+                logger.error("🔥 [FCM] ❌ All provided tokens were Expo tokens - removed from DB")
+                logger.error("🔥 [FCM] 💡 Users need to restart app to get new FCM tokens")
+            else:
+                logger.error("🔥 [FCM] ❌ Tokens were filtered out for unknown reason")
 
             cls._suggest_token_migration()
             return False
 
-        logger.info(f"🔥 [FCM] ✅ Proceeding with {len(fcm_tokens_only)} valid FCM tokens")
+        logger.info(f"🔔 [PUSH] ✅ CHECK 3 PASSED: {len(fcm_tokens_only)} valid FCM tokens")
+
+        # Логируем финальные токены которые будут отправлены
+        for i, token in enumerate(fcm_tokens_only):
+            logger.info(f"🔔 [PUSH] Final FCM token {i+1}: {token[:30]}...")
+
+        logger.info(f"🔔 [PUSH] === CALLING _send_firebase_notification ===")
 
         # Отправляем ТОЛЬКО через Firebase FCM
-        fcm_success = cls._send_firebase_notification(fcm_tokens_only, sender_name, message_text, chat_id)
+        try:
+            fcm_success = cls._send_firebase_notification(fcm_tokens_only, sender_name, message_text, chat_id)
+            logger.info(f"🔔 [PUSH] _send_firebase_notification returned: {fcm_success}")
+        except Exception as send_error:
+            logger.error(f"🔔 [PUSH] ❌ _send_firebase_notification threw exception: {send_error}")
+            fcm_success = False
 
         logger.info(f"🔔 [PUSH] === FCM PUSH RESULT: {fcm_success} ===")
 
         # Показываем статистику токенов для отслеживания миграции
         if not fcm_success:
+            logger.info(f"🔔 [PUSH] Push failed, showing token statistics...")
             cls.get_token_statistics()
+        else:
+            logger.info(f"🔔 [PUSH] ✅ Push notification sent successfully!")
 
         return fcm_success
 
