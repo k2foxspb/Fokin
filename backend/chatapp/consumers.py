@@ -644,13 +644,26 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
             logger.info(f"🔥 [PUSH-SYNC]   chat_id: {message_instance.room.id}")
             logger.info(f"🔥 [PUSH-SYNC]   sender_id: {message_instance.sender.id}")
 
-            # Отправляем уведомление
+            # Сначала получаем FCM токены получателя из базы данных
+            logger.info(f"🔥 [PUSH-SYNC] Getting FCM tokens for user {recipient.id}")
+
+            # Получаем FCM токены получателя
+            fcm_tokens = []
+            if hasattr(recipient, 'fcm_token') and recipient.fcm_token:
+                fcm_tokens.append(recipient.fcm_token)
+                logger.info(f"🔥 [PUSH-SYNC] Found FCM token: {recipient.fcm_token[:20]}...")
+            else:
+                logger.warning(f"🔥 [PUSH-SYNC] ❌ No FCM token found for user {recipient.username}")
+                return
+
+            logger.info(f"🔥 [PUSH-SYNC] Total FCM tokens to send to: {len(fcm_tokens)}")
+
+            # Отправляем уведомление с правильными параметрами
             result = push_service.send_message_notification(
-                recipient_id=recipient.id,
+                fcm_tokens=fcm_tokens,
                 sender_name=message_instance.sender.username,
-                message=message_instance.message,
-                chat_id=message_instance.room.id,
-                sender_id=message_instance.sender.id
+                message_text=message_instance.message,
+                chat_id=message_instance.room.id
             )
 
             logger.info(f"🔥 [PUSH-SYNC] ✅ Push notification service returned: {result}")
