@@ -104,22 +104,37 @@ class PushNotificationService:
     @classmethod
     def _send_firebase_notification(cls, fcm_tokens: List[str], sender_name: str, message_text: str, chat_id: Optional[int] = None):
         """Отправляет Push-уведомления через Firebase FCM"""
-        logger.info(f"🔥 [FCM] Starting Firebase push notification to {len(fcm_tokens)} tokens")
+        logger.info(f"🔥 [FCM] === STARTING FIREBASE NOTIFICATION PROCESS ===")
+        logger.info(f"🔥 [FCM] Tokens to send to: {len(fcm_tokens)}")
+        logger.info(f"🔥 [FCM] First token preview: {fcm_tokens[0][:30] if fcm_tokens else 'None'}...")
+        logger.info(f"🔥 [FCM] Sender: {sender_name}")
+        logger.info(f"🔥 [FCM] Message: {message_text[:50]}...")
+        logger.info(f"🔥 [FCM] Chat ID: {chat_id}")
 
-        # Инициализируем Firebase
-        try:
-            cls._initialize_firebase()
-        except Exception as e:
-            logger.error(f"Failed to initialize Firebase: {str(e)}")
+        # Проверяем, что токены переданы
+        if not fcm_tokens:
+            logger.error(f"🔥 [FCM] ❌ No tokens provided to _send_firebase_notification")
             return False
 
-        logger.info(f"Attempting to send push notification to {len(fcm_tokens)} tokens")
+        # Инициализируем Firebase
+        logger.info(f"🔥 [FCM] Step 1: Initializing Firebase...")
+        try:
+            cls._initialize_firebase()
+            logger.info(f"🔥 [FCM] ✅ Firebase initialized successfully")
+        except Exception as e:
+            logger.error(f"🔥 [FCM] ❌ Failed to initialize Firebase: {str(e)}")
+            logger.error(f"🔥 [FCM] ❌ Check firebase-service-account.json and project configuration")
+            return False
+
+        logger.info(f"🔥 [FCM] Step 2: Creating Firebase message...")
 
         # Ограничиваем длину текста сообщения
         truncated_text = message_text[:100] + "..." if len(message_text) > 100 else message_text
 
         # Создаем сообщение для Firebase
         try:
+            logger.info(f"🔥 [FCM] Creating message payload...")
+
             # Данные для приложения
             data_payload = {
                 "type": "message_notification",
@@ -128,11 +143,15 @@ class PushNotificationService:
                 "sender_name": sender_name,
             }
 
+            logger.info(f"🔥 [FCM] Data payload: {data_payload}")
+
             # Создаем уведомление
+            logger.info(f"🔥 [FCM] Creating notification object...")
             notification = messaging.Notification(
                 title=f"💬 {sender_name}",
                 body=truncated_text
             )
+            logger.info(f"🔥 [FCM] ✅ Notification object created")
 
             # Настройки для Android
             android_config = messaging.AndroidConfig(
@@ -171,25 +190,38 @@ class PushNotificationService:
             # Отправляем уведомления батчами по 500 штук (лимит Firebase)
             batch_size = 500
 
+            logger.info(f"🔥 [FCM] === STARTING BATCH SENDING ===")
+            logger.info(f"🔥 [FCM] Total tokens: {len(fcm_tokens)}, batch size: {batch_size}")
+
             for i in range(0, len(fcm_tokens), batch_size):
                 batch_tokens = fcm_tokens[i:i + batch_size]
+                batch_num = i // batch_size + 1
 
-                logger.info(f"Sending batch {i // batch_size + 1} with {len(batch_tokens)} notifications")
+                logger.info(f"🔥 [FCM] === PROCESSING BATCH {batch_num} ===")
+                logger.info(f"🔥 [FCM] Batch {batch_num}: {len(batch_tokens)} tokens")
 
                 # Создаем multicast сообщение
-                multicast_message = messaging.MulticastMessage(
-                    notification=notification,
-                    android=android_config,
-                    apns=apns_config,
-                    data=data_payload,
-                    tokens=batch_tokens
-                )
+                logger.info(f"🔥 [FCM] Creating multicast message for batch {batch_num}...")
+                try:
+                    multicast_message = messaging.MulticastMessage(
+                        notification=notification,
+                        android=android_config,
+                        apns=apns_config,
+                        data=data_payload,
+                        tokens=batch_tokens
+                    )
+                    logger.info(f"🔥 [FCM] ✅ Multicast message created for batch {batch_num}")
+                except Exception as msg_error:
+                    logger.error(f"🔥 [FCM] ❌ Error creating multicast message: {msg_error}")
+                    continue
 
                 try:
+                    logger.info(f"🔥 [FCM] Sending batch {batch_num} to Firebase...")
                     # Отправляем батч
                     response = messaging.send_multicast(multicast_message)
 
-                    logger.info(f"Firebase batch response: {response.success_count}/{len(batch_tokens)} successful")
+                    logger.info(f"🔥 [FCM] ✅ Batch {batch_num} response received")
+                    logger.info(f"🔥 [FCM] Batch {batch_num} result: {response.success_count}/{len(batch_tokens)} successful")
 
                     success_count += response.success_count
 
@@ -215,11 +247,21 @@ class PushNotificationService:
             for token in failed_tokens:
                 cls._handle_invalid_token(token)
 
+            logger.info(f"🔥 [FCM] === FIREBASE PUSH SUMMARY ===")
+            logger.info(f"🔥 [FCM] Total successful: {success_count}")
+            logger.info(f"🔥 [FCM] Total failed tokens: {len(failed_tokens)}")
+            logger.info(f"🔥 [FCM] Success rate: {(success_count/len(fcm_tokens))*100:.1f}%")
             logger.info(f"🔔 [PUSH] === FIREBASE PUSH COMPLETED: {success_count} successful ===")
-            return success_count > 0
+
+            final_result = success_count > 0
+            logger.info(f"🔥 [FCM] Final result: {final_result}")
+            return final_result
 
         except Exception as e:
-            logger.error(f"Error creating Firebase message: {str(e)}")
+            logger.error(f"🔥 [FCM] ❌ CRITICAL ERROR creating Firebase message: {str(e)}")
+            logger.error(f"🔥 [FCM] ❌ Error type: {type(e).__name__}")
+            import traceback
+            logger.error(f"🔥 [FCM] ❌ Full traceback: {traceback.format_exc()}")
             return False
 
     @classmethod
