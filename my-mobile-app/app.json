@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Fokin",
+    "name": "FokinFun",
     "slug": "fokinfun",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -8,7 +8,7 @@
     "icon": "./assets/images/logo1024.png",
     "userInterfaceStyle": "dark",
     "splash": {
-      "image": "./assets/images/logo1024.png",
+      "image": "./assets/images/logo.png",
       "resizeMode": "contain",
       "backgroundColor": "#222222"
     },
@@ -33,7 +33,7 @@
       "package": "com.k2foxspb.fokinfun",
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/logo.png",
+        "foregroundImage": "./assets/images/logo1024.png",
         "backgroundColor": "#222222"
       },
       "permissions": [
@@ -121,9 +121,7 @@
       "color": "#222222",
       "androidMode": "default",
       "androidCollapsedTitle": "Новые сообщения",
-      "iosDisplayInForeground": true,
-      "androidSound": true,
-      "iosSound": true
+      "iosDisplayInForeground": true
     },
     "extra": {
       "eas": {

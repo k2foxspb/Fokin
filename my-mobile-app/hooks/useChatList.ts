@@ -45,7 +45,7 @@ export const useChatList = (): UseChatListReturn => {
         return;
       }
 
-      const wsUrl = `${API_CONFIG.WS_URL}/wss/chat_list/?token=${token}`;
+      const wsUrl = `${API_CONFIG.WS_URL}/${API_CONFIG.WS_PROTOCOL}/chat_list/?token=${token}`;
       console.log('🔗 [ChatList] Connecting to:', wsUrl);
 
       wsRef.current = new WebSocket(wsUrl);
