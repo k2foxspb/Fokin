@@ -62,7 +62,6 @@ interface UserStatusUpdate {
 
 const savePushTokenToServer = async (token: string) => {
     try {
-        console.log('🔥 [FCM] Начало сохранения FCM токена на сервере');
 
         // КРИТИЧНО: отклоняем любые Expo токены
         if (token.startsWith('ExponentPushToken')) {
@@ -77,7 +76,6 @@ const savePushTokenToServer = async (token: string) => {
             return;
         }
 
-        console.log('🔥 [FCM] Отправка FCM токена на сервер:', token.substring(0, 10) + '...');
 
         // Отправляем ТОЛЬКО FCM токен
         const payload = { fcm_token: token };
@@ -88,10 +86,8 @@ const savePushTokenToServer = async (token: string) => {
             {headers: {'Authorization': `Token ${userToken}`}}
         );
 
-        console.log('🔥 [FCM] Ответ сервера при сохранении FCM токена:', response.status);
 
         if (response.status === 200) {
-            console.log('🔥 [FCM] FCM токен успешно сохранен на сервере');
         } else {
             console.warn('🔥 [FCM] Необычный статус ответа при сохранении FCM токена:', response.status);
         }
@@ -247,24 +243,10 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
                 console.log('🔥 [FCM] Инициализируем Firebase FCM сервис...');
                 const firebaseResult = await firebaseService.initialize();
 
-                console.log('🔥 [FCM] Firebase initialization result:', {
-                    success: firebaseResult.success,
-                    hasToken: !!firebaseResult.token,
-                    tokenType: firebaseResult.tokenType
-                });
-
                 if (firebaseResult.success && firebaseResult.token) {
                     const token = firebaseResult.token;
                     const isFCMToken = !token.startsWith('ExponentPushToken');
-
-                    console.log('🔥 [FCM] Token analysis:', {
-                        isFCMToken,
-                        tokenLength: token.length,
-                        tokenPreview: token.substring(0, 20) + '...'
-                    });
-
                     if (isFCMToken) {
-                        console.log('🔥 [FCM] ✅ Используем нативный Firebase FCM токен');
                         setPushToken(token);
                         setHasNotificationPermission(true);
                         setIsInitialized(true);
@@ -273,28 +255,18 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
                         await savePushTokenToServer(token);
 
                         setIsUsingFirebaseNavigation(true);
-                        console.log('🔥 [FCM] Firebase FCM уведомления настроены успешно');
-                        console.log('🔥 [FCM] Навигация обрабатывается ТОЛЬКО Firebase сервисом');
                     }
 
                     // Даем Firebase время полностью инициализироваться
-                    console.log('🔥 [FCM] Waiting for Firebase complete initialization...');
 
                     setTimeout(async () => {
-                        console.log('🔥 [FCM] === ADDING MESSAGE HANDLER AFTER FIREBASE READY ===');
-
-                        // КРИТИЧНО: Очищаем все старые handlers перед добавлением нового
-                        console.log('🔥 [FCM] Clearing existing handlers to prevent duplicates...');
                         // Получаем status чтобы проверить текущее количество handlers
                         const currentStatus = await firebaseService.getStatus();
-                        console.log('🔥 [FCM] Current handlers before cleanup:', firebaseService.messageHandlers?.length || 'unknown');
 
                         const messageHandler = (messageData: any) => {
-                            console.log('🔥 [FCM] === SINGLE MESSAGE HANDLER TRIGGERED ===');
-                            console.log('🔥 [FCM] Message data:', JSON.stringify(messageData, null, 2));
 
                             if (isAuthenticated) {
-                                console.log('🔥 [FCM] Refreshing notifications...');
+
                                 refreshNotifications();
                             } else {
                                 console.warn('🔥 [FCM] User not authenticated, skipping refresh');
@@ -303,8 +275,6 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
 
                         // Добавляем только ОДИН handler
                         firebaseService.addMessageHandler(messageHandler);
-                        console.log('🔥 [FCM] ✅ SINGLE message handler added');
-
                         // Финальная проверка
                         const finalStatus = await firebaseService.getStatus();
                         console.log('🔥 [FCM] === FINAL STATUS CHECK ===', {
@@ -316,12 +286,6 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
 
                         // Вызываем тестовый метод для полной диагностики
                         await firebaseService.testFirebaseConnection();
-
-                        console.log('🔥 [FCM] === ПРОВЕРКА СЕРВЕРНОЙ ОТПРАВКИ ===');
-                        console.log('🔥 [FCM] Для тестирования отправьте сообщение через:');
-                        console.log('🔥 [FCM] 1. Firebase Console -> Cloud Messaging');
-                        console.log('🔥 [FCM] 2. Или через другое устройство в чат');
-                        console.log('🔥 [FCM] Ожидаем срабатывания: "🚨 REAL-TIME FOREGROUND MESSAGE RECEIVED 🚨"');
 
                     }, 2000); // Даем 2 секунды на полную инициализацию
 
@@ -478,7 +442,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
         // При Firebase разрешаем уведомления только для активного приложения
         console.log('🔥 [FCM] sendNotificationWithUserData called - Firebase mode:', isUsingFirebaseNavigation);
         if (isUsingFirebaseNavigation && AppState.currentState !== 'active') {
-            console.log('🔥 [FCM] ❌ BLOCKED: sendNotificationWithUserData - Firebase handles background notifications');
+
             return;
         }
 

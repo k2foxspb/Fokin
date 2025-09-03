@@ -444,7 +444,6 @@ export default function ChatScreen() {
             user2: recipient.id
         };
 
-        console.log('💬 [CHAT] Sending message data:', messageData);
         console.log('💬 [CHAT] Message will be sent to room:', roomId);
 
         try {

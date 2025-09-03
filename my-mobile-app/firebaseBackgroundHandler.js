@@ -5,12 +5,6 @@ import messaging from '@react-native-firebase/messaging';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 messaging().setBackgroundMessageHandler(async (remoteMessage) => {
-  console.log('🔥 [FCM-BG] === BACKGROUND MESSAGE RECEIVED ===');
-  console.log('🔥 [FCM-BG] Message ID:', remoteMessage.messageId);
-  console.log('🔥 [FCM-BG] Notification:', JSON.stringify(remoteMessage.notification, null, 2));
-  console.log('🔥 [FCM-BG] Data:', JSON.stringify(remoteMessage.data, null, 2));
-  console.log('🔥 [FCM-BG] From:', remoteMessage.from);
-
   try {
     // КРИТИЧНО: В background handler Firebase автоматически показывает системное уведомление
     // Мы НЕ должны создавать дополнительные уведомления здесь
