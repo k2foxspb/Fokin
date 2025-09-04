@@ -27,7 +27,7 @@ class ArticleAdmin(admin.ModelAdmin):
     list_display = ('title', 'category', 'status', 'created', 'updated')
     list_filter = ('status', 'category', 'created')
     search_fields = ('title', 'preamble')
-    prepopulated_fields = {'slug': ('title',)}
+    prepopulated_fields = {'title': ('title',)}
     readonly_fields = ('created', 'updated')
     actions = [make_article_published, make_article_deleted]
     fields = ['title', 'preamble', 'category', 'content']
@@ -38,7 +38,7 @@ class CategoryAdmin(admin.ModelAdmin):
     list_display = ('title', 'status')
     list_filter = ('status',)
     search_fields = ('title',)
-    prepopulated_fields = {'slug': ('title',)}
+    prepopulated_fields = {'title': ('title',)}
     actions = [make_category_published, make_category_deleted]
 
 
