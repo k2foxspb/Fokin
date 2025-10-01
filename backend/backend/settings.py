@@ -206,7 +206,8 @@ EMAIL_HOST_PASSWORD = env('EMAIL_HOST')
 EMAIL_PORT = 465
 EMAIL_USE_SSL = True
 DEFAULT_FROM_EMAIL = 'k2foxspb@mail.ru'
-
+DATA_UPLOAD_MAX_MEMORY_SIZE = 800 * 1024 * 1024
+FILE_UPLOAD_MAX_MEMORY_SIZE = 800 * 1024 * 1024
 # Frontend URL for password reset links
 FRONTEND_URL = env('FRONTEND_URL', default='http://localhost:3000')
 
