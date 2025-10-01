@@ -9,7 +9,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from authapp.models import CustomUser
-from chatapp.models import Message, PrivateMessage
+from chatapp.models import Message, PrivateMessage, PrivateChatRoom
 from chatapp.serializers import MessageSerializer
 from .serializers import UserProfileSerializer, UserListSerializer
 
@@ -62,90 +62,6 @@ def bulk_users_info(request):
             'first_name',
             'last_name'
         )
-import logging
-from rest_framework.views import APIView
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from rest_framework import status
-from django.core.paginator import Paginator
-from chatapp.models import PrivateChatRoom, PrivateMessage
-from chatapp.serializers import MessageSerializer
-
-logger = logging.getLogger(__name__)
-
-class ChatHistoryView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request, room_id):
-        """
-        API для получения истории чата с медиафайлами
-        """
-        try:
-            page = int(request.GET.get('page', 1))
-            limit = min(int(request.GET.get('limit', 15)), 50)
-
-            logger.info(f"📜 [CHAT-HISTORY] User {request.user.id} requesting history for room {room_id}")
-            logger.info(f"📜 [CHAT-HISTORY] Parameters: page={page}, limit={limit}")
-
-            # Проверяем доступ к комнате
-            try:
-                room = PrivateChatRoom.objects.get(id=room_id)
-                if request.user not in [room.user1, room.user2]:
-                    logger.warning(f"📜 [CHAT-HISTORY] Access denied for user {request.user.id}")
-                    return Response({'error': 'Access denied'}, status=status.HTTP_403_FORBIDDEN)
-            except PrivateChatRoom.DoesNotExist:
-                logger.error(f"📜 [CHAT-HISTORY] Room {room_id} not found")
-                return Response({'error': 'Room not found'}, status=status.HTTP_404_NOT_FOUND)
-
-            # Получаем сообщения с медиа-полями
-            messages_queryset = PrivateMessage.objects.filter(
-                room=room
-            ).select_related('sender').order_by('-timestamp')
-
-            logger.info(f"📜 [CHAT-HISTORY] Found {messages_queryset.count()} total messages")
-
-            # Пагинация
-            paginator = Paginator(messages_queryset, limit)
-            if page > paginator.num_pages and paginator.num_pages > 0:
-                page = paginator.num_pages
-
-            page_obj = paginator.get_page(page)
-
-            # Сериализуем с медиа-полями
-            serializer = MessageSerializer(page_obj, many=True)
-
-            # Подсчитываем медиа-сообщения
-            media_messages = [msg for msg in page_obj if msg.is_media_message]
-            media_count = len(media_messages)
-
-            logger.info(f"📜 [CHAT-HISTORY] Returning {len(serializer.data)} messages, {media_count} with media")
-
-            # Логируем примеры медиа-сообщений
-            if media_count > 0:
-                for i, msg in enumerate(media_messages[:3]):  # Первые 3 для примера
-                    logger.info(f"📜 [CHAT-HISTORY] Media message {i+1}: ID={msg.id}, type={msg.media_type}, hash={msg.media_hash}")
-
-            response_data = {
-                'messages': serializer.data,
-                'has_more': page_obj.has_next(),
-                'current_page': page,
-                'total_pages': paginator.num_pages,
-                'media_messages_count': media_count  # Для отладки
-            }
-
-            logger.info(f"📜 [CHAT-HISTORY] Response prepared with {len(response_data['messages'])} messages")
-
-            return Response(response_data)
-
-        except Exception as e:
-            logger.error(f"📜 [CHAT-HISTORY] Error loading chat history: {str(e)}")
-            logger.error(f"📜 [CHAT-HISTORY] Error type: {type(e).__name__}")
-            import traceback
-            logger.error(f"📜 [CHAT-HISTORY] Traceback: {traceback.format_exc()}")
-            return Response(
-                {'error': 'Internal server error'}, 
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
         # Преобразуем QuerySet в список
         users_list = list(users)
 
@@ -257,13 +173,72 @@ class ChatHistoryView(generics.ListAPIView):
 
     def get_queryset(self):
         room_id = self.kwargs.get('room_id')
-        return PrivateMessage.objects.filter(room_id=room_id).order_by('timestamp')
+        # Проверяем доступ к комнате
+        try:
+            room = PrivateChatRoom.objects.get(id=room_id)
+            if self.request.user not in [room.user1, room.user2]:
+                logging.getLogger(__name__).warning(f"📜 [CHAT-HISTORY] Access denied for user {self.request.user.id}")
+                return PrivateMessage.objects.none()
+        except PrivateChatRoom.DoesNotExist:
+            logging.getLogger(__name__).error(f"📜 [CHAT-HISTORY] Room {room_id} not found")
+            return PrivateMessage.objects.none()
+
+        return PrivateMessage.objects.filter(
+            room_id=room_id
+        ).select_related('sender').order_by('-timestamp')
 
     def list(self, request, *args, **kwargs):
+        room_id = self.kwargs.get('room_id')
+        page = int(request.GET.get('page', 1))
+        limit = min(int(request.GET.get('limit', 15)), 50)
+
+        logger = logging.getLogger(__name__)
+        logger.info(f"📜 [CHAT-HISTORY] User {request.user.id} requesting history for room {room_id}")
+        logger.info(f"📜 [CHAT-HISTORY] Parameters: page={page}, limit={limit}")
+
+        # Получаем QuerySet
         queryset = self.get_queryset()
-        serializer = self.get_serializer(queryset, many=True)
+
+        if not queryset.exists():
+            logger.warning(f"📜 [CHAT-HISTORY] No messages or access denied for room {room_id}")
+            return Response({
+                'messages': [],
+                'has_more': False,
+                'current_page': 1,
+                'total_pages': 0
+            })
+
+        logger.info(f"📜 [CHAT-HISTORY] Found {queryset.count()} total messages")
+
+        # Пагинация
+        from django.core.paginator import Paginator
+        paginator = Paginator(queryset, limit)
+
+        if page > paginator.num_pages and paginator.num_pages > 0:
+            page = paginator.num_pages
+
+        page_obj = paginator.get_page(page)
+
+        # Сериализуем
+        serializer = self.get_serializer(page_obj, many=True)
+
+        # Подсчитываем медиа-сообщения
+        media_messages = [msg for msg in page_obj if msg.is_media_message]
+        media_count = len(media_messages)
+
+        logger.info(f"📜 [CHAT-HISTORY] Returning {len(serializer.data)} messages, {media_count} with media")
+
+        # Логируем примеры медиа-сообщений
+        if media_count > 0:
+            for i, msg in enumerate(media_messages[:3]):
+                logger.info(f"📜 [CHAT-HISTORY] Media message {i+1}: ID={msg.id}, type={msg.media_type}, hash={msg.media_hash}")
+
         return Response({
-            'messages': serializer.data
+            'messages': serializer.data,
+            'has_more': page_obj.has_next(),
+            'current_page': page,
+            'total_pages': paginator.num_pages,
+            'media_messages_count': media_count
         })
 
 
