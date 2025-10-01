@@ -12,9 +12,18 @@ class MessageSerializer(serializers.ModelSerializer):
     sender__username = serializers.CharField(source='sender.username', read_only=True)
     sender_id = serializers.IntegerField(source='sender.id', read_only=True)
 
+    # Поля для медиафайлов
+    mediaType = serializers.CharField(source='media_type', read_only=True)
+    mediaHash = serializers.CharField(source='media_hash', read_only=True) 
+    mediaFileName = serializers.CharField(source='media_filename', read_only=True)
+    mediaSize = serializers.IntegerField(source='media_size', read_only=True)
+
     class Meta:
         model = PrivateMessage
-        fields = ['id', 'message', 'sender__username', 'timestamp', 'read', 'sender_id']
+        fields = [
+            'id', 'message', 'sender__username', 'timestamp', 'read', 'sender_id',
+            'mediaType', 'mediaHash', 'mediaFileName', 'mediaSize'
+        ]
 
 
 
