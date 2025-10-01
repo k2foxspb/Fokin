@@ -295,74 +295,185 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
             data = json.loads(text_data)
             message_type = data.get('type', '')
 
+            logger.info(f"📡 [CONSUMER] Received message type: {message_type}")
+
             if message_type == 'chat_message':
-                message_content = data.get('message', '')
-                user1_id = data.get('user1')
-                user2_id = data.get('user2')
-
-                # Определяем получателя (тот, кто не является отправителем)
-                recipient_id = user2_id if user1_id == self.user.id else user1_id
-
-                logger.info(f"Processing chat_message: sender={self.user.id}, recipient={recipient_id}, message='{message_content[:50]}'")
-
-                if message_content and recipient_id:
-                    try:
-                        recipient = await database_sync_to_async(get_user_model().objects.get)(id=recipient_id)
-                        room = await self.get_or_create_room_by_users(self.user, recipient)
-
-                        message_instance = await self.save_message(self.user, message_content, room)
-
-                        if message_instance:
-                            timestamp = message_instance.timestamp.isoformat()
-
-                            # Отправляем сообщение в группу чата
-                            await self.channel_layer.group_send(
-                                self.room_group_name,
-                                {
-                                    'type': 'chat_message',
-                                    'message': message_content,
-                                    'sender__username': self.user.username,  # Исправляем формат для клиента
-                                    'sender_id': self.user.id,
-                                    'recipient_id': recipient_id,
-                                    'timestamp': int(message_instance.timestamp.timestamp()),  # Unix timestamp
-                                    'id': message_instance.id  # Исправляем название поля
-                                }
-                            )
-
-                            # Отправляем уведомление получателю через NotificationConsumer
-                            await self.channel_layer.group_send(
-                                f'notifications_{recipient_id}',
-                                {
-                                    'type': 'new_message_notification',
-                                    'sender_id': self.user.id,
-                                    'sender_name': self.user.username,
-                                    'recipient_id': recipient_id,
-                                    'message': message_content,
-                                    'timestamp': timestamp,
-                                    'room_id': room.id
-                                }
-                            )
-
-                            # Обновляем список чатов для обоих пользователей
-                            await self.notify_chat_list_update([self.user.id, recipient_id])
-
-                            # НОВОЕ: Отправляем push-уведомление
-                            await self.send_push_notification_if_needed(message_instance)
-
-                    except get_user_model().DoesNotExist:
-                        await self.send(text_data=json.dumps({
-                            'error': 'Recipient not found'
-                        }))
-                    except Exception as e:
-                        logger.error(f"Error processing message: {e}")
-                        await self.send(text_data=json.dumps({
-                            'error': 'Failed to send message'
-                        }))
+                await self.handle_text_message(data)
+            elif message_type == 'media_message':
+                await self.handle_media_message(data)
+            else:
+                logger.warning(f"Unknown message type: {message_type}")
 
         except json.JSONDecodeError:
             logger.error("Invalid JSON received")
         except Exception as e:
             logger.error(f"Error in receive: {e}")
+
+    async def handle_text_message(self, data):
+        """Обработка обычных текстовых сообщений"""
+        message_content = data.get('message', '')
+        user1_id = data.get('user1')
+        user2_id = data.get('user2')
+
+        # Определяем получателя (тот, кто не является отправителем)
+        recipient_id = user2_id if user1_id == self.user.id else user1_id
+
+        logger.info(f"Processing text message: sender={self.user.id}, recipient={recipient_id}, message='{message_content[:50]}'")
+
+        if message_content and recipient_id:
+            try:
+                recipient = await database_sync_to_async(get_user_model().objects.get)(id=recipient_id)
+                room = await self.get_or_create_room_by_users(self.user, recipient)
+
+                message_instance = await self.save_message(
+                    self.user, message_content, room, 
+                    media_type='text'
+                )
+
+                if message_instance:
+                    await self.broadcast_message(message_instance, recipient_id, room)
+
+            except get_user_model().DoesNotExist:
+                await self.send(text_data=json.dumps({'error': 'Recipient not found'}))
+            except Exception as e:
+                logger.error(f"Error processing text message: {e}")
+                await self.send(text_data=json.dumps({'error': 'Failed to send message'}))
+
+    async def handle_media_message(self, data):
+        """Обработка медиа-сообщений"""
+        logger.info(f"📷 [CONSUMER] Processing media message")
+
+        message_content = data.get('message', '')
+        user1_id = data.get('user1')
+        user2_id = data.get('user2')
+        media_type = data.get('mediaType')
+        media_hash = data.get('mediaHash')
+        media_filename = data.get('mediaFileName')
+        media_size = data.get('mediaSize')
+        media_base64 = data.get('mediaBase64')
+
+        # Определяем получателя
+        recipient_id = user2_id if user1_id == self.user.id else user1_id
+
+        logger.info(f"📷 [CONSUMER] Media message details: type={media_type}, hash={media_hash}, size={media_size}")
+
+        if media_type and media_hash and recipient_id:
+            try:
+                recipient = await database_sync_to_async(get_user_model().objects.get)(id=recipient_id)
+                room = await self.get_or_create_room_by_users(self.user, recipient)
+
+                # Сохраняем медиа-сообщение с метаданными
+                message_instance = await self.save_message(
+                    self.user, message_content, room,
+                    media_type=media_type,
+                    media_hash=media_hash,
+                    media_filename=media_filename,
+                    media_size=media_size
+                )
+
+                if message_instance:
+                    # Отправляем сообщение включая base64 данные для получателя
+                    await self.broadcast_media_message(
+                        message_instance, recipient_id, room, media_base64
+                    )
+
+                logger.info(f"📷 [CONSUMER] ✅ Media message processed successfully")
+
+            except get_user_model().DoesNotExist:
+                logger.error(f"📷 [CONSUMER] ❌ Recipient not found: {recipient_id}")
+                await self.send(text_data=json.dumps({'error': 'Recipient not found'}))
+            except Exception as e:
+                logger.error(f"📷 [CONSUMER] ❌ Error processing media message: {e}")
+                await self.send(text_data=json.dumps({'error': 'Failed to send media message'}))
+        else:
+            logger.error(f"📷 [CONSUMER] ❌ Missing required media data")
+            await self.send(text_data=json.dumps({'error': 'Missing media data'}))
+
+    async def broadcast_message(self, message_instance, recipient_id, room):
+        """Отправка обычного сообщения всем участникам"""
+        timestamp = message_instance.timestamp.isoformat()
+
+        # Отправляем сообщение в группу чата
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {
+                'type': 'chat_message',
+                'message': message_instance.message,
+                'sender__username': self.user.username,
+                'sender_id': self.user.id,
+                'recipient_id': recipient_id,
+                'timestamp': int(message_instance.timestamp.timestamp()),
+                'id': message_instance.id
+            }
+        )
+
+        # Отправляем уведомление получателю
+        await self.channel_layer.group_send(
+            f'notifications_{recipient_id}',
+            {
+                'type': 'new_message_notification',
+                'sender_id': self.user.id,
+                'sender_name': self.user.username,
+                'recipient_id': recipient_id,
+                'message': message_instance.message,
+                'timestamp': timestamp,
+                'room_id': room.id
+            }
+        )
+
+        # Обновляем список чатов для обоих пользователей
+        await self.notify_chat_list_update([self.user.id, recipient_id])
+
+        # Отправляем push-уведомление
+        await self.send_push_notification_if_needed(message_instance)
+
+    async def broadcast_media_message(self, message_instance, recipient_id, room, media_base64):
+        """Отправка медиа-сообщения всем участникам"""
+        timestamp = message_instance.timestamp.isoformat()
+
+        logger.info(f"📷 [CONSUMER] Broadcasting media message with hash: {message_instance.media_hash}")
+
+        # Отправляем сообщение в группу чата с медиа-данными
+        message_data = {
+            'type': 'chat_message',
+            'message': message_instance.message,
+            'sender__username': self.user.username,
+            'sender_id': self.user.id,
+            'recipient_id': recipient_id,
+            'timestamp': int(message_instance.timestamp.timestamp()),
+            'id': message_instance.id,
+            'mediaType': message_instance.media_type,
+            'mediaHash': message_instance.media_hash,
+            'mediaFileName': message_instance.media_filename,
+            'mediaSize': message_instance.media_size
+        }
+
+        # Добавляем base64 данные если есть
+        if media_base64:
+            message_data['mediaBase64'] = media_base64
+            logger.info(f"📷 [CONSUMER] Including base64 data in broadcast")
+
+        await self.channel_layer.group_send(self.room_group_name, message_data)
+
+        # Отправляем уведомление получателю
+        await self.channel_layer.group_send(
+            f'notifications_{recipient_id}',
+            {
+                'type': 'new_message_notification',
+                'sender_id': self.user.id,
+                'sender_name': self.user.username,
+                'recipient_id': recipient_id,
+                'message': message_instance.message,
+                'timestamp': timestamp,
+                'room_id': room.id
+            }
+        )
+
+        # Обновляем список чатов для обоих пользователей
+        await self.notify_chat_list_update([self.user.id, recipient_id])
+
+        # Отправляем push-уведомление
+        await self.send_push_notification_if_needed(message_instance)
 
     async def chat_message(self, event):
         message = event['message']
@@ -371,31 +482,67 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
         message_id = event.get('id', event.get('message_id'))
         sender_id = event.get('sender_id')
 
-        logger.info(f"Sending chat_message to client: sender={sender}, message='{message[:50]}'")
+        # Медиа данные
+        media_type = event.get('mediaType')
+        media_hash = event.get('mediaHash')
+        media_filename = event.get('mediaFileName')
+        media_size = event.get('mediaSize')
+        media_base64 = event.get('mediaBase64')
 
-        await self.send(text_data=json.dumps({
+        if media_type:
+            logger.info(f"📡 [SEND] Sending media message to client: type={media_type}, hash={media_hash}")
+        else:
+            logger.info(f"📡 [SEND] Sending text message to client: sender={sender}, message='{message[:50]}'")
+
+        # Базовые данные сообщения
+        response_data = {
             'message': message,
             'sender__username': sender,
             'timestamp': timestamp,
             'id': message_id,
             'sender_id': sender_id
-        }))
+        }
+
+        # Добавляем медиа данные если есть
+        if media_type and media_hash:
+            response_data.update({
+                'mediaType': media_type,
+                'mediaHash': media_hash,
+                'mediaFileName': media_filename,
+                'mediaSize': media_size
+            })
+
+            # Добавляем base64 данные если есть
+            if media_base64:
+                response_data['mediaBase64'] = media_base64
+                logger.info(f"📡 [SEND] Including base64 data in client response")
+
+        await self.send(text_data=json.dumps(response_data))
 
     @database_sync_to_async
-    def save_message(self, sender, message_content, room):
+    def save_message(self, sender, message_content, room, media_type='text', 
+                    media_hash=None, media_filename=None, media_size=None):
         try:
             recipient = room.user2 if room.user1 == sender else room.user1
+
+            logger.info(f"💾 [DB] Saving message: type={media_type}, hash={media_hash}")
 
             message = PrivateMessage.objects.create(
                 room=room,
                 sender=sender,
                 recipient=recipient,
                 message=message_content,
-                timestamp=timezone.now()
+                timestamp=timezone.now(),
+                media_type=media_type,
+                media_hash=media_hash,
+                media_filename=media_filename,
+                media_size=media_size
             )
+
+            logger.info(f"💾 [DB] ✅ Message saved with ID: {message.id}")
             return message
         except Exception as e:
-            logger.error(f"Error saving message: {e}")
+            logger.error(f"💾 [DB] ❌ Error saving message: {e}")
             return None
 
     @database_sync_to_async

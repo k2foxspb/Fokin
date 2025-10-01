@@ -88,6 +88,12 @@ def set_room_name(sender, instance, **kwargs):
 
 
 class PrivateMessage(models.Model):
+    MEDIA_TYPE_CHOICES = [
+        ('text', 'Text'),
+        ('image', 'Image'),
+        ('video', 'Video'),
+    ]
+
     room = models.ForeignKey(PrivateChatRoom, on_delete=models.CASCADE, related_name='messages')
     sender = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
     recipient = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='recipient', default=None)
@@ -95,11 +101,24 @@ class PrivateMessage(models.Model):
     timestamp = models.DateTimeField(auto_now_add=True)
     read = models.BooleanField(default=False)
 
+    # Поля для медиафайлов
+    media_type = models.CharField(max_length=10, choices=MEDIA_TYPE_CHOICES, default='text')
+    media_hash = models.CharField(max_length=64, blank=True, null=True)
+    media_filename = models.CharField(max_length=255, blank=True, null=True)
+    media_size = models.BigIntegerField(blank=True, null=True)
+
     class Meta:
         indexes = [
             models.Index(fields=['room', 'timestamp']),
+            models.Index(fields=['media_hash']),
         ]
         ordering = ['timestamp']
 
     def __str__(self):
+        if self.media_type != 'text':
+            return f'{self.room}: [{self.media_type.upper()}] {self.message}'
         return f'{self.room}: {self.message}'
+
+    @property
+    def is_media_message(self):
+        return self.media_type in ['image', 'video'] and bool(self.media_hash)
