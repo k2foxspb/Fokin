@@ -339,6 +339,7 @@ if not DEBUG:
     }
     AWS_QUERYSTRING_AUTH = False
     AWS_DEFAULT_ACL = 'public-read'
+    MEDIA_URL = f'https://storage.yandexcloud.net/{AWS_STORAGE_BUCKET_NAME}/'
 
 
 
