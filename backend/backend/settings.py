@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework.authtoken',
     'corsheaders',
+    'media_api',
 
 ]
 
@@ -112,6 +113,8 @@ CORS_ALLOW_HEADERS = [
     'x-requested-with',
     'x-forwarded-for',
     'x-forwarded-proto',
+    'content-disposition',
+    'cache-control',
 ]
 
 CORS_ALLOW_METHODS = [
@@ -208,6 +211,11 @@ EMAIL_USE_SSL = True
 DEFAULT_FROM_EMAIL = 'k2foxspb@mail.ru'
 DATA_UPLOAD_MAX_MEMORY_SIZE = 800 * 1024 * 1024
 FILE_UPLOAD_MAX_MEMORY_SIZE = 800 * 1024 * 1024
+FILE_UPLOAD_PERMISSIONS = 0o644
+FILE_UPLOAD_DIRECTORY_PERMISSIONS = 0o755
+
+# Максимальный размер для медиафайлов (в байтах)
+MAX_UPLOAD_SIZE = 800 * 1024 * 1024  # 800MB
 # Frontend URL for password reset links
 FRONTEND_URL = env('FRONTEND_URL', default='http://localhost:3000')
 
@@ -326,6 +334,20 @@ if not DEBUG:
     AWS_S3_ENDPOINT_URL = 'https://storage.yandexcloud.net/'
     AWS_ACCESS_KEY_ID = env('AWS_ACCESS_KEY_ID')
     AWS_SECRET_ACCESS_KEY = env('AWS_SECRET_ACCESS_KEY')
+    AWS_S3_OBJECT_PARAMETERS = {
+        'CacheControl': 'max-age=86400',
+    }
+    AWS_QUERYSTRING_AUTH = False
+    AWS_DEFAULT_ACL = 'public-read'
+
+    # Настройки для медиафайлов
+    DEFAULT_FILE_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
+    MEDIA_URL = f'https://storage.yandexcloud.net/{AWS_STORAGE_BUCKET_NAME}/'
+else:
+    # Локальные настройки для разработки
+    MEDIA_URL = "/media/"
+    MEDIA_ROOT = os.path.join(BASE_DIR, "media/")
+
 # storage and image = models.FileField(upload_to='my_files/', storage=default_storage)
 
 # 1) iex (New-Object System.Net.WebClient).DownloadString('https://storage.yandexcloud.net/yandexcloud-yc/install.ps1')
