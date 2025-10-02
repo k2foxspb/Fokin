@@ -8,13 +8,11 @@ import {
     ActivityIndicator,
     RefreshControl,
     Alert,
-    Dimensions
 } from 'react-native';
 import {router} from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import {Ionicons} from '@expo/vector-icons';
-import {WebView} from 'react-native-webview';
 import {useTheme} from '../../contexts/ThemeContext';
 import {useNotifications} from '../../contexts/NotificationContext';
 import {API_CONFIG} from "../../config";

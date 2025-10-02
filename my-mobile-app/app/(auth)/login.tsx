@@ -53,11 +53,6 @@ export default function Login() { // Убираем параметр navigation,
 
     // Отладочная информация
     const loginUrl = `${API_CONFIG.BASE_URL}/authentication/api/login/`;
-    console.log('🔍 [LOGIN] Попытка входа...');
-    console.log('🔍 [LOGIN] URL:', loginUrl);
-    console.log('🔍 [LOGIN] Username:', username.trim());
-    console.log('🔍 [LOGIN] API_CONFIG:', API_CONFIG);
-
     try {
       console.log('🔍 [LOGIN] Отправка запроса...');
 
@@ -71,9 +66,6 @@ export default function Login() { // Убираем параметр navigation,
         },
       });
 
-      console.log('✅ [LOGIN] Успешный ответ:', response.status);
-      console.log('✅ [LOGIN] Данные ответа:', response.data);
-
       const { token } = response.data;
 
       // Сохраняем токен
@@ -81,8 +73,6 @@ export default function Login() { // Убираем параметр navigation,
 
       // Устанавливаем токен для будущих запросов
       axios.defaults.headers.common['Authorization'] = `Token ${token}`;
-
-      console.log('✅ [LOGIN] Токен сохранен, переход на feed');
       // Переходим на страницу новостей
       router.replace('/(main)/feed');
     } catch (error) {

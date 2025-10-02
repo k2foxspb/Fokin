@@ -17,20 +17,6 @@
         "NODE_ENV": "development"
       }
     },
-    "development-firebase": {
-      "extends": "development",
-      "env": {
-        "NODE_ENV": "development",
-        "FIREBASE_ENABLED": "true"
-      },
-      "android": {
-        "buildType": "apk",
-        "gradleCommand": ":app:assembleDebug"
-      },
-      "ios": {
-        "resourceClass": "m-medium"
-      }
-    },
     "preview": {
       "distribution": "internal",
       "ios": {

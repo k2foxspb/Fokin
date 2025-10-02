@@ -20,16 +20,19 @@
         "NSCameraUsageDescription": "Приложение использует камеру для создания фотографий",
         "NSPhotoLibraryUsageDescription": "Приложение использует галерею для выбора фотографий",
         "NSMicrophoneUsageDescription": "Приложение использует микрофон для записи аудио",
+        "NSVideoLibraryUsageDescription": "Приложение использует галерею для выбора видео",
         "UIBackgroundModes": [
           "remote-notification",
           "background-fetch",
-          "background-processing"
+          "background-processing",
+          "audio"
         ],
         "FirebaseAppDelegateProxyEnabled": true,
         "FirebaseMessagingAutoInitEnabled": true
       }
     },
     "android": {
+      "versionCode": 3,
       "package": "com.k2foxspb.fokinfun",
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
