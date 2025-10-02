@@ -340,12 +340,7 @@ if not DEBUG:
     AWS_QUERYSTRING_AUTH = False
     AWS_DEFAULT_ACL = 'public-read'
 
-    # Настройки для медиафайлов
-    MEDIA_URL = f'https://storage.yandexcloud.net/{AWS_STORAGE_BUCKET_NAME}/'
-else:
-    # Локальные настройки для разработки
-    MEDIA_URL = "/media/"
-    MEDIA_ROOT = os.path.join(BASE_DIR, "media/")
+
 
 # storage and image = models.FileField(upload_to='my_files/', storage=default_storage)
 
