@@ -29,6 +29,7 @@ urlpatterns = [
     path('chat/', include('chatapp.urls', namespace='chat')),
     path('photo/', include('photo_alboms.urls', namespace='photo')),
     path('profile/', include('profileapp.urls', namespace='profile')),
+    path('media', include('media_api', namespace='media_api'))
 ]
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
