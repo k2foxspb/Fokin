@@ -341,7 +341,6 @@ if not DEBUG:
     AWS_DEFAULT_ACL = 'public-read'
 
     # Настройки для медиафайлов
-    DEFAULT_FILE_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
     MEDIA_URL = f'https://storage.yandexcloud.net/{AWS_STORAGE_BUCKET_NAME}/'
 else:
     # Локальные настройки для разработки
