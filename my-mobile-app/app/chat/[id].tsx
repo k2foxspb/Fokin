@@ -17,6 +17,8 @@ import {
     Modal,
     AppState,
     Linking,
+    Dimensions,
+    ScrollView,
 } from 'react-native';
 import {Stack, useLocalSearchParams, useRouter} from 'expo-router';
 import {useWebSocket} from '../../hooks/useWebSocket';
@@ -30,8 +32,15 @@ import {API_CONFIG} from '../../config';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
+import { ImageManipulator } from 'expo-image-manipulator';
 import { Video, ResizeMode, Audio, AVPlaybackStatus } from 'expo-av';
+
 import * as DocumentPicker from 'expo-document-picker';
+import * as MediaLibrary from 'expo-media-library';
+import * as Sharing from 'expo-sharing';
+import * as WebBrowser from 'expo-web-browser';
+import * as IntentLauncher from 'expo-intent-launcher';
+
 interface Message {
     id: number;
     message: string;
@@ -50,9 +59,13 @@ interface Message {
     needsReload?: boolean;
     serverFileUrl?: string; // URL файла на сервере для больших файлов
     uploadMethod?: 'websocket' | 'http' | 'chunk'; // Метод загрузки
+    isLoadingServerUrl?: boolean; // Индикатор загрузки URL с сервера
+    videoLoadRequested?: boolean; // Запрошена ли загрузка видео пользователем
+    videoIsLoading?: boolean; // Загружается ли видео в данный момент
 }
 
 interface User {
+    
     id: number;
     username: string;
     avatar?: string;
@@ -127,6 +140,9 @@ export default function ChatScreen() {
     const [isLoadingMore, setIsLoadingMore] = useState(false);
     const [selectedImage, setSelectedImage] = useState<string | null>(null);
     const [isImageViewerVisible, setIsImageViewerVisible] = useState(false);
+    const [imageZoomScale, setImageZoomScale] = useState(1);
+    const [lastImageTap, setLastImageTap] = useState(0);
+    const imageScrollViewRef = useRef<ScrollView>(null);
     const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
     const [isVideoViewerVisible, setIsVideoViewerVisible] = useState(false);
     const [isVideoPlaying, setIsVideoPlaying] = useState(false);
@@ -142,33 +158,29 @@ export default function ChatScreen() {
         isExpanded: boolean,
         duration: number,
         position: number,
-        isLoaded: boolean
+        isLoaded: boolean,
+        isFullscreen: boolean
     }}>({});
     const [fullscreenVideoId, setFullscreenVideoId] = useState<string | null>(null);
+    const [isAnyVideoFullscreen, setIsAnyVideoFullscreen] = useState(false);
+    const [fullscreenModalVideoUri, setFullscreenModalVideoUri] = useState<string | null>(null);
+    const [isFullscreenModalVisible, setIsFullscreenModalVisible] = useState(false);
+    const [downloadingDocuments, setDownloadingDocuments] = useState<{[key: number]: boolean}>({});
+    const [documentDownloadProgress, setDocumentDownloadProgress] = useState<{[key: number]: number}>({});
     const flatListRef = useRef<FlatList>(null);
     const videoRef = useRef<any>(null);
     const inlineVideoRefs = useRef<{[key: string]: any}>({});
     const prevPendingCount = useRef(0);
     const router = useRouter();
 
-    // Функция для безопасного обновления сообщения с сохранением всех полей
+    // Функция для безопасного обновления сообщения
     const updateMessageSafely = (messageId: number | string, updates: Partial<Message>) => {
         console.log('🔒 [SAFE-UPDATE] Updating message safely:', { messageId, updates: Object.keys(updates) });
 
         setMessages(prev =>
             prev.map(msg => {
                 if (msg.id === messageId) {
-                    const updatedMsg = { ...msg, ...updates };
-
-                    console.log('🔒 [SAFE-UPDATE] Message updated:', {
-                        id: updatedMsg.id,
-                        mediaType: updatedMsg.mediaType,
-                        hasMediaUri: !!updatedMsg.mediaUri,
-                        hasMediaBase64: !!updatedMsg.mediaBase64,
-                        mediaHash: updatedMsg.mediaHash
-                    });
-
-                    return updatedMsg;
+                    return { ...msg, ...updates };
                 }
                 return msg;
             })
@@ -177,38 +189,6 @@ export default function ChatScreen() {
 
     // Создаем стили с темой
     const styles = createStyles(theme);
-
-
-    // Отслеживание состояния медиа сообщений
-    useEffect(() => {
-        const mediaMessages = messages.filter(msg => msg.mediaType);
-
-        // Периодическая проверка целостности медиа сообщений
-        const brokenMediaMessages = mediaMessages.filter(msg =>
-            msg.mediaType &&
-            msg.mediaHash &&
-            !msg.mediaUri &&
-            !msg.mediaBase64 &&
-            !msg.isUploading &&
-            !msg.needsReload
-        );
-
-        if (brokenMediaMessages.length > 0) {
-            // Пытаемся восстановить сломанные медиа сообщения
-            brokenMediaMessages.forEach(async (msg) => {
-                try {
-                    if (msg.mediaHash) {
-                        const cachedUri = await getMediaFromCache(msg.mediaHash, msg.mediaType!);
-                        if (cachedUri) {
-                            updateMessageSafely(msg.id, { mediaUri: cachedUri });
-                        }
-                    }
-                } catch (restoreError) {
-                    // Тихо игнорируем ошибки восстановления
-                }
-            });
-        }
-    }, [messages]);
 
     // Автовосстановление только состояния, без переподключений
     useEffect(() => {
@@ -416,150 +396,14 @@ export default function ChatScreen() {
                             }
                         });
 
-                        // Если есть медиафайл, работаем с кэшем
+                        // Медиафайлы загружаются с сервера
                         if (data.mediaType && data.mediaHash) {
-                            const isLargeFile = data.mediaSize ? (data.mediaSize / (1024 * 1024)) > 15 : false;
-
-                            console.log('📷 [MEDIA] Processing media for message:', {
+                            console.log('📷 [MEDIA] Media message received:', {
                                 messageId: messageId,
-                                mediaHash: data.mediaHash,
                                 mediaType: data.mediaType,
-                                hasBase64: !!data.mediaBase64,
-                                base64Length: data.mediaBase64 ? data.mediaBase64.length : 0,
-                                serverHashPreview: data.mediaHash.substring(0, 20) + '...',
-                                isLargeFile: isLargeFile,
-                                mediaSize: data.mediaSize
+                                mediaSize: data.mediaSize,
+                                hasServerUrl: !!data.fileUrl
                             });
-
-                            // Если нет base64 данных (большой файл), пропускаем сохранение в кэш
-                            if (!data.mediaBase64) {
-                                console.log('📷 [MEDIA] Large file without base64 data, skipping cache save:', {
-                                    messageId: messageId,
-                                    sizeMB: data.mediaSize ? (data.mediaSize / (1024 * 1024)).toFixed(1) : 'unknown'
-                                });
-                                return;
-                            }
-
-                            // Всегда используем хэш от сервера для согласованности между клиентами
-                            const hashToUse = data.mediaHash;
-
-                            console.log('📥 Media message received from server:', {
-                                id: messageId,
-                                type: data.mediaType,
-                                size: data.mediaSize,
-                                isMyMessage: isMyMessage
-                            });
-
-                            // Сначала проверяем кэш
-                            getMediaFromCache(hashToUse, data.mediaType)
-                                .then(async (cachedUri) => {
-                                    if (cachedUri) {
-                                        console.log('📷 [MEDIA] ✅ Using cached media:', {
-                                            uri: cachedUri,
-                                            hash: hashToUse.substring(0, 20) + '...',
-                                            messageId: messageId
-                                        });
-                                        setMessages(prev =>
-                                            prev.map(msg => {
-                                                // Обновляем сообщение по ID или по хэшу (для случаев когда ID поменялся)
-                                                const shouldUpdate = msg.id === messageId ||
-                                                    (msg.mediaHash === hashToUse && msg.sender_id === data.sender_id);
-
-                                                if (shouldUpdate) {
-                                                    console.log('📷 [MEDIA] Updating message with cached URI:', {
-                                                        messageId: msg.id,
-                                                        mediaHash: msg.mediaHash?.substring(0, 20) + '...',
-                                                        cachedUri: cachedUri.substring(cachedUri.lastIndexOf('/') + 1),
-                                                        preservingFields: {
-                                                            mediaType: msg.mediaType,
-                                                            mediaBase64: !!msg.mediaBase64
-                                                        }
-                                                    });
-
-                                                    // БЕЗОПАСНОЕ ОБНОВЛЕНИЕ - сохраняем ВСЕ поля
-                                                    return {
-                                                        ...msg,
-                                                        mediaUri: cachedUri,
-                                                        // Принудительно сохраняем критические поля
-                                                        mediaType: msg.mediaType || data.mediaType,
-                                                        mediaHash: msg.mediaHash || hashToUse,
-                                                        mediaFileName: msg.mediaFileName || data.mediaFileName,
-                                                        mediaSize: msg.mediaSize || data.mediaSize
-                                                    };
-                                                }
-                                                return msg;
-                                            })
-                                        );
-                                    } else if (data.mediaBase64) {
-                                        console.log('📷 [MEDIA] Saving new media to cache with hash:', hashToUse.substring(0, 20) + '...');
-                                        try {
-                                            const savedUri = await saveMediaToDevice(data.mediaBase64, data.mediaType, hashToUse);
-
-                                            // Сохраняем метаданные
-                                            await saveMediaMetadata(hashToUse, {
-                                                fileName: data.mediaFileName,
-                                                type: data.mediaType,
-                                                size: data.mediaSize,
-                                                timestamp: data.timestamp,
-                                                savedAt: Date.now()
-                                            });
-
-                                            // Для видео дополнительно проверяем, что файл сохранился корректно
-                                            if (data.mediaType === 'video') {
-                                                try {
-                                                    const videoFileInfo = await FileSystem.getInfoAsync(savedUri);
-                                                    console.log('📷 [MEDIA] Video file saved and verified:', {
-                                                        uri: savedUri.substring(savedUri.lastIndexOf('/') + 1),
-                                                        size: videoFileInfo.size,
-                                                        exists: videoFileInfo.exists,
-                                                        originalDataSize: data.mediaBase64.length
-                                                    });
-
-                                                    if (!videoFileInfo.exists || videoFileInfo.size === 0) {
-                                                        console.error('📷 [MEDIA] ❌ Video file save failed or corrupted');
-                                                        throw new Error('Video file save verification failed');
-                                                    }
-                                                } catch (verificationError) {
-                                                    console.error('📷 [MEDIA] ❌ Video save verification failed:', verificationError);
-                                                    // Не падаем, но логируем ошибку
-                                                }
-                                            }
-
-                                            console.log('📷 [MEDIA] ✅ Media saved, updating message with URI:', {
-                                                savedUri: savedUri.substring(savedUri.lastIndexOf('/') + 1),
-                                                hash: hashToUse.substring(0, 20) + '...',
-                                                messageId: messageId
-                                            });
-                                            setMessages(prev =>
-                                                prev.map(msg => {
-                                                    if (msg.id === messageId ||
-                                                        (msg.mediaHash === hashToUse && msg.sender_id === data.sender_id)) {
-                                                        console.log('📷 [MEDIA] Updating message with saved URI:', {
-                                                            messageId: msg.id,
-                                                            oldMediaUri: msg.mediaUri ? msg.mediaUri.substring(msg.mediaUri.lastIndexOf('/') + 1) : 'none',
-                                                            newMediaUri: savedUri.substring(savedUri.lastIndexOf('/') + 1),
-                                                            mediaType: msg.mediaType
-                                                        });
-                                                        return {
-                                                            ...msg,
-                                                            mediaUri: savedUri,
-                                                            // Убеждаемся, что медиа-поля сохранены
-                                                            mediaType: msg.mediaType || data.mediaType,
-                                                            mediaHash: msg.mediaHash || hashToUse,
-                                                            mediaFileName: msg.mediaFileName || data.mediaFileName,
-                                                            mediaSize: msg.mediaSize || data.mediaSize
-                                                        };
-                                                    }
-                                                    return msg;
-                                                })
-                                            );
-                                        } catch (error) {
-                                            console.error('📷 [MEDIA] ❌ Error saving media:', error);
-                                        }
-                                    } else {
-                                        console.log('📷 [MEDIA] ⚠️ Media not in cache and no base64 data');
-                                    }
-                                });
                         }
 
                         setTimeout(() => {
@@ -636,6 +480,226 @@ export default function ChatScreen() {
         }
     };
 
+    // Получение URL медиафайла с сервера по ID сообщения (упрощенная версия)
+    const getMediaServerUrl = async (messageId: number): Promise<string | null> => {
+        try {
+            const token = await getToken();
+            if (!token) return null;
+
+            const response = await axios.get(
+                `${API_CONFIG.BASE_URL}/media-api/message/${messageId}/url/`,
+                {
+                    headers: { 'Authorization': `Token ${token}` },
+                    timeout: 10000
+                }
+            );
+
+            return response.data?.file_url || response.data?.url || null;
+        } catch (error) {
+            console.error('🔗 [SERVER-URL] Error getting media URL:', error);
+            return null;
+        }
+    };
+
+    // Запрос разрешений для MediaLibrary
+    const requestMediaLibraryPermissions = async (): Promise<boolean> => {
+        try {
+            const { status } = await MediaLibrary.requestPermissionsAsync();
+            if (status !== 'granted') {
+                console.log('🎥 [GALLERY] Permission denied');
+                return false;
+            }
+            return true;
+        } catch (error) {
+            console.error('🎥 [GALLERY] Error requesting permissions:', error);
+            return false;
+        }
+    };
+
+    // Поиск медиафайла в галерее по уникальному имени
+    const findMediaInGallery = async (messageId: number, mediaType: 'image' | 'video', mediaHash?: string): Promise<string | null> => {
+        try {
+            const hasPermission = await requestMediaLibraryPermissions();
+            if (!hasPermission) return null;
+
+            const media = await MediaLibrary.getAssetsAsync({
+                mediaType: mediaType === 'image' ? MediaLibrary.MediaType.photo : MediaLibrary.MediaType.video,
+                first: 1000,
+                sortBy: MediaLibrary.SortBy.creationTime
+            });
+
+            // Ищем по имени файла, содержащему ID сообщения
+            for (const asset of media.assets) {
+                if (asset.filename.includes(`ChatMedia_${messageId}`) || 
+                    (mediaHash && asset.filename.includes(mediaHash.substring(0, 16)))) {
+
+                    // Проверяем, что файл существует
+                    const fileInfo = await FileSystem.getInfoAsync(asset.uri);
+                    if (fileInfo.exists && fileInfo.size > 0) {
+                        console.log('🎥 [GALLERY] ✅ Found media in gallery:', asset.filename);
+                        return asset.uri;
+                    }
+                }
+            }
+
+            return null;
+        } catch (error) {
+            console.error('🎥 [GALLERY] Error searching in gallery:', error);
+            return null;
+        }
+    };
+
+    // Сохранение медиафайла в галерею
+    const saveMediaToGallery = async (
+        serverUrl: string, 
+        messageId: number, 
+        mediaType: 'image' | 'video',
+        mediaHash?: string
+    ): Promise<string | null> => {
+        try {
+            const hasPermission = await requestMediaLibraryPermissions();
+            if (!hasPermission) return null;
+
+            const extension = mediaType === 'image' ? 'jpg' : 'mp4';
+            const fileName = `ChatMedia_${messageId}_${mediaHash || Date.now()}.${extension}`;
+            const tempPath = `${FileSystem.cacheDirectory}temp_${fileName}`;
+
+            console.log('🎥 [GALLERY] Downloading media to save in gallery...');
+
+            // Скачиваем файл
+            const downloadResult = await FileSystem.downloadAsync(serverUrl, tempPath);
+
+            if (downloadResult.status !== 200) {
+                throw new Error(`Download failed with status ${downloadResult.status}`);
+            }
+
+            // Проверяем файл
+            const fileInfo = await FileSystem.getInfoAsync(downloadResult.uri);
+            if (!fileInfo.exists || fileInfo.size === 0) {
+                throw new Error('Downloaded file is empty');
+            }
+
+            // Сохраняем в галерею
+            const asset = await MediaLibrary.createAssetAsync(downloadResult.uri);
+
+            // Пытаемся создать альбом для чат-медиа
+            try {
+                const albumName = mediaType === 'image' ? 'Chat Images' : 'Chat Videos';
+                let album = await MediaLibrary.getAlbumAsync(albumName);
+                if (!album) {
+                    album = await MediaLibrary.createAlbumAsync(albumName, asset, false);
+                } else {
+                    await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
+                }
+            } catch (albumError) {
+                console.log('🎥 [GALLERY] Could not organize in album (non-critical):', albumError);
+            }
+
+            // Удаляем временный файл
+            await FileSystem.deleteAsync(tempPath, { idempotent: true });
+
+            console.log('🎥 [GALLERY] ✅ Media saved to gallery successfully');
+            return asset.uri;
+
+        } catch (error) {
+            console.error('🎥 [GALLERY] ❌ Error saving to gallery:', error);
+            return null;
+        }
+    };
+
+    // Получение локального URI медиафайла (из галереи или загрузка)
+    const getLocalMediaUri = async (message: Message): Promise<string | null> => {
+        try {
+            // Сначала проверяем галерею
+            const galleryUri = await findMediaInGallery(message.id, message.mediaType!, message.mediaHash);
+            if (galleryUri) {
+                console.log('🎥 [MEDIA] Using from gallery:', message.id);
+                return galleryUri;
+            }
+
+            // Если нет в галерее, загружаем с сервера
+            let serverUrl = message.serverFileUrl;
+            if (!serverUrl) {
+                serverUrl = await getMediaServerUrl(message.id);
+            }
+
+            if (!serverUrl) {
+                console.log('🎥 [MEDIA] No server URL available');
+                return null;
+            }
+
+            // Сохраняем в галерею для будущего использования
+            const localUri = await saveMediaToGallery(
+                serverUrl,
+                message.id,
+                message.mediaType!,
+                message.mediaHash
+            );
+
+            if (localUri) {
+                // Обновляем сообщение с локальным URI
+                updateMessageSafely(message.id, {
+                    mediaUri: localUri,
+                    serverFileUrl: serverUrl
+                });
+            }
+
+            return localUri || serverUrl; // Возвращаем локальный URI или серверный URL как fallback
+        } catch (error) {
+            console.error('🎥 [MEDIA] Error getting local media URI:', error);
+            return null;
+        }
+    };
+
+    // Запрос загрузки видео по требованию (ленивая загрузка) - ТОЛЬКО при нажатии play
+    const requestVideoLoad = async (message: Message): Promise<void> => {
+        // Если уже загружается или загружено - ничего не делаем
+        if (message.videoIsLoading || message.mediaUri || message.serverFileUrl) {
+            console.log('🎥 [LAZY-LOAD] Video already loading or loaded, skipping:', {
+                messageId: message.id,
+                isLoading: message.videoIsLoading,
+                hasUri: !!message.mediaUri,
+                hasServerUrl: !!message.serverFileUrl
+            });
+            return;
+        }
+
+        console.log('🎥 [LAZY-LOAD] User requested video load (play button pressed):', message.id);
+
+        // Помечаем как загружающееся
+        updateMessageSafely(message.id, {
+            videoLoadRequested: true,
+            videoIsLoading: true
+        });
+
+        try {
+            const localUri = await getLocalMediaUri(message);
+            if (localUri) {
+                updateMessageSafely(message.id, {
+                    mediaUri: localUri.startsWith('file://') || localUri.startsWith('content://') ? localUri : null,
+                    serverFileUrl: localUri.startsWith('http') ? localUri : message.serverFileUrl,
+                    videoIsLoading: false,
+                    videoLoadRequested: true
+                });
+                console.log('🎥 [LAZY-LOAD] ✅ Video loaded successfully after user request:', message.id);
+            } else {
+                updateMessageSafely(message.id, {
+                    videoIsLoading: false,
+                    needsReload: true,
+                    videoLoadRequested: false // Сбрасываем запрос при ошибке
+                });
+                console.log('🎥 [LAZY-LOAD] ❌ Failed to load video after user request:', message.id);
+            }
+        } catch (error) {
+            console.error('🎥 [LAZY-LOAD] Error loading video after user request:', error);
+            updateMessageSafely(message.id, {
+                videoIsLoading: false,
+                needsReload: true,
+                videoLoadRequested: false // Сбрасываем запрос при ошибке
+            });
+        }
+    };
+
     // Запрос разрешений для доступа к медиабиблиотеке
     const requestPermissions = async () => {
         const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -684,7 +748,154 @@ export default function ChatScreen() {
     };
 
 
-    // Загрузка файла через HTTP multipart/form-data в Yandex Storage
+    // Суперэкспресс чанковая загрузка для больших файлов
+    const uploadLargeFileChunkedOptimized = async (
+        fileUri: string,
+        mediaType: 'image' | 'video',
+        messageId: number,
+        onProgress?: (progress: number) => void
+    ): Promise<string> => {
+        try {
+            console.log('🚀 [TURBO-UPLOAD] Starting turbo chunk upload...', {
+                messageId,
+                mediaType,
+                fileUri: fileUri.substring(fileUri.lastIndexOf('/') + 1)
+            });
+
+            const token = await getToken();
+            if (!token) {
+                throw new Error('Нет токена авторизации');
+            }
+
+            const fileInfo = await FileSystem.getInfoAsync(fileUri);
+            if (!fileInfo.exists) {
+                throw new Error('Файл не найден');
+            }
+
+            const fileSize = fileInfo.size;
+            const fileSizeMB = fileSize / (1024 * 1024);
+
+            // ОПТИМИЗИРОВАННЫЙ РЕЖИМ: Баланс скорости и стабильности
+            let chunkSize = 512 * 1024; // 512KB для начала - более стабильно
+            if (fileSizeMB > 20) chunkSize = 1 * 1024 * 1024; // 1MB для средних файлов
+            if (fileSizeMB > 50) chunkSize = 2 * 1024 * 1024; // 2MB для больших файлов
+            if (fileSizeMB > 100) chunkSize = 4 * 1024 * 1024; // 4MB для очень больших файлов
+
+            const totalChunks = Math.ceil(fileSize / chunkSize);
+
+            // СТАБИЛЬНЫЙ ПАРАЛЛЕЛИЗМ: Меньше подключений, но стабильнее
+            const maxParallel = Math.min(3, totalChunks, Math.ceil(fileSizeMB / 25)); // До 3 параллельных загрузок
+
+            console.log('🚀 [TURBO-UPLOAD] Turbo configuration:', {
+                chunkSize: (chunkSize / (1024 * 1024)).toFixed(1) + 'MB',
+                totalChunks,
+                maxParallel: maxParallel,
+                turboMode: true
+            });
+
+            if (onProgress) onProgress(5);
+
+            const endpoint = `${API_CONFIG.BASE_URL}/media-api/upload/chunked/`;
+            const uploadId = `turbo_${messageId}_${Date.now()}`;
+
+            // ТУРБО функция загрузки чанка с минимальным таймаутом
+            const uploadChunk = async (chunkIndex: number, start: number, end: number, retryCount = 0): Promise<void> => {
+                try {
+                    const actualLength = Math.min(chunkSize, end - start);
+                    const chunkData = await FileSystem.readAsStringAsync(fileUri, {
+                        encoding: FileSystem.EncodingType.Base64,
+                        position: start,
+                        length: actualLength
+                    });
+
+                    const formData = new FormData();
+                    formData.append('upload_id', uploadId);
+                    formData.append('chunk_index', chunkIndex.toString());
+                    formData.append('total_chunks', totalChunks.toString());
+                    formData.append('chunk_data', chunkData);
+                    formData.append('file_name', `media_${messageId}.${mediaType === 'image' ? 'jpg' : 'mp4'}`);
+                    formData.append('media_type', mediaType);
+
+                    await axios.post(endpoint, formData, {
+                        headers: {
+                            'Authorization': `Token ${token}`,
+                            'Content-Type': 'multipart/form-data',
+                        },
+                        timeout: 30000, // 30 секунд для более быстрого обнаружения проблем
+                    });
+
+                    console.log(`🚀 [TURBO-UPLOAD] ⚡ Chunk ${chunkIndex + 1}/${totalChunks} uploaded (${(actualLength / (1024 * 1024)).toFixed(1)}MB)`);
+                } catch (error) {
+                    if (retryCount < 1) { // Только одна повторная попытка в турбо режиме
+                        console.log(`🚀 [TURBO-UPLOAD] ⚠️ Quick retry chunk ${chunkIndex + 1}`);
+                        await new Promise(resolve => setTimeout(resolve, 500)); // Быстрая пауза
+                        return uploadChunk(chunkIndex, start, end, retryCount + 1);
+                    }
+                    throw new Error(`Turbo chunk ${chunkIndex} failed: ${error.message}`);
+                }
+            };
+
+            // ТУРБО загрузка: Максимальный параллелизм с батчами
+            let uploadedChunks = 0;
+            const batchSize = maxParallel;
+
+            for (let i = 0; i < totalChunks; i += batchSize) {
+                const chunkPromises = [];
+
+                for (let j = 0; j < batchSize && (i + j) < totalChunks; j++) {
+                    const chunkIndex = i + j;
+                    const start = chunkIndex * chunkSize;
+                    const end = Math.min(start + chunkSize, fileSize);
+
+                    chunkPromises.push(uploadChunk(chunkIndex, start, end));
+                }
+
+                // Параллельная загрузка батча
+                await Promise.all(chunkPromises);
+                uploadedChunks += chunkPromises.length;
+
+                // Исправляем расчет прогресса: 5% подготовка + 90% загрузка + 5% финализация
+                const uploadProgress = Math.round((uploadedChunks / totalChunks) * 90);
+                const totalProgress = Math.min(5 + uploadProgress, 95); // Максимум 95% до финализации
+                if (onProgress) onProgress(totalProgress);
+
+                console.log(`🚀 [TURBO-UPLOAD] ⚡ Batch completed: ${uploadedChunks}/${totalChunks} chunks`);
+            }
+
+            console.log('🚀 [TURBO-UPLOAD] ⚡ All chunks uploaded in turbo mode, finalizing...');
+            if (onProgress) onProgress(95);
+
+            // Финализация с коротким таймаутом
+            const finalizeResponse = await axios.post(`${API_CONFIG.BASE_URL}/media-api/upload/finalize/`, {
+                upload_id: uploadId,
+                file_name: `media_${messageId}.${mediaType === 'image' ? 'jpg' : 'mp4'}`,
+                media_type: mediaType,
+                is_public: true,
+                turbo_mode: true
+            }, {
+                headers: {
+                    'Authorization': `Token ${token}`,
+                    'Content-Type': 'application/json',
+                },
+                timeout: 30000 // 30 секунд для финализации
+            });
+
+            if (onProgress) onProgress(100);
+
+            if (!finalizeResponse.data.success) {
+                throw new Error(finalizeResponse.data.message || 'Турбо финализация не удалась');
+            }
+
+            console.log('🚀 [TURBO-UPLOAD] ⚡✅ Turbo upload completed successfully!');
+            return finalizeResponse.data.file_url;
+
+        } catch (error) {
+            console.error('🚀 [TURBO-UPLOAD] ❌ Turbo chunk upload failed:', error);
+            throw error;
+        }
+    };
+
+    // Турбо загрузка файла через HTTP multipart/form-data
     const uploadFileMultipart = async (
         fileUri: string,
         mediaType: 'image' | 'video',
@@ -692,67 +903,123 @@ export default function ChatScreen() {
         onProgress?: (progress: number) => void
     ): Promise<string> => {
         try {
+            const fileInfo = await FileSystem.getInfoAsync(fileUri);
+            const fileSizeMB = fileInfo.size / (1024 * 1024);
+
+            console.log('📤 [TURBO-STRATEGY] Choosing turbo upload strategy:', {
+                fileSizeMB: fileSizeMB.toFixed(1) + 'MB',
+                strategy: fileSizeMB > 30 ? 'turbo-chunked' : 'turbo-multipart'
+            });
+
+            // ТУРБО РЕЖИМ: Используем чанковую загрузку уже с 30MB вместо 50MB
+            if (fileSizeMB > 30) {
+                try {
+                    return await uploadLargeFileChunkedOptimized(fileUri, mediaType, messageId, onProgress);
+                } catch (chunkError) {
+                    console.log('📤 [TURBO-STRATEGY] Turbo chunked failed, trying turbo multipart:', chunkError.message);
+                }
+            }
+
             const token = await getToken();
             if (!token) {
                 throw new Error('Нет токена авторизации');
             }
 
-            // Создаем FormData для multipart загрузки
-            const formData = new FormData();
+            // УМНАЯ КОМПРЕССИЯ: Оптимизируем изображения для быстрой загрузки
+            let optimizedUri = fileUri;
+            if (mediaType === 'image' && fileSizeMB > 2) { // Сжимаем уже с 2MB
+                console.log('📤 [SMART-COMPRESS] Compressing image for faster upload...');
 
-            // Добавляем файл
+                try {
+                    // Более агрессивное сжатие для скорости
+                    const { ImageManipulator } = await import('expo-image-manipulator');
+
+                    const compressedResult = await ImageManipulator.manipulateAsync(
+                        fileUri,
+                        [
+                            // Изменяем размер если изображение очень большое
+                            ...(fileSizeMB > 10 ? [{ resize: { width: 1920 } }] : []),
+                        ],
+                        {
+                            compress: fileSizeMB > 10 ? 0.6 : 0.75, // Более агрессивное сжатие для больших файлов
+                            format: ImageManipulator.SaveFormat.JPEG,
+                            base64: false,
+                        }
+                    );
+
+                    optimizedUri = compressedResult.uri;
+                    const newFileInfo = await FileSystem.getInfoAsync(optimizedUri);
+                    const newSizeMB = newFileInfo.size / (1024 * 1024);
+
+                    console.log('📤 [SMART-COMPRESS] ✅ Image compressed:', {
+                        originalSize: fileSizeMB.toFixed(1) + 'MB',
+                        compressedSize: newSizeMB.toFixed(1) + 'MB',
+                        reduction: ((fileSizeMB - newSizeMB) / fileSizeMB * 100).toFixed(1) + '%'
+                    });
+                } catch (compressError) {
+                    console.log('📤 [SMART-COMPRESS] Compression failed, using original:', compressError);
+                }
+            }
+
+            const formData = new FormData();
             formData.append('file', {
-                uri: fileUri,
+                uri: optimizedUri,
                 type: mediaType === 'image' ? 'image/jpeg' : 'video/mp4',
                 name: `media_${messageId}.${mediaType === 'image' ? 'jpg' : 'mp4'}`
             } as any);
 
-            // Добавляем публичный доступ для чатов
             formData.append('is_public', 'true');
+            formData.append('turbo_mode', 'true'); // Сигнализируем серверу о турбо режиме
 
-            if (onProgress) {
-                onProgress(10);
-            }
+            if (onProgress) onProgress(10);
 
             const endpoint = mediaType === 'image'
                 ? `${API_CONFIG.BASE_URL}/media-api/upload/image/`
                 : `${API_CONFIG.BASE_URL}/media-api/upload/video/`;
 
-            const response = await axios.post(
-                endpoint,
-                formData,
-                {
-                    headers: {
-                        'Authorization': `Token ${token}`,
-                        'Content-Type': 'multipart/form-data',
-                    },
-                    timeout: 600000, // 10 минут
-                    onUploadProgress: (progressEvent) => {
-                        if (progressEvent.total) {
-                            const progress = Math.round((progressEvent.loaded / progressEvent.total) * 90) + 10;
-                            if (onProgress) {
-                                onProgress(progress);
+            console.log('📤 [TURBO-MULTIPART] Starting turbo multipart upload...');
+
+            const response = await axios.post(endpoint, formData, {
+                headers: {
+                    'Authorization': `Token ${token}`,
+                    'Content-Type': 'multipart/form-data',
+                },
+                timeout: 180000, // Оптимизированный таймаут: 3 минуты
+                onUploadProgress: (progressEvent) => {
+                    if (progressEvent.total) {
+                        // Исправленный расчет прогресса
+                        const uploadProgress = Math.round((progressEvent.loaded / progressEvent.total) * 85);
+                        const totalProgress = Math.min(10 + uploadProgress, 95);
+                        if (onProgress) onProgress(totalProgress);
+
+                        // Логируем скорость загрузки реже для производительности
+                        if (progressEvent.loaded % (1024 * 1024) === 0) { // Каждый мегабайт
+                            const speedMBps = (progressEvent.loaded / (1024 * 1024)) / ((Date.now() - uploadStartTime) / 1000);
+                            if (speedMBps > 0) {
+                                console.log(`📤 [OPTIMIZED-SPEED] ${speedMBps.toFixed(1)} MB/s`);
                             }
                         }
                     }
                 }
-            );
+            });
 
-            if (onProgress) {
-                onProgress(100);
-            }
+            if (onProgress) onProgress(100);
 
             if (!response.data.success) {
-                throw new Error(response.data.message || 'Загрузка не удалась');
+                throw new Error(response.data.message || 'Турбо загрузка не удалась');
             }
 
+            console.log('📤 [TURBO-MULTIPART] ⚡✅ Turbo multipart upload completed!');
             return response.data.file.file_url;
 
         } catch (error) {
-            console.error('Ошибка загрузки файла:', error);
+            console.error('📤 [TURBO-UPLOAD] ❌ Turbo upload failed:', error);
             throw error;
         }
     };
+
+    // Переменная для измерения скорости загрузки
+    const uploadStartTime = Date.now();
 
 
     // Простая, но эффективная реализация хэширования для React Native
@@ -815,422 +1082,11 @@ export default function ChatScreen() {
         return uniqueHash;
     };
 
-    // Проверка существования файла с данным хэшем
-    const checkHashExists = async (hash: string, mediaType: 'image' | 'video'): Promise<boolean> => {
-        try {
-            const documentsDir = FileSystem.documentDirectory;
-            const fileName = `${hash}.${mediaType === 'image' ? 'jpg' : 'mp4'}`;
-            const fileUri = `${documentsDir}chat_media/${fileName}`;
 
-            const fileInfo = await FileSystem.getInfoAsync(fileUri);
-            const exists = fileInfo.exists && fileInfo.size > 0;
 
-            if (mediaType === 'video' && exists) {
-                // Для видео дополнительно проверяем минимальный размер (видео не может быть слишком маленьким)
-                const minVideoSize = 1000; // Минимум 1KB для видеофайла
-                if (fileInfo.size < minVideoSize) {
-                    console.log('📷 [CACHE] Video file too small, considering as corrupted:', {
-                        fileName: fileName,
-                        size: fileInfo.size,
-                        minRequired: minVideoSize
-                    });
-                    return false;
-                }
-            }
 
-            return exists;
-        } catch (error) {
-            console.error('📷 [CACHE] Error checking file existence:', error);
-            return false;
-        }
-    };
 
-    // Сохранение медиафайла на устройстве с хэшем
-    const saveMediaToDevice = async (base64Data: string, mediaType: 'image' | 'video', mediaHash?: string): Promise<string> => {
-        try {
-            const documentsDir = FileSystem.documentDirectory;
-            let hash = mediaHash;
 
-            if (!hash) {
-                hash = generateMediaHash(base64Data);
-            }
-
-            const fileSizeInMB = (base64Data.length * 0.75) / (1024 * 1024);
-
-            const dirUri = `${documentsDir}chat_media/`;
-            const dirInfo = await FileSystem.getInfoAsync(dirUri);
-            if (!dirInfo.exists) {
-                await FileSystem.makeDirectoryAsync(dirUri, { intermediates: true });
-            }
-
-            let fileName = `${hash}.${mediaType === 'image' ? 'jpg' : 'mp4'}`;
-            let fileUri = `${documentsDir}chat_media/${fileName}`;
-
-            // Проверяем коллизии хэшей
-            let attempt = 0;
-            while (await checkHashExists(hash, mediaType) && attempt < 10) {
-                try {
-                    const existingData = await FileSystem.readAsStringAsync(fileUri, {
-                        encoding: FileSystem.EncodingType.Base64,
-                    });
-
-                    if (existingData === base64Data) {
-                        return fileUri; // Файл уже существует
-                    }
-
-                    // Коллизия хэша, генерируем новый
-                    hash = generateMediaHash(base64Data, {
-                        collision: attempt,
-                        timestamp: Date.now(),
-                        additionalEntropy: Math.random().toString(36)
-                    });
-                    fileName = `${hash}.${mediaType === 'image' ? 'jpg' : 'mp4'}`;
-                    fileUri = `${documentsDir}chat_media/${fileName}`;
-                    attempt++;
-                } catch (readError) {
-                    console.error('Error reading existing file:', readError);
-                    break;
-                }
-            }
-
-            // Проверяем место на диске для больших файлов
-            if (fileSizeInMB > 100) {
-                try {
-                    const diskInfo = await FileSystem.getFreeDiskStorageAsync();
-                    const requiredSpace = base64Data.length * 1.5;
-
-                    if (diskInfo < requiredSpace) {
-                        throw new Error(`Недостаточно места на диске. Требуется: ${(requiredSpace / (1024 * 1024)).toFixed(1)}MB`);
-                    }
-                } catch (diskError) {
-                    console.warn('Could not check disk space:', diskError);
-                }
-            }
-
-            await FileSystem.writeAsStringAsync(fileUri, base64Data, {
-                encoding: FileSystem.EncodingType.Base64,
-            });
-
-            // Проверяем сохранение больших файлов
-            if (fileSizeInMB > 50) {
-                const savedFileInfo = await FileSystem.getInfoAsync(fileUri);
-                if (!savedFileInfo.exists || savedFileInfo.size === 0) {
-                    throw new Error('Файл не был сохранен корректно');
-                }
-            }
-
-            return fileUri;
-        } catch (error) {
-            console.error('Error saving file:', error);
-            throw error;
-        }
-    };
-
-    // Получение медиафайла из кэша по хэшу
-    const getMediaFromCache = async (mediaHash: string, mediaType: 'image' | 'video'): Promise<string | null> => {
-        try {
-            const documentsDir = FileSystem.documentDirectory;
-            const fileName = `${mediaHash}.${mediaType === 'image' ? 'jpg' : 'mp4'}`;
-            const fileUri = `${documentsDir}chat_media/${fileName}`;
-
-            const fileInfo = await FileSystem.getInfoAsync(fileUri);
-
-            // Проверяем основной файл
-            if (fileInfo.exists && fileInfo.size > 0) {
-                // Для видео файлов дополнительная проверка минимального размера
-                const minSize = mediaType === 'video' ? 1000 : 100; // 1KB для видео, 100B для изображений
-
-                if (fileInfo.size >= minSize) {
-                    console.log('📱 [CACHE] Found valid cached media:', {
-                        fileName: fileName,
-                        size: (fileInfo.size / (1024 * 1024)).toFixed(2) + 'MB',
-                        hash: mediaHash.substring(0, 16) + '...'
-                    });
-                    return fileUri;
-                } else {
-                    console.log('📱 [CACHE] File too small, considering corrupted:', {
-                        fileName: fileName,
-                        size: fileInfo.size,
-                        minSize: minSize
-                    });
-                }
-            }
-
-            // Если основной файл не найден или поврежден, ищем альтернативные варианты
-            if (fileInfo.exists && fileInfo.size === 0) {
-                console.log('📱 [CACHE] Found empty cached file, removing:', fileName);
-                try {
-                    await FileSystem.deleteAsync(fileUri);
-                } catch (deleteError) {
-                    console.error('📱 [CACHE] Error deleting empty file:', deleteError);
-                }
-            }
-
-            // УЛУЧШЕННЫЙ поиск альтернативных файлов
-            try {
-                const mediaDir = `${documentsDir}chat_media/`;
-                const dirInfo = await FileSystem.getInfoAsync(mediaDir);
-
-                if (dirInfo.exists) {
-                    const files = await FileSystem.readDirectoryAsync(mediaDir);
-                    const extension = mediaType === 'image' ? '.jpg' : '.mp4';
-
-                    console.log('📱 [CACHE] Starting comprehensive search:', {
-                        searchHash: mediaHash.substring(0, 16) + '...',
-                        totalFiles: files.length,
-                        targetType: mediaType
-                    });
-
-                    // Метод 1: Поиск по префиксу хэша (разной длины)
-                    const prefixLengths = [32, 24, 16, 12, 8]; // Разные длины префиксов
-
-                    for (const prefixLength of prefixLengths) {
-                        const hashPrefix = mediaHash.substring(0, Math.min(prefixLength, mediaHash.length));
-                        const matchingFiles = files.filter(file =>
-                            file.startsWith(hashPrefix) && file.endsWith(extension)
-                        );
-
-                        for (const matchingFile of matchingFiles) {
-                            const matchingFileUri = `${mediaDir}${matchingFile}`;
-                            const matchingFileInfo = await FileSystem.getInfoAsync(matchingFileUri);
-
-                            if (matchingFileInfo.exists && matchingFileInfo.size > 0) {
-                                const minSize = mediaType === 'video' ? 1000 : 100;
-
-                                if (matchingFileInfo.size >= minSize) {
-                                    console.log('📱 [CACHE] ✅ Found by prefix match:', {
-                                        originalHash: mediaHash.substring(0, 16) + '...',
-                                        foundFile: matchingFile,
-                                        prefixLength: prefixLength,
-                                        size: (matchingFileInfo.size / (1024 * 1024)).toFixed(2) + 'MB'
-                                    });
-                                    return matchingFileUri;
-                                }
-                            }
-                        }
-                    }
-
-                    // Метод 2: Поиск по части хэша в любом месте имени файла
-                    const coreHash = mediaHash.substring(8, 24); // Берем среднюю часть хэша
-                    const containsHashFiles = files.filter(file =>
-                        file.includes(coreHash) && file.endsWith(extension)
-                    );
-
-                    for (const matchingFile of containsHashFiles) {
-                        const matchingFileUri = `${mediaDir}${matchingFile}`;
-                        const matchingFileInfo = await FileSystem.getInfoAsync(matchingFileUri);
-
-                        if (matchingFileInfo.exists && matchingFileInfo.size > 0) {
-                            const minSize = mediaType === 'video' ? 1000 : 100;
-
-                            if (matchingFileInfo.size >= minSize) {
-                                console.log('📱 [CACHE] ✅ Found by core hash match:', {
-                                    originalHash: mediaHash.substring(0, 16) + '...',
-                                    foundFile: matchingFile,
-                                    coreHash: coreHash,
-                                    size: (matchingFileInfo.size / (1024 * 1024)).toFixed(2) + 'MB'
-                                });
-                                return matchingFileUri;
-                            }
-                        }
-                    }
-
-                    // Метод 3: Поиск по типу и размеру файла (для недавних файлов)
-                    const typeFiles = files.filter(file => file.endsWith(extension));
-                    const now = Date.now();
-
-                    for (const typeFile of typeFiles) {
-                        const typeFileUri = `${mediaDir}${typeFile}`;
-                        const typeFileInfo = await FileSystem.getInfoAsync(typeFileUri);
-
-                        if (typeFileInfo.exists && typeFileInfo.size > 0) {
-                            const minSize = mediaType === 'video' ? 1000 : 100;
-                            const fileAge = now - typeFileInfo.modificationTime;
-                            const isRecent = fileAge < 2 * 60 * 60 * 1000; // Менее 2 часов
-
-                            if (typeFileInfo.size >= minSize && isRecent) {
-                                // Дополнительная проверка: файл должен быть достаточно большим для видео
-                                const isLikelyMatch = mediaType === 'image' ||
-                                    (mediaType === 'video' && typeFileInfo.size > 100000); // >100KB для видео
-
-                                if (isLikelyMatch) {
-                                    console.log('📱 [CACHE] ✅ Found by type and recency:', {
-                                        originalHash: mediaHash.substring(0, 16) + '...',
-                                        foundFile: typeFile,
-                                        size: (typeFileInfo.size / (1024 * 1024)).toFixed(2) + 'MB',
-                                        ageMinutes: Math.round(fileAge / (1000 * 60))
-                                    });
-                                    return typeFileUri;
-                                }
-                            }
-                        }
-                    }
-                }
-            } catch (dirError) {
-                console.error('📱 [CACHE] Error in comprehensive search:', dirError);
-            }
-
-            console.log('📱 [CACHE] Media not found in cache (tried all methods):', {
-                fileName: fileName,
-                hash: mediaHash.substring(0, 16) + '...',
-                type: mediaType
-            });
-            return null;
-        } catch (error) {
-            console.error('📱 [CACHE] Error getting file from cache:', error);
-            return null;
-        }
-    };
-
-    // Сохранение метаданных медиафайла
-    const saveMediaMetadata = async (mediaHash: string, metadata: any) => {
-        try {
-            const metadataKey = `media_${mediaHash}`;
-            await AsyncStorage.setItem(metadataKey, JSON.stringify(metadata));
-        } catch (error) {
-            console.error('Ошибка сохранения метаданных:', error);
-        }
-    };
-
-    // Получение метаданных медиафайла
-    const getMediaMetadata = async (mediaHash: string) => {
-        try {
-            const metadataKey = `media_${mediaHash}`;
-            const metadata = await AsyncStorage.getItem(metadataKey);
-            return metadata ? JSON.parse(metadata) : null;
-        } catch (error) {
-            console.error('Ошибка получения метаданных:', error);
-            return null;
-        }
-    };
-
-    // Диагностическая функция для анализа состояния кэша больших файлов
-    const diagnoseLargeFilesCache = async () => {
-        try {
-            console.log('🔍 [DIAGNOSIS] === DIAGNOSING LARGE FILES CACHE ===');
-
-            // Проверяем список больших файлов
-            const largeFilesList = await AsyncStorage.getItem('large_files_list');
-            if (largeFilesList) {
-                const files = JSON.parse(largeFilesList);
-                console.log('🔍 [DIAGNOSIS] Large files in tracking list:', files.length);
-
-                for (let i = 0; i < Math.min(files.length, 5); i++) {
-                    const file = files[i];
-                    console.log(`🔍 [DIAGNOSIS] File ${i+1}:`, {
-                        messageId: file.messageId,
-                        sizeMB: file.fileSizeMB,
-                        savedAt: new Date(file.savedAt).toLocaleString(),
-                        hash: file.mediaHash?.substring(0, 16) + '...'
-                    });
-
-                    // Проверяем, существует ли файл
-                    if (file.savedUri) {
-                        try {
-                            const fileInfo = await FileSystem.getInfoAsync(file.savedUri);
-                            console.log(`🔍 [DIAGNOSIS] File ${i+1} status:`, {
-                                exists: fileInfo.exists,
-                                size: fileInfo.exists ? (fileInfo.size / (1024*1024)).toFixed(1) + 'MB' : 'N/A'
-                            });
-                        } catch (checkError) {
-                            console.log(`🔍 [DIAGNOSIS] File ${i+1} check failed:`, checkError.message);
-                        }
-                    }
-
-                    // Проверяем backup метаданные
-                    const backupKey = `large_media_${file.messageId}`;
-                    const backupData = await AsyncStorage.getItem(backupKey);
-                    console.log(`🔍 [DIAGNOSIS] File ${i+1} backup metadata:`, !!backupData);
-                }
-            } else {
-                console.log('🔍 [DIAGNOSIS] No large files tracking list found');
-            }
-
-            // Проверяем директорию медиафайлов
-            const documentsDir = FileSystem.documentDirectory;
-            const mediaDir = `${documentsDir}chat_media/`;
-
-            try {
-                const files = await FileSystem.readDirectoryAsync(mediaDir);
-                console.log('🔍 [DIAGNOSIS] Files in media directory:', files.length);
-
-                let largeFilesCount = 0;
-                for (const fileName of files) {
-                    const filePath = `${mediaDir}${fileName}`;
-                    const fileInfo = await FileSystem.getInfoAsync(filePath);
-                    if (fileInfo.size > 15 * 1024 * 1024) { // >15MB
-                        largeFilesCount++;
-                    }
-                }
-                console.log('🔍 [DIAGNOSIS] Large files (>15MB) in directory:', largeFilesCount);
-
-            } catch (dirError) {
-                console.log('🔍 [DIAGNOSIS] Media directory check failed:', dirError.message);
-            }
-
-        } catch (error) {
-            console.error('🔍 [DIAGNOSIS] Diagnosis failed:', error);
-        }
-    };
-
-    // Функция очистки старых медиафайлов (вызывается при запуске)
-    const cleanupOldMediaFiles = async () => {
-        try {
-            console.log('🧹 [CLEANUP] Starting media files cleanup');
-            const documentsDir = FileSystem.documentDirectory;
-            const mediaDir = `${documentsDir}chat_media/`;
-
-            // Проверяем, существует ли директория
-            const dirInfo = await FileSystem.getInfoAsync(mediaDir);
-            if (!dirInfo.exists) {
-                console.log('🧹 [CLEANUP] Media directory does not exist, nothing to cleanup');
-                return;
-            }
-
-            // Получаем список всех файлов в директории медиа
-            const files = await FileSystem.readDirectoryAsync(mediaDir);
-            console.log('🧹 [CLEANUP] Found media files:', files.length);
-
-            let cleanedCount = 0;
-            const maxAge = 7 * 24 * 60 * 60 * 1000; // 7 дней в миллисекундах
-            const now = Date.now();
-
-            for (const fileName of files) {
-                try {
-                    const filePath = `${mediaDir}${fileName}`;
-                    const fileInfo = await FileSystem.getInfoAsync(filePath);
-
-                    // Файлы старше 7 дней удаляем (кроме последних отправленных)
-                    const fileAge = now - fileInfo.modificationTime;
-                    if (fileAge > maxAge) {
-                        // Извлекаем хэш из имени файла
-                        const hash = fileName.split('.')[0];
-                        const metadata = await getMediaMetadata(hash);
-
-                        // Удаляем только если это не файл из недавних сообщений
-                        if (!metadata || (now - metadata.savedAt) > maxAge) {
-                            await FileSystem.deleteAsync(filePath);
-                            if (metadata) {
-                                await AsyncStorage.removeItem(`media_${hash}`);
-                            }
-                            cleanedCount++;
-                            console.log('🧹 [CLEANUP] Deleted old file:', fileName);
-                        }
-                    }
-                } catch (fileError) {
-                    console.error('🧹 [CLEANUP] Error processing file:', fileName, fileError);
-                }
-            }
-
-            console.log('🧹 [CLEANUP] Cleanup completed:', {
-                totalFiles: files.length,
-                deletedFiles: cleanedCount
-            });
-
-        } catch (error) {
-            console.error('🧹 [CLEANUP] Error during cleanup:', error);
-        }
-    };
 
     // Выбор изображения
     const pickImage = async () => {
@@ -1246,8 +1102,9 @@ export default function ChatScreen() {
             const result = await ImagePicker.launchImageLibraryAsync({
                 mediaTypes: ['images'],
                 allowsEditing: false,
-                quality: 0.8,
+                quality: 0.7, // Уменьшаем качество для ускорения без значительной потери
                 base64: true,
+                exif: false, // Убираем EXIF данные для уменьшения размера
             });
 
             console.log('📷 [PICKER] Image picker result:', {
@@ -1416,7 +1273,45 @@ export default function ChatScreen() {
         }
     };
 
-    // Выбор видео
+    // Диагностика видеофайла для проверки совместимости
+    const diagnoseVideo = async (videoUri: string): Promise<{compatible: boolean, info: any}> => {
+        try {
+            console.log('🎥 [DIAGNOSE] Analyzing video compatibility:', videoUri.substring(videoUri.lastIndexOf('/') + 1));
+
+            const fileInfo = await FileSystem.getInfoAsync(videoUri);
+            if (!fileInfo.exists) {
+                return { compatible: false, info: { error: 'File does not exist' } };
+            }
+
+            const fileSizeMB = fileInfo.size / (1024 * 1024);
+
+            // Простая эвристика на основе размера и расширения
+            const isLargeFile = fileSizeMB > 100;
+            const hasCompatibleExtension = videoUri.toLowerCase().includes('.mp4') || 
+                                         videoUri.toLowerCase().includes('.mov');
+
+            const diagnostics = {
+                fileSize: fileInfo.size,
+                fileSizeMB: fileSizeMB,
+                hasCompatibleExtension,
+                isLargeFile,
+                uri: videoUri,
+                likelyCompatible: hasCompatibleExtension && !isLargeFile
+            };
+
+            console.log('🎥 [DIAGNOSE] Video diagnostics:', diagnostics);
+
+            return { 
+                compatible: diagnostics.likelyCompatible, 
+                info: diagnostics 
+            };
+        } catch (error) {
+            console.error('🎥 [DIAGNOSE] Error diagnosing video:', error);
+            return { compatible: false, info: { error: error.message } };
+        }
+    };
+
+    // Выбор видео с диагностикой
     const pickVideo = async () => {
         console.log('🎥 [PICKER] Starting video picker...');
         try {
@@ -1429,8 +1324,9 @@ export default function ChatScreen() {
             const result = await ImagePicker.launchImageLibraryAsync({
                 mediaTypes: ['videos'],
                 allowsEditing: true,
-                quality: 0.3, // Снижаем качество для уменьшения размера
-                videoMaxDuration: 60, // Ограничиваем длительность видео до 60 секунд
+                quality: 0.4, // Оптимизируем для баланса качества и скорости
+                videoMaxDuration: 60,
+                videoQuality: ImagePicker.VideoQuality.Medium, // Средне качество для ускорения
             });
 
             console.log('🎥 [PICKER] Video picker result:', {
@@ -1447,21 +1343,25 @@ export default function ChatScreen() {
                     height: asset.height,
                     fileSize: asset.fileSize,
                     fileName: asset.fileName,
-                    uniqueId: Date.now() + Math.random()
+                    mimeType: asset.mimeType
                 });
 
-                // Проверяем размер файла (ограничиваем до 300MB согласно настройкам сервера)
+                // Диагностируем видео на совместимость
+                const diagnosis = await diagnoseVideo(asset.uri);
+                console.log('🎥 [PICKER] Video diagnosis result:', diagnosis);
+
+                // Проверяем размер файла
                 const maxVideoSize = 300 * 1024 * 1024; // 300MB
                 if (asset.fileSize && asset.fileSize > maxVideoSize) {
                     Alert.alert(
                         'Файл слишком большой',
-                        `Размер видео: ${Math.round(asset.fileSize / 1024 / 1024)}MB. Максимальный размер: 300MB. Попробуйте выбрать более короткое видео или уменьшить качество.`
+                        `Размер видео: ${Math.round(asset.fileSize / 1024 / 1024)}MB. Максимальный размер: 300MB.`
                     );
                     return;
                 }
 
-                // Проверяем длительность видео (ограничиваем до 10 минут)
-                const maxDuration = 600000; // 10 минут в миллисекундах
+                // Проверяем длительность видео
+                const maxDuration = 600000; // 10 минут
                 if (asset.duration && asset.duration > maxDuration) {
                     Alert.alert(
                         'Видео слишком длинное',
@@ -1470,49 +1370,33 @@ export default function ChatScreen() {
                     return;
                 }
 
+                // Предупреждаем о потенциальных проблемах совместимости
+                if (!diagnosis.compatible) {
+                    const shouldContinue = await new Promise<boolean>((resolve) => {
+                        Alert.alert(
+                            'Возможны проблемы с воспроизведением',
+                            `Это видео может не воспроизводиться корректно на некоторых устройствах.\n\n` +
+                            `Формат: ${asset.mimeType || 'неизвестно'}\n` +
+                            `Размер: ${diagnosis.info.fileSizeMB?.toFixed(1) || '?'}MB\n\n` +
+                            `Рекомендация: используйте MP4 файлы до 100MB.\n\nПродолжить загрузку?`,
+                            [
+                                { text: 'Отмена', style: 'cancel', onPress: () => resolve(false) },
+                                { text: 'Продолжить', style: 'default', onPress: () => resolve(true) }
+                            ]
+                        );
+                    });
+
+                    if (!shouldContinue) return;
+                }
+
                 try {
                     const fileSizeMB = asset.fileSize ? asset.fileSize / (1024 * 1024) : 0;
 
-                    // Проверяем формат видео
-                    const videoInfo = {
-                        uri: asset.uri,
-                        fileName: asset.fileName,
-                        mimeType: asset.mimeType,
-                        duration: asset.duration,
-                        width: asset.width,
-                        height: asset.height
-                    };
-
-                    console.log('🎥 [PICKER] Processing video file:', {
+                    console.log('🎥 [PICKER] Processing compatible video:', {
                         sizeMB: fileSizeMB.toFixed(1),
-                        uri: asset.uri,
-                        fileName: asset.fileName,
-                        mimeType: asset.mimeType,
-                        duration: asset.duration ? Math.round(asset.duration / 1000) + 's' : 'unknown',
-                        resolution: `${asset.width}x${asset.height}`,
+                        compatible: diagnosis.compatible,
                         strategy: fileSizeMB > 30 ? 'direct_upload' : 'base64_conversion'
                     });
-
-                    // Проверяем совместимость формата
-                    const supportedFormats = ['video/mp4', 'video/mov', 'video/avi', 'video/quicktime'];
-                    const isUnsupportedFormat = asset.mimeType && !supportedFormats.some(format =>
-                        asset.mimeType?.includes(format.split('/')[1])
-                    );
-
-                    if (isUnsupportedFormat) {
-                        const shouldContinue = await new Promise<boolean>((resolve) => {
-                            Alert.alert(
-                                'Неподдерживаемый формат',
-                                `Формат видео "${asset.mimeType}" может не воспроизводиться корректно.\n\nРекомендуемые форматы: MP4, MOV\n\nПродолжить загрузку?`,
-                                [
-                                    { text: 'Отмена', style: 'cancel', onPress: () => resolve(false) },
-                                    { text: 'Продолжить', style: 'default', onPress: () => resolve(true) }
-                                ]
-                            );
-                        });
-
-                        if (!shouldContinue) return;
-                    }
 
                     // Для файлов больше 30MB используем прямую загрузку без base64
                     if (fileSizeMB > 30) {
@@ -1858,9 +1742,11 @@ export default function ChatScreen() {
                     timeout: 600000, // 10 минут
                     onUploadProgress: (progressEvent) => {
                         if (progressEvent.total) {
-                            const progress = Math.round((progressEvent.loaded / progressEvent.total) * 90) + 10;
+                            // Исправляем расчет: 10% начальная подготовка + 85% загрузка + 5% финализация
+                            const uploadProgress = Math.round((progressEvent.loaded / progressEvent.total) * 85);
+                            const totalProgress = Math.min(10 + uploadProgress, 95); // Максимум 95% до финализации
                             if (onProgress) {
-                                onProgress(progress);
+                                onProgress(totalProgress);
                             }
                         }
                     }
@@ -2214,19 +2100,6 @@ export default function ChatScreen() {
 
             setMessages(prev => [optimisticMessage, ...prev]);
 
-            // Сохраняем локально
-            const savedUri = await saveMediaToDevice(base64Data, mediaType, mediaHash);
-
-            // Обновляем с локальным URI
-            setMessages(prev =>
-                prev.map(msg => {
-                    if (msg.id === messageId) {
-                        return { ...msg, mediaUri: savedUri };
-                    }
-                    return msg;
-                })
-            );
-
             // Создаем временный файл для загрузки
             const tempUri = `${FileSystem.cacheDirectory}temp_${messageId}.${mediaType === 'image' ? 'jpg' : 'mp4'}`;
             await FileSystem.writeAsStringAsync(tempUri, base64Data, {
@@ -2446,298 +2319,33 @@ export default function ChatScreen() {
                             mediaUri: null // Будет установлен из кэша
                         };
 
-                        // Если сообщение содержит медиа, пытаемся восстановить из кэша
+                        // Обработка медиафайлов из истории
                         if (processedMsg.mediaType && processedMsg.mediaHash) {
-                            const fileSizeInMB = processedMsg.mediaSize ? processedMsg.mediaSize / (1024 * 1024) : 0;
-                            const isLargeFile = fileSizeInMB > 15;
-
-                            console.log('📷 [HISTORY] ==> RESTORING MEDIA FROM CACHE <==');
-                            console.log('📷 [HISTORY] Media details:', {
-                                hash: processedMsg.mediaHash.substring(0, 16) + '...',
+                            console.log('📷 [HISTORY] Media from history:', {
                                 type: processedMsg.mediaType,
                                 messageId: processedMsg.id,
-                                sizeMB: fileSizeInMB.toFixed(1),
-                                isLargeFile: isLargeFile,
-                                fileName: `${processedMsg.mediaHash}.${processedMsg.mediaType === 'image' ? 'jpg' : 'mp4'}`
+                                hash: processedMsg.mediaHash.substring(0, 16) + '...'
                             });
 
-                            try {
-                                let cachedUri = await getMediaFromCache(processedMsg.mediaHash, processedMsg.mediaType);
-
-                                // Если не найден в стандартном кэше, ищем через все возможные источники
-                                if (!cachedUri) {
-                                    console.log('📷 [HISTORY] Not found in standard cache, trying alternative methods...');
-
-                                    // Метод 1: Поиск по backup записям (для всех файлов, не только больших)
-                                    try {
-                                        const backupKey = `large_media_${processedMsg.id}`;
-                                        const backupData = await AsyncStorage.getItem(backupKey);
-
-                                        if (backupData) {
-                                            const backup = JSON.parse(backupData);
-                                            console.log('📷 [HISTORY] Found backup record:', {
-                                                messageId: processedMsg.id,
-                                                backupUri: backup.mediaUri,
-                                                backupHash: backup.mediaHash?.substring(0, 16) + '...'
-                                            });
-
-                                            if (backup.mediaUri && backup.mediaHash === processedMsg.mediaHash) {
-                                                const backupFileInfo = await FileSystem.getInfoAsync(backup.mediaUri);
-                                                if (backupFileInfo.exists && backupFileInfo.size > 0) {
-                                                    cachedUri = backup.mediaUri;
-                                                    console.log('📷 [HISTORY] ✅ Restored from backup record!');
-                                                }
-                                            }
-                                        }
-                                    } catch (backupError) {
-                                        console.error('📷 [HISTORY] Backup search error:', backupError);
-                                    }
-
-                                    // Метод 2: Поиск в списке больших файлов (улучшенный)
-                                    if (!cachedUri) {
-                                        try {
-                                            const largeFilesList = await AsyncStorage.getItem('large_files_list');
-                                            if (largeFilesList) {
-                                                const files = JSON.parse(largeFilesList);
-
-                                                // Ищем по разным критериям
-                                                let matchingFile = files.find(f => f.mediaHash === processedMsg.mediaHash);
-
-                                                if (!matchingFile) {
-                                                    matchingFile = files.find(f => f.messageId === processedMsg.id);
-                                                }
-
-                                                // Поиск по типу и размеру файла
-                                                if (!matchingFile && processedMsg.mediaSize) {
-                                                    const targetSizeMB = processedMsg.mediaSize / (1024 * 1024);
-                                                    matchingFile = files.find(f =>
-                                                        f.mediaType === processedMsg.mediaType &&
-                                                        Math.abs(f.fileSizeMB - targetSizeMB) < 0.5 // Разница менее 0.5MB
-                                                    );
-                                                }
-
-                                                // Поиск по частичному совпадению хэша
-                                                if (!matchingFile && processedMsg.mediaHash) {
-                                                    const hashPrefix = processedMsg.mediaHash.substring(0, 16);
-                                                    matchingFile = files.find(f =>
-                                                        f.mediaHash &&
-                                                        f.mediaHash.startsWith(hashPrefix) &&
-                                                        f.mediaType === processedMsg.mediaType
-                                                    );
-                                                }
-
-                                                if (matchingFile && matchingFile.savedUri) {
-                                                    const fileInfo = await FileSystem.getInfoAsync(matchingFile.savedUri);
-                                                    if (fileInfo.exists && fileInfo.size > 0) {
-                                                        cachedUri = matchingFile.savedUri;
-                                                        console.log('📷 [HISTORY] ✅ Found in large files list:', {
-                                                            method: matchingFile.mediaHash === processedMsg.mediaHash ? 'exact_hash' :
-                                                                   matchingFile.messageId === processedMsg.id ? 'message_id' :
-                                                                   'fuzzy_match',
-                                                            file: matchingFile.fileName || 'unknown',
-                                                            size: (fileInfo.size / (1024 * 1024)).toFixed(1) + 'MB'
-                                                        });
-                                                    }
-                                                }
-                                            }
-                                        } catch (listError) {
-                                            console.error('📷 [HISTORY] Large files list search error:', listError);
-                                        }
-                                    }
-
-                                    // Метод 3: Умный поиск по директории (последний шанс)
-                                    if (!cachedUri) {
-                                        try {
-                                            const documentsDir = FileSystem.documentDirectory;
-                                            const mediaDir = `${documentsDir}chat_media/`;
-                                            const dirInfo = await FileSystem.getInfoAsync(mediaDir);
-
-                                            if (dirInfo.exists) {
-                                                const files = await FileSystem.readDirectoryAsync(mediaDir);
-                                                const extension = processedMsg.mediaType === 'image' ? '.jpg' : '.mp4';
-                                                const relevantFiles = files.filter(fileName => fileName.endsWith(extension));
-
-                                                console.log('📷 [HISTORY] Smart directory search:', {
-                                                    totalFiles: files.length,
-                                                    relevantFiles: relevantFiles.length,
-                                                    targetType: processedMsg.mediaType,
-                                                    targetSize: processedMsg.mediaSize,
-                                                    searchHash: processedMsg.mediaHash?.substring(0, 16) + '...'
-                                                });
-
-                                                // Поиск по частичному хэшу (разные стратегии)
-                                                if (processedMsg.mediaHash) {
-                                                    const hashParts = [
-                                                        processedMsg.mediaHash.substring(0, 16),
-                                                        processedMsg.mediaHash.substring(8, 24),
-                                                        processedMsg.mediaHash.substring(16, 32)
-                                                    ];
-
-                                                    for (const hashPart of hashParts) {
-                                                        const matchingFiles = relevantFiles.filter(fileName =>
-                                                            fileName.includes(hashPart)
-                                                        );
-
-                                                        for (const fileName of matchingFiles) {
-                                                            const filePath = `${mediaDir}${fileName}`;
-                                                            const fileInfo = await FileSystem.getInfoAsync(filePath);
-
-                                                            if (fileInfo.exists && fileInfo.size > 0) {
-                                                                // Дополнительная проверка размера
-                                                                let sizeMatch = true;
-                                                                if (processedMsg.mediaSize) {
-                                                                    const sizeDiff = Math.abs(fileInfo.size - processedMsg.mediaSize);
-                                                                    const sizeRatio = sizeDiff / processedMsg.mediaSize;
-                                                                    sizeMatch = sizeRatio < 0.1; // Разница менее 10%
-                                                                }
-
-                                                                if (sizeMatch) {
-                                                                    cachedUri = filePath;
-                                                                    console.log('📷 [HISTORY] ✅ Found by smart search:', {
-                                                                        fileName: fileName,
-                                                                        matchedHashPart: hashPart,
-                                                                        size: (fileInfo.size / (1024 * 1024)).toFixed(1) + 'MB',
-                                                                        sizeMatch: sizeMatch
-                                                                    });
-                                                                    break;
-                                                                }
-                                                            }
-                                                        }
-                                                        if (cachedUri) break;
-                                                    }
-                                                }
-
-                                                // Последняя попытка: поиск по размеру и типу (для недавних файлов)
-                                                if (!cachedUri && processedMsg.mediaSize) {
-                                                    const now = Date.now();
-                                                    const targetSize = processedMsg.mediaSize;
-
-                                                    for (const fileName of relevantFiles) {
-                                                        const filePath = `${mediaDir}${fileName}`;
-                                                        const fileInfo = await FileSystem.getInfoAsync(filePath);
-
-                                                        if (fileInfo.exists && fileInfo.size > 0) {
-                                                            const sizeDiff = Math.abs(fileInfo.size - targetSize);
-                                                            const sizeRatio = sizeDiff / targetSize;
-                                                            const fileAge = now - fileInfo.modificationTime;
-                                                            const isRecent = fileAge < 24 * 60 * 60 * 1000; // Менее 24 часов
-
-                                                            if (sizeRatio < 0.05 && isRecent) { // Очень близкий размер и недавний
-                                                                cachedUri = filePath;
-                                                                console.log('📷 [HISTORY] ✅ Found by size+time heuristic:', {
-                                                                    fileName: fileName,
-                                                                    sizeMatch: (sizeRatio * 100).toFixed(1) + '%',
-                                                                    ageHours: Math.round(fileAge / (1000 * 60 * 60))
-                                                                });
-                                                                break;
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        } catch (dirError) {
-                                            console.error('📷 [HISTORY] Smart directory search error:', dirError);
-                                        }
-                                    }
-                                }
-
-                                if (cachedUri) {
-                                    // Дополнительная валидация найденного файла
-                                    const fileInfo = await FileSystem.getInfoAsync(cachedUri);
-                                    const isValidFile = fileInfo.exists && fileInfo.size > 0;
-
-                                    // Для видео файлов проверяем минимальный размер
-                                    const isValidVideo = processedMsg.mediaType !== 'video' || fileInfo.size > 1000;
-
-                                    if (isValidFile && isValidVideo) {
-                                        processedMsg.mediaUri = cachedUri;
-
-                                        // Дополнительно сохраняем backup информации
-                                        processedMsg._cacheRestored = true;
-                                        processedMsg._cacheTimestamp = Date.now();
-
-                                        console.log('📷 [HISTORY] ✅ Successfully restored media from cache:', {
-                                            type: processedMsg.mediaType,
-                                            fileName: cachedUri.substring(cachedUri.lastIndexOf('/') + 1),
-                                            messageId: processedMsg.id,
-                                            fileSize: (fileInfo.size / (1024 * 1024)).toFixed(1) + 'MB',
-                                            method: 'comprehensive_search'
-                                        });
-
-                                        // Создаем дополнительную backup запись для надежности
-                                        try {
-                                            const backupKey = `history_media_${processedMsg.id}`;
-                                            const backupData = {
-                                                messageId: processedMsg.id,
-                                                mediaType: processedMsg.mediaType,
-                                                mediaHash: processedMsg.mediaHash,
-                                                mediaUri: cachedUri,
-                                                restoredAt: Date.now(),
-                                                fileSize: fileInfo.size,
-                                                isHistory: true
-                                            };
-                                            await AsyncStorage.setItem(backupKey, JSON.stringify(backupData));
-                                            console.log('📷 [HISTORY] Created history backup record');
-                                        } catch (backupError) {
-                                            console.error('📷 [HISTORY] Failed to create backup record:', backupError);
-                                        }
-                                    } else {
-                                        console.log('📷 [HISTORY] ❌ Found file is invalid:', {
-                                            exists: fileInfo.exists,
-                                            size: fileInfo.size,
-                                            isVideo: processedMsg.mediaType === 'video',
-                                            minSizeOk: isValidVideo
-                                        });
-                                        cachedUri = null;
-                                    }
-                                }
-
-                                // Если файл все еще не найден
-                                if (!cachedUri) {
-                                    console.log('📷 [HISTORY] ❌ Media NOT found in any cache location:', {
-                                        hash: processedMsg.mediaHash.substring(0, 16) + '...',
-                                        type: processedMsg.mediaType,
-                                        sizeMB: fileSizeInMB.toFixed(1),
-                                        messageId: processedMsg.id
-                                    });
-
-                                    // Только для больших файлов (>15MB) показываем опцию перезагрузки
-                                    if (fileSizeInMB > 15) {
-                                        processedMsg.needsReload = true;
-                                        processedMsg.message = processedMsg.mediaType === 'image'
-                                            ? `📷 Изображение ${fileSizeInMB.toFixed(1)}MB (не найдено в кэше)`
-                                            : `🎥 Видео ${fileSizeInMB.toFixed(1)}MB (не найдено в кэше)`;
-                                        console.log('📷 [HISTORY] ❌ Large file marked for reload:', {
-                                            size: fileSizeInMB.toFixed(1) + 'MB',
-                                            type: processedMsg.mediaType,
-                                            messageId: processedMsg.id
-                                        });
-                                    } else {
-                                        // Для файлов меньше 15MB просто показываем как обычное сообщение без медиа
-                                        processedMsg.message = processedMsg.mediaType === 'image'
-                                            ? `📷 Изображение ${fileSizeInMB.toFixed(1)}MB`
-                                            : `🎥 Видео ${fileSizeInMB.toFixed(1)}MB`;
-                                        console.log('📷 [HISTORY] Small file will show as text message:', {
-                                            size: fileSizeInMB.toFixed(1) + 'MB',
-                                            type: processedMsg.mediaType,
-                                            messageId: processedMsg.id
-                                        });
-                                    }
-                                }
-                            } catch (error) {
-                                console.error('📷 [HISTORY] ❌ Error restoring media:', error);
-                                // В случае ошибки показываем сообщение без медиа
-                                processedMsg.message = processedMsg.mediaType === 'image'
-                                    ? `📷 Изображение (ошибка загрузки)`
-                                    : `🎥 Видео (ошибка загрузки)`;
+                            if (processedMsg.mediaType === 'video') {
+                                // Для видео из истории НЕ загружаем автоматически - только по требованию пользователя
+                                processedMsg.serverFileUrl = null;
+                                processedMsg.mediaUri = null;
+                                processedMsg.videoLoadRequested = false;
+                                processedMsg.videoIsLoading = false;
+                                processedMsg.isLoadingServerUrl = false;
+                                processedMsg.needsReload = false; // Сбрасываем флаг перезагрузки
+                                console.log('🎥 [LAZY-LOAD] Video from history will load only on play button press');
+                            } else {
+                                // Для изображений загружаем как раньше
+                                processedMsg.serverFileUrl = null;
+                                processedMsg.mediaUri = null;
+                                processedMsg.isLoadingServerUrl = true;
                             }
-                        } else {
-                            console.log('📜 [HISTORY] Text message (no media):', processedMsg.id);
                         }
 
                         console.log('📜 [HISTORY] Final processed message:', {
                             id: processedMsg.id,
-                            mediaType: processedMsg.mediaType,
                             mediaHash: processedMsg.mediaHash,
                             hasMediaUri: !!processedMsg.mediaUri,
                             hasMediaBase64: !!processedMsg.mediaBase64,
@@ -2779,34 +2387,61 @@ export default function ChatScreen() {
                     });
                     setPage(1);
 
-                    // После установки состояния пытаемся обновить медиа для сообщений без URI
-                    setTimeout(async () => {
-                        console.log('📜 [HISTORY] Post-load media recovery started');
+                    // Асинхронно загружаем URL только для изображений из истории
+                    const imageMessagesFromHistory = processedMessages.filter(msg => 
+                        msg.mediaType === 'image' && msg.mediaHash && msg.isLoadingServerUrl
+                    );
 
-                        // Логируем текущее состояние сообщений перед восстановлением
-                        setTimeout(() => {
-                            console.log('📜 [HISTORY] Current messages state before recovery:');
-                            const currentMessages = messages;
-                            const mediaMessages = currentMessages.filter(msg => msg.mediaType);
-                            console.log('📜 [HISTORY] Total media messages:', mediaMessages.length);
+                    if (imageMessagesFromHistory.length > 0) {
+                        console.log('📜 [HISTORY] Loading server URLs for images only:', imageMessagesFromHistory.length);
 
-                            mediaMessages.forEach((msg, idx) => {
-                                const sizeMB = msg.mediaSize ? (msg.mediaSize / (1024 * 1024)).toFixed(1) : '?';
-                                console.log(`📜 [HISTORY] Media msg ${idx + 1}:`, {
-                                    id: msg.id,
-                                    type: msg.mediaType,
-                                    sizeMB: sizeMB + 'MB',
-                                    hasUri: !!msg.mediaUri,
-                                    hasBase64: !!msg.mediaBase64,
-                                    hasHash: !!msg.mediaHash,
-                                    hash: msg.mediaHash?.substring(0, 16) + '...',
-                                    needsReload: msg.needsReload
-                                });
+                        // Загружаем URL только для изображений
+                        imageMessagesFromHistory.forEach(async (msg, index) => {
+                            setTimeout(async () => {
+                                try {
+                                    const serverUrl = await getMediaServerUrl(msg.id);
+
+                                    if (serverUrl) {
+                                        updateMessageSafely(msg.id, {
+                                            serverFileUrl: serverUrl,
+                                            isLoadingServerUrl: false
+                                        });
+                                    } else {
+                                        updateMessageSafely(msg.id, {
+                                            isLoadingServerUrl: false,
+                                            needsReload: true
+                                        });
+                                    }
+                                } catch (error) {
+                                    console.error('📜 [HISTORY] Error loading server URL for image:', error);
+                                    updateMessageSafely(msg.id, {
+                                        isLoadingServerUrl: false,
+                                        needsReload: true
+                                    });
+                                }
+                            }, index * 300);
+                        });
+                    }
+
+                    // Видео из истории остаются в режиме превью (НЕ загружаются автоматически)
+                    const videoMessagesFromHistory = processedMessages.filter(msg => 
+                        msg.mediaType === 'video' && msg.mediaHash
+                    );
+
+                    if (videoMessagesFromHistory.length > 0) {
+                        console.log('📜 [HISTORY] Found', videoMessagesFromHistory.length, 'videos in history - will load ONLY on user request (play button)');
+
+                        // Обновляем видео сообщения - убираем автозагрузку
+                        videoMessagesFromHistory.forEach(msg => {
+                            updateMessageSafely(msg.id, {
+                                videoLoadRequested: false,
+                                videoIsLoading: false,
+                                isLoadingServerUrl: false,
+                                serverFileUrl: null,
+                                mediaUri: null
                             });
-                        }, 100);
-
-                        await retryMediaRecovery();
-                    }, 500);
+                        });
+                    }
                 } else {
                     // Загрузка дополнительных сообщений - добавляем в конец (старые сообщения)
                     setMessages(prev => [...prev, ...processedMessages]);
@@ -2853,33 +2488,66 @@ export default function ChatScreen() {
     // Настройка аудио сессии при загрузке компонента
     useEffect(() => {
         const setupAudioSession = async () => {
+            // Настраиваем аудио только если приложение активно
+            if (appState !== 'active') {
+                console.log('🎥 [AUDIO] Skipping audio setup - app not active:', appState);
+                setAudioSessionReady(false);
+                return;
+            }
+
             try {
+                console.log('🎥 [AUDIO] Setting up audio session...');
                 await Audio.setAudioModeAsync({
                     allowsRecordingIOS: false,
-                    staysActiveInBackground: true, // Изменено: позволяем работать в фоне
-                    interruptionModeIOS: Audio.INTERRUPTION_MODE_IOS_DO_NOT_MIX,
+                    staysActiveInBackground: false,
+                    interruptionModeIOS: Audio.InterruptionModeIOS.MixWithOthers,
                     playsInSilentModeIOS: true,
                     shouldDuckAndroid: true,
-                    interruptionModeAndroid: Audio.INTERRUPTION_MODE_ANDROID_DO_NOT_MIX,
+                    interruptionModeAndroid: Audio.InterruptionModeAndroid.DuckOthers,
                     playThroughEarpieceAndroid: false
                 });
                 setAudioSessionReady(true);
-                console.log('🎥 [AUDIO] Audio session configured successfully on component mount');
+                console.log('🎥 [AUDIO] ✅ Audio session configured successfully');
             } catch (audioError) {
-                console.warn('🎥 [AUDIO] Failed to configure audio session:', audioError);
+                console.warn('🎥 [AUDIO] ❌ Failed to configure audio session:', audioError);
                 setAudioSessionReady(false);
             }
         };
 
         setupAudioSession();
-    }, []);
+    }, [appState]);
 
     // Инициализация чата
     // Отслеживание состояния приложения
     useEffect(() => {
-        const subscription = AppState.addEventListener('change', nextAppState => {
+        const subscription = AppState.addEventListener('change', async nextAppState => {
             console.log('🎥 [APP-STATE] App state changed:', appState, '->', nextAppState);
             setAppState(nextAppState);
+
+            // Переконфигурируем аудио при возвращении в активное состояние
+            if (nextAppState === 'active' && appState !== 'active') {
+                console.log('🎥 [APP-STATE] App became active - reconfiguring audio...');
+                try {
+                    await Audio.setAudioModeAsync({
+                        allowsRecordingIOS: false,
+                        staysActiveInBackground: false,
+                        interruptionModeIOS: Audio.InterruptionModeIOS.MixWithOthers,
+                        playsInSilentModeIOS: true,
+                        shouldDuckAndroid: true,
+                        interruptionModeAndroid: Audio.InterruptionModeAndroid.DuckOthers,
+                        playThroughEarpieceAndroid: false
+                    });
+                    setAudioSessionReady(true);
+                    console.log('🎥 [APP-STATE] ✅ Audio reconfigured successfully');
+                } catch (audioError) {
+                    console.warn('🎥 [APP-STATE] ❌ Failed to reconfigure audio:', audioError);
+                    setAudioSessionReady(false);
+                }
+            } else if (nextAppState !== 'active') {
+                // Отключаем аудио сессию в фоновом режиме
+                setAudioSessionReady(false);
+                console.log('🎥 [APP-STATE] App went to background - disabled audio session');
+            }
         });
 
         return () => {
@@ -2913,16 +2581,6 @@ export default function ChatScreen() {
 
                 if (currentUser && recipientInfo) {
                     setIsDataLoaded(true);
-
-                    // Запускаем диагностику кэша больших файлов
-                    diagnoseLargeFilesCache().catch(error => {
-                        console.error('🔍 [DIAGNOSIS] Background diagnosis failed:', error);
-                    });
-
-                    // Запускаем очистку старых медиафайлов в фоне
-                    cleanupOldMediaFiles().catch(error => {
-                        console.error('🧹 [CLEANUP] Background cleanup failed:', error);
-                    });
 
                     // Подключаемся к WebSocket
                     setTimeout(() => {
@@ -3058,279 +2716,291 @@ export default function ChatScreen() {
         );
     };
 
-    // Функция для повторного восстановления медиафайлов из кэша с проверкой backup записей
-    const retryMediaRecovery = async () => {
-        console.log('🔄 [RECOVERY] Starting enhanced media recovery for history messages');
-
-        const messagesToUpdate: {id: any, mediaUri: string}[] = [];
-
-        // Получаем актуальное состояние сообщений
-        setMessages(currentMessages => {
-            console.log('🔄 [RECOVERY] Current messages count:', currentMessages.length);
-
-            // Находим сообщения с медиа, но без URI
-            const mediaMessagesWithoutUri = currentMessages.filter(msg =>
-                msg.mediaType &&
-                msg.mediaHash &&
-                !msg.mediaUri
-            );
-
-            console.log('🔄 [RECOVERY] Messages needing recovery:', {
-                total: mediaMessagesWithoutUri.length,
-                details: mediaMessagesWithoutUri.map(msg => ({
-                    id: msg.id,
-                    type: msg.mediaType,
-                    sizeMB: msg.mediaSize ? (msg.mediaSize / (1024 * 1024)).toFixed(1) : '?',
-                    hash: msg.mediaHash?.substring(0, 16) + '...',
-                    hasUri: !!msg.mediaUri,
-                    hasBase64: !!msg.mediaBase64
-                }))
-            });
-
-            // Выполняем восстановление асинхронно
-            (async () => {
-                for (const msg of mediaMessagesWithoutUri) {
-                    let cachedUri: string | null = null;
-
-                    try {
-                        // Сначала пытаемся стандартный способ восстановления
-                        cachedUri = await getMediaFromCache(msg.mediaHash!, msg.mediaType!);
-
-                        // Если не нашли, проверяем backup записи для больших файлов
-                        if (!cachedUri) {
-                            try {
-                                const backupKey = `large_media_${msg.id}`;
-                                const backupData = await AsyncStorage.getItem(backupKey);
-                                if (backupData) {
-                                    const backup = JSON.parse(backupData);
-                                    console.log('🔄 [RECOVERY] Found backup data for message:', {
-                                        messageId: msg.id,
-                                        hash: backup.mediaHash?.substring(0, 16) + '...',
-                                        savedUri: backup.mediaUri
-                                    });
-
-                                    // Проверяем, существует ли файл по backup URI
-                                    if (backup.mediaUri) {
-                                        const fileInfo = await FileSystem.getInfoAsync(backup.mediaUri);
-                                        if (fileInfo.exists && fileInfo.size > 0) {
-                                            cachedUri = backup.mediaUri;
-                                            console.log('🔄 [RECOVERY] ✅ Restored from backup:', backup.mediaUri);
-                                        } else {
-                                            console.log('🔄 [RECOVERY] ❌ Backup file missing or corrupted');
-                                        }
-                                    }
-                                }
-                            } catch (backupError) {
-                                console.error('🔄 [RECOVERY] Error checking backup:', backupError);
-                            }
-                        }
-
-                        if (cachedUri) {
-                            // Для видео дополнительно проверяем целостность
-                            if (msg.mediaType === 'video') {
-                                try {
-                                    const fileInfo = await FileSystem.getInfoAsync(cachedUri);
-                                    if (fileInfo.exists && fileInfo.size > 1000) { // Минимум 1KB для видео
-                                        messagesToUpdate.push({ id: msg.id, mediaUri: cachedUri });
-                                        console.log('🔄 [RECOVERY] ✅ Found and verified cached video:', {
-                                            messageId: msg.id,
-                                            hash: msg.mediaHash?.substring(0, 16) + '...',
-                                            uri: cachedUri.substring(cachedUri.lastIndexOf('/') + 1),
-                                            size: fileInfo.size
-                                        });
-                                    } else {
-                                        console.log('🔄 [RECOVERY] ❌ Video file corrupted or too small:', {
-                                            messageId: msg.id,
-                                            size: fileInfo.size,
-                                            exists: fileInfo.exists
-                                        });
-                                    }
-                                } catch (fileCheckError) {
-                                    console.error('🔄 [RECOVERY] Error checking video file:', fileCheckError);
-                                }
-                            } else {
-                                // Для изображений просто добавляем
-                                messagesToUpdate.push({ id: msg.id, mediaUri: cachedUri });
-                                console.log('🔄 [RECOVERY] ✅ Found cached image:', {
-                                    messageId: msg.id,
-                                    hash: msg.mediaHash?.substring(0, 16) + '...',
-                                    uri: cachedUri.substring(cachedUri.lastIndexOf('/') + 1)
-                                });
-                            }
-                        } else {
-                            console.log('🔄 [RECOVERY] ❌ No cached media found (tried both cache and backup):', {
-                                messageId: msg.id,
-                                hash: msg.mediaHash?.substring(0, 16) + '...',
-                                type: msg.mediaType
-                            });
-                        }
-                    } catch (error) {
-                        console.error('🔄 [RECOVERY] Error recovering media for message:', {
-                            messageId: msg.id,
-                            error: error
-                        });
-                    }
-                }
-
-                // Обновляем все найденные сообщения одним batch-ом
-                if (messagesToUpdate.length > 0) {
-                    console.log('🔄 [RECOVERY] Updating messages with recovered media:', {
-                        count: messagesToUpdate.length,
-                        updates: messagesToUpdate.map(u => ({
-                            id: u.id,
-                            fileName: u.mediaUri.substring(u.mediaUri.lastIndexOf('/') + 1)
-                        }))
-                    });
-
-                    setMessages(prevMessages =>
-                        prevMessages.map(msg => {
-                            const update = messagesToUpdate.find(u => u.id === msg.id);
-                            if (update) {
-                                return { ...msg, mediaUri: update.mediaUri };
-                            }
-                            return msg;
-                        })
-                    );
-                } else {
-                    console.log('🔄 [RECOVERY] No media files were recovered from cache or backup');
-                }
-            })();
-
-            return currentMessages; // Возвращаем текущее состояние без изменений
-        });
-
-        console.log('🔄 [RECOVERY] Found messages needing recovery:', {
-            total: mediaMessagesWithoutUri.length,
-            hashes: mediaMessagesWithoutUri.map(msg => ({
-                id: msg.id,
-                hash: msg.mediaHash?.substring(0, 16) + '...'
-            }))
-        });
-
-        for (const msg of mediaMessagesWithoutUri) {
-            let cachedUri: string | null = null;
-
-            try {
-                // Сначала пытаемся стандартный способ восстановления
-                cachedUri = await getMediaFromCache(msg.mediaHash!, msg.mediaType!);
-
-                // Если не нашли, проверяем backup записи для больших файлов
-                if (!cachedUri) {
-                    try {
-                        const backupKey = `large_media_${msg.id}`;
-                        const backupData = await AsyncStorage.getItem(backupKey);
-                        if (backupData) {
-                            const backup = JSON.parse(backupData);
-                            console.log('🔄 [RECOVERY] Found backup data for message:', {
-                                messageId: msg.id,
-                                hash: backup.mediaHash?.substring(0, 16) + '...',
-                                savedUri: backup.mediaUri
-                            });
-
-                            // Проверяем, существует ли файл по backup URI
-                            if (backup.mediaUri) {
-                                const fileInfo = await FileSystem.getInfoAsync(backup.mediaUri);
-                                if (fileInfo.exists && fileInfo.size > 0) {
-                                    cachedUri = backup.mediaUri;
-                                    console.log('🔄 [RECOVERY] ✅ Restored from backup:', backup.mediaUri);
-                                } else {
-                                    console.log('🔄 [RECOVERY] ❌ Backup file missing or corrupted');
-                                }
-                            }
-                        }
-                    } catch (backupError) {
-                        console.error('🔄 [RECOVERY] Error checking backup:', backupError);
-                    }
-                }
-
-                if (cachedUri) {
-                    // Для видео дополнительно проверяем целостность
-                    if (msg.mediaType === 'video') {
-                        try {
-                            const fileInfo = await FileSystem.getInfoAsync(cachedUri);
-                            if (fileInfo.exists && fileInfo.size > 1000) { // Минимум 1KB для видео
-                                messagesToUpdate.push({ id: msg.id, mediaUri: cachedUri });
-                                console.log('🔄 [RECOVERY] ✅ Found and verified cached video:', {
-                                    messageId: msg.id,
-                                    hash: msg.mediaHash?.substring(0, 16) + '...',
-                                    uri: cachedUri.substring(cachedUri.lastIndexOf('/') + 1),
-                                    size: fileInfo.size
-                                });
-                            } else {
-                                console.log('🔄 [RECOVERY] ❌ Video file corrupted or too small:', {
-                                    messageId: msg.id,
-                                    size: fileInfo.size,
-                                    exists: fileInfo.exists
-                                });
-                            }
-                        } catch (fileCheckError) {
-                            console.error('🔄 [RECOVERY] Error checking video file:', fileCheckError);
-                        }
-                    } else {
-                        // Для изображений просто добавляем
-                        messagesToUpdate.push({ id: msg.id, mediaUri: cachedUri });
-                        console.log('🔄 [RECOVERY] ✅ Found cached image:', {
-                            messageId: msg.id,
-                            hash: msg.mediaHash?.substring(0, 16) + '...',
-                            uri: cachedUri.substring(cachedUri.lastIndexOf('/') + 1)
-                        });
-                    }
-                } else {
-                    console.log('🔄 [RECOVERY] ❌ No cached media found (tried both cache and backup):', {
-                        messageId: msg.id,
-                        hash: msg.mediaHash?.substring(0, 16) + '...',
-                        type: msg.mediaType
-                    });
-                }
-            } catch (error) {
-                console.error('🔄 [RECOVERY] Error recovering media for message:', {
-                    messageId: msg.id,
-                    error: error
-                });
-            }
-        }
-
-        // Обновляем все найденные сообщения одним batch-ом
-        if (messagesToUpdate.length > 0) {
-            console.log('🔄 [RECOVERY] Updating messages with recovered media:', {
-                count: messagesToUpdate.length,
-                updates: messagesToUpdate.map(u => ({
-                    id: u.id,
-                    fileName: u.mediaUri.substring(u.mediaUri.lastIndexOf('/') + 1)
-                }))
-            });
-
-            setMessages(prev =>
-                prev.map(msg => {
-                    const update = messagesToUpdate.find(u => u.id === msg.id);
-                    if (update) {
-                        return { ...msg, mediaUri: update.mediaUri };
-                    }
-                    return msg;
-                })
-            );
-        } else {
-            console.log('🔄 [RECOVERY] No media files were recovered from cache or backup');
-        }
-    };
 
     // Открытие просмотрщика изображений
     const openImageViewer = (imageUri: string) => {
         setSelectedImage(imageUri);
+        setImageZoomScale(1);
         setIsImageViewerVisible(true);
+
+        // Скрываем подсказку через 4 секунды
+        setTimeout(() => {
+            // Подсказка скроется автоматически через CSS анимацию или может быть скрыта через состояние
+        }, 4000);
     };
 
-    // Функция для открытия в системном плеере
+    // Обработка двойного нажатия для масштабирования изображения
+    const handleImageDoubleTap = () => {
+        const now = Date.now();
+        const timeDiff = now - lastImageTap;
+
+        if (timeDiff < 300) {
+            // Двойное нажатие обнаружено
+            const newScale = imageZoomScale === 1 ? 2.5 : 1;
+            setImageZoomScale(newScale);
+
+            if (imageScrollViewRef.current) {
+                imageScrollViewRef.current.scrollTo({
+                    x: 0,
+                    y: 0,
+                    animated: true
+                });
+            }
+
+            console.log('🖼️ [IMAGE-ZOOM] Double tap zoom:', newScale);
+        }
+
+        setLastImageTap(now);
+    };
+
+    // Закрытие просмотрщика изображений с сбросом масштаба
+    const closeImageViewer = () => {
+        setImageZoomScale(1);
+        setSelectedImage(null);
+        setIsImageViewerVisible(false);
+        setLastImageTap(0);
+    };
+
+    // Загрузка и открытие документа
+    const downloadAndOpenDocument = async (message: Message) => {
+        if (!message.serverFileUrl && !message.mediaUri) {
+            Alert.alert('Ошибка', 'Файл недоступен для загрузки');
+            return;
+        }
+
+        const messageId = message.id;
+        const fileName = message.mediaFileName || `document_${messageId}`;
+
+        try {
+            // Проверяем, не загружается ли уже документ
+            if (downloadingDocuments[messageId]) {
+                console.log('📄 [DOC-DOWNLOAD] Document already downloading:', messageId);
+                return;
+            }
+
+            // Помечаем как загружающийся
+            setDownloadingDocuments(prev => ({ ...prev, [messageId]: true }));
+            setDocumentDownloadProgress(prev => ({ ...prev, [messageId]: 0 }));
+
+            console.log('📄 [DOC-DOWNLOAD] Starting document download:', {
+                messageId,
+                fileName,
+                hasServerUrl: !!message.serverFileUrl,
+                hasLocalUri: !!message.mediaUri
+            });
+
+            let sourceUri = message.mediaUri || message.serverFileUrl;
+            let localFilePath = '';
+
+            if (sourceUri?.startsWith('http')) {
+                // Загружаем с сервера
+                const fileExtension = fileName.split('.').pop() || 'bin';
+                const localFileName = `${fileName}_${messageId}.${fileExtension}`;
+                localFilePath = `${FileSystem.documentDirectory}${localFileName}`;
+
+                // Проверяем, не загружен ли уже файл
+                const fileInfo = await FileSystem.getInfoAsync(localFilePath);
+                if (fileInfo.exists) {
+                    console.log('📄 [DOC-DOWNLOAD] File already exists locally, opening...');
+                    await openDocument(localFilePath, fileName);
+                    setDownloadingDocuments(prev => ({ ...prev, [messageId]: false }));
+                    return;
+                }
+
+                console.log('📄 [DOC-DOWNLOAD] Downloading from server...');
+
+                const downloadResult = await FileSystem.downloadAsync(
+                    sourceUri,
+                    localFilePath,
+                    {
+                        sessionType: FileSystem.FileSystemSessionType.BACKGROUND,
+                    }
+                );
+
+                if (downloadResult.status === 200) {
+                    console.log('📄 [DOC-DOWNLOAD] ✅ Downloaded successfully');
+                    localFilePath = downloadResult.uri;
+                } else {
+                    throw new Error(`Download failed with status ${downloadResult.status}`);
+                }
+            } else if (sourceUri?.startsWith('file://')) {
+                // Локальный файл
+                localFilePath = sourceUri;
+            } else {
+                throw new Error('Invalid file source');
+            }
+
+            // Открываем документ
+            await openDocument(localFilePath, fileName);
+
+        } catch (error) {
+            console.error('📄 [DOC-DOWNLOAD] ❌ Error downloading document:', error);
+            Alert.alert(
+                'Ошибка загрузки',
+                `Не удалось загрузить документ "${fileName}".\n\nОшибка: ${error.message}`,
+                [
+                    { text: 'OK', style: 'default' },
+                    {
+                        text: 'Попробовать в браузере',
+                        style: 'default',
+                        onPress: () => {
+                            if (message.serverFileUrl?.startsWith('http')) {
+                                WebBrowser.openBrowserAsync(message.serverFileUrl);
+                            }
+                        }
+                    }
+                ]
+            );
+        } finally {
+            setDownloadingDocuments(prev => ({ ...prev, [messageId]: false }));
+            setDocumentDownloadProgress(prev => ({ ...prev, [messageId]: 0 }));
+        }
+    };
+
+    // Открытие документа в системном приложении
+    const openDocument = async (filePath: string, fileName: string) => {
+        try {
+            console.log('📄 [DOC-OPEN] Opening document:', {
+                filePath: filePath.substring(filePath.lastIndexOf('/') + 1),
+                fileName
+            });
+
+            // Определяем MIME тип по расширению файла
+            const getContentType = (fileName: string): string => {
+                const extension = fileName.split('.').pop()?.toLowerCase();
+                const mimeTypes: {[key: string]: string} = {
+                    'pdf': 'application/pdf',
+                    'doc': 'application/msword',
+                    'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                    'xls': 'application/vnd.ms-excel',
+                    'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    'ppt': 'application/vnd.ms-powerpoint',
+                    'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                    'txt': 'text/plain',
+                    'jpg': 'image/jpeg',
+                    'jpeg': 'image/jpeg',
+                    'png': 'image/png',
+                    'zip': 'application/zip',
+                };
+                return mimeTypes[extension || ''] || 'application/octet-stream';
+            };
+
+            const contentType = getContentType(fileName);
+
+            if (Platform.OS === 'android') {
+                // Android: используем Intent Launcher для открытия документа
+                try {
+                    await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+                        data: filePath,
+                        flags: 1,
+                        type: contentType,
+                    });
+                    console.log('📄 [DOC-OPEN] ✅ Opened with Android Intent');
+                } catch (intentError) {
+                    console.log('📄 [DOC-OPEN] Intent failed, trying sharing...');
+                    // Если Intent не работает, пробуем поделиться файлом
+                    await Sharing.shareAsync(filePath, {
+                        mimeType: contentType,
+                        dialogTitle: `Открыть ${fileName}`,
+                    });
+                    console.log('📄 [DOC-OPEN] ✅ Opened via sharing');
+                }
+            } else {
+                // iOS: используем sharing для открытия документа
+                await Sharing.shareAsync(filePath, {
+                    mimeType: contentType,
+                    dialogTitle: `Открыть ${fileName}`,
+                });
+                console.log('📄 [DOC-OPEN] ✅ Opened via iOS sharing');
+            }
+
+        } catch (error) {
+            console.error('📄 [DOC-OPEN] ❌ Error opening document:', error);
+            Alert.alert(
+                'Не удалось открыть файл',
+                `Файл "${fileName}" загружен, но не может быть открыт автоматически.\n\nВозможно, на устройстве нет подходящего приложения для этого типа файла.`,
+                [
+                    { text: 'OK', style: 'default' },
+                    {
+                        text: 'Показать в файлах',
+                        style: 'default',
+                        onPress: async () => {
+                            try {
+                                await Sharing.shareAsync(filePath);
+                            } catch (shareError) {
+                                console.error('Failed to share file:', shareError);
+                            }
+                        }
+                    }
+                ]
+            );
+        }
+    };
+
+    // Функция для открытия в браузере
+    const openVideoInBrowser = async (videoUri: string) => {
+        try {
+            if (videoUri.startsWith('http')) {
+                console.log('🎥 [BROWSER] Opening video in browser:', videoUri.substring(videoUri.lastIndexOf('/') + 1));
+                await WebBrowser.openBrowserAsync(videoUri, {
+                    presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
+                    controlsColor: '#007AFF',
+                    toolbarColor: '#000000',
+                    enableDefaultShare: true,
+                    showInRecents: true,
+                });
+                console.log('🎥 [BROWSER] ✅ Video opened in browser successfully');
+            } else {
+                Alert.alert('Ошибка', 'Браузер поддерживает только URL-адреса');
+            }
+        } catch (error) {
+            console.error('🎥 [BROWSER] Failed to open video in browser:', error);
+            Alert.alert('Ошибка', 'Не удалось открыть видео в браузере');
+        }
+    };
+
+    // Функция для открытия в системном плеере (обновлена)
     const openInSystemPlayer = async (videoUri: string) => {
         try {
             if (videoUri.startsWith('http')) {
-                await Linking.openURL(videoUri);
+                // Сначала пытаемся открыть в браузере (более надежный способ)
+                await openVideoInBrowser(videoUri);
+            } else if (videoUri.startsWith('file://') || videoUri.startsWith('content://')) {
+                // Для локальных файлов пытаемся поделиться
+                if (await Sharing.isAvailableAsync()) {
+                    await Sharing.shareAsync(videoUri, {
+                        mimeType: 'video/mp4',
+                        dialogTitle: 'Открыть видео в системном плеере',
+                        UTI: 'public.movie'
+                    });
+                } else {
+                    Alert.alert('Ошибка', 'Функция совместного доступа недоступна');
+                }
             } else {
-                Alert.alert('Ошибка', 'Системный плеер поддерживает только URL-адреса');
+                Alert.alert('Ошибка', 'Неподдерживаемый формат видео');
             }
         } catch (error) {
             console.error('🎥 [SYSTEM] Failed to open in system player:', error);
-            Alert.alert('Ошибка', 'Не удалось открыть в системном плеере');
+            Alert.alert(
+                'Ошибка открытия',
+                'Не удалось открыть видео в системном плеере. Попробуйте другой способ.',
+                [
+                    { text: 'OK', style: 'default' },
+                    videoUri.startsWith('http') ? {
+                        text: 'Копировать ссылку',
+                        onPress: async () => {
+                                try {
+                                    const Clipboard = await import('expo-clipboard');
+                                    await Clipboard.setStringAsync(videoUri);
+                                    Alert.alert('Успешно', 'Ссылка на видео скопирована в буфер обмена');
+                                } catch (clipboardError) {
+                                    console.error('Ошибка копирования:', clipboardError);
+                                    Alert.alert('Ошибка', 'Не удалось скопировать ссылку');
+                                }
+                        }
+                    } : undefined
+                ].filter(Boolean)
+            );
         }
     };
 
@@ -3353,10 +3023,10 @@ export default function ChatScreen() {
                     await Audio.setAudioModeAsync({
                         allowsRecordingIOS: false,
                         staysActiveInBackground: true,
-                        interruptionModeIOS: Audio.INTERRUPTION_MODE_IOS_DO_NOT_MIX,
+                        interruptionModeIOS: Audio.InterruptionModeIOS.DoNotMix,
                         playsInSilentModeIOS: true,
                         shouldDuckAndroid: true,
-                        interruptionModeAndroid: Audio.INTERRUPTION_MODE_ANDROID_DO_NOT_MIX,
+                        interruptionModeAndroid: Audio.InterruptionModeAndroid.DoNotMix,
                         playThroughEarpieceAndroid: false
                     });
                     setAudioSessionReady(true);
@@ -3366,7 +3036,7 @@ export default function ChatScreen() {
                 console.warn('🎥 [AUDIO] Failed to configure audio session:', audioError);
                 setAudioSessionReady(false);
             }
-        }, 1500); // Даем время модальному окну полностью отобразиться
+        }, 1500);
     };
 
     // Функция принудительного воспроизведения с беззвучным режимом
@@ -3394,15 +3064,29 @@ export default function ChatScreen() {
     // Функции управления встроенным видео
     const toggleInlineVideo = async (messageId: string | number, videoUri: string) => {
         const currentState = inlineVideoStates[messageId] || {
-            isPlaying: false, isMuted: false, isExpanded: false, duration: 0, position: 0, isLoaded: false
+            isPlaying: false, isMuted: false, isExpanded: false, duration: 0, position: 0, isLoaded: false, isFullscreen: false
         };
         const newPlayingState = !currentState.isPlaying;
 
         try {
             const videoRef = inlineVideoRefs.current[messageId];
             if (videoRef) {
+                console.log('🎥 [INLINE] Toggling video playback:', {
+                    messageId,
+                    currentPlaying: currentState.isPlaying,
+                    newPlaying: newPlayingState,
+                    appState: appState
+                });
+
                 if (newPlayingState) {
-                    await videoRef.playAsync();
+                    // При запуске видео сначала убеждаемся что оно отключено (для избежания ошибок аудио)
+                    if (appState === 'active') {
+                        await videoRef.setIsMutedAsync(true); // Начинаем без звука
+                        await videoRef.playAsync();
+                    } else {
+                        console.warn('🎥 [INLINE] Cannot start video - app not active');
+                        return;
+                    }
                 } else {
                     await videoRef.pauseAsync();
                 }
@@ -3411,35 +3095,80 @@ export default function ChatScreen() {
                     ...prev,
                     [messageId]: { ...currentState, isPlaying: newPlayingState }
                 }));
+
+                console.log('🎥 [INLINE] ✅ Video playback toggled successfully');
             }
-        } catch (error) {
+        } catch (error: any) {
             console.error('🎥 [INLINE] Error toggling video:', error);
+
+            if (error.message?.includes('AudioFocusNotAcquiredException') || 
+                error.message?.includes('background')) {
+                console.warn('🎥 [INLINE] Video control error - app in background');
+                Alert.alert(
+                    'Видео недоступно',
+                    'Управление видео доступно только когда приложение активно'
+                );
+            } else {
+                console.warn('🎥 [INLINE] Unknown video error:', error.message);
+            }
         }
     };
 
     const toggleInlineVideoSound = async (messageId: string | number) => {
+        // Проверяем, что приложение активно
+        if (appState !== 'active') {
+            console.warn('🎥 [INLINE] Cannot toggle sound - app not active:', appState);
+            Alert.alert(
+                'Звук недоступен', 
+                'Управление звуком доступно только когда приложение активно'
+            );
+            return;
+        }
+
         const currentState = inlineVideoStates[messageId] || {
-            isPlaying: false, isMuted: false, isExpanded: false, duration: 0, position: 0, isLoaded: false
+            isPlaying: false, isMuted: false, isExpanded: false, duration: 0, position: 0, isLoaded: false, isFullscreen: false
         };
         const newMutedState = !currentState.isMuted;
 
         try {
             const videoRef = inlineVideoRefs.current[messageId];
             if (videoRef) {
+                console.log('🎥 [INLINE] Toggling sound for video:', {
+                    messageId,
+                    currentMuted: currentState.isMuted,
+                    newMuted: newMutedState,
+                    appState: appState
+                });
+
                 await videoRef.setIsMutedAsync(newMutedState);
                 setInlineVideoStates(prev => ({
                     ...prev,
                     [messageId]: { ...currentState, isMuted: newMutedState }
                 }));
+
+                console.log('🎥 [INLINE] ✅ Sound toggled successfully');
             }
-        } catch (error) {
+        } catch (error: any) {
             console.error('🎥 [INLINE] Error toggling sound:', error);
+
+            // Обрабатываем специфичные ошибки
+            if (error.message?.includes('AudioFocusNotAcquiredException') || 
+                error.message?.includes('background')) {
+                console.warn('🎥 [INLINE] Audio focus error - app in background');
+                Alert.alert(
+                    'Проблема со звуком',
+                    'Не удается управлять звуком. Попробуйте:\n• Убедиться, что приложение активно\n• Перезапустить видео\n• Проверить настройки звука устройства'
+                );
+            } else {
+                // Для других ошибок просто обновляем состояние без звука
+                console.warn('🎥 [INLINE] Unknown audio error, updating state silently');
+            }
         }
     };
 
     const expandInlineVideo = (messageId: string | number, videoUri: string) => {
         const currentState = inlineVideoStates[messageId] || {
-            isPlaying: false, isMuted: false, isExpanded: false, duration: 0, position: 0, isLoaded: false
+            isPlaying: false, isMuted: false, isExpanded: false, duration: 0, position: 0, isLoaded: false, isFullscreen: false
         };
 
         // Переключаем полноэкранный режим
@@ -3454,6 +3183,64 @@ export default function ChatScreen() {
             setFullscreenVideoId(String(messageId));
         } else {
             setFullscreenVideoId(null);
+        }
+    };
+
+    // Улучшенная функция переключения полноэкранного режима
+    // ВАЖНО: Полноэкранный режим использует тот же videoUri что и инлайн плеер
+    // Приоритет загрузки: 1) Галерея (file://) 2) Сервер (http://) 3) Base64 (data:)
+    const toggleVideoFullscreen = (messageId: string | number, videoUri: string) => {
+        const currentState = inlineVideoStates[messageId] || {
+            isPlaying: false, isMuted: false, isExpanded: false, duration: 0, position: 0, isLoaded: false, isFullscreen: false
+        };
+
+        const videoSource = videoUri?.startsWith('file://') ? 'local-gallery' : 
+                          videoUri?.startsWith('http') ? 'server-url' : 
+                          videoUri?.startsWith('data:') ? 'base64-data' : 'unknown';
+
+        console.log('🎥 [FULLSCREEN] Toggling modal fullscreen mode:', {
+            messageId,
+            currentFullscreen: currentState.isFullscreen,
+            videoSource: videoSource,
+            videoUri: videoUri?.substring(Math.max(0, videoUri.length - 30))
+        });
+
+        if (!currentState.isFullscreen) {
+            // Включаем полноэкранный режим через модальное окно
+            // Используем тот же URI что и для инлайн плеера (приоритет: галерея -> сервер -> base64)
+            setFullscreenModalVideoUri(videoUri);
+            setIsFullscreenModalVisible(true);
+            setInlineVideoStates(prev => ({
+                ...prev,
+                [messageId]: {
+                    ...currentState,
+                    isFullscreen: true
+                }
+            }));
+            setIsAnyVideoFullscreen(true);
+            setFullscreenVideoId(String(messageId));
+
+            console.log('🎥 [FULLSCREEN] Modal fullscreen mode activated:', {
+                videoSource: videoSource,
+                willAutoSave: videoSource === 'server-url',
+                messageId: messageId
+            });
+        } else {
+            // Выключаем полноэкранный режим
+            setIsFullscreenModalVisible(false);
+            setFullscreenModalVideoUri(null);
+            setInlineVideoStates(prev => ({
+                ...prev,
+                [messageId]: {
+                    ...currentState,
+                    isFullscreen: false,
+                    isExpanded: false
+                }
+            }));
+            setIsAnyVideoFullscreen(false);
+            setFullscreenVideoId(null);
+
+            console.log('🎥 [FULLSCREEN] Returned to normal video mode');
         }
     };
 
@@ -3581,6 +3368,20 @@ export default function ChatScreen() {
                 );
             }
 
+            // Показываем индикатор загрузки URL с сервера
+            if (item.isLoadingServerUrl) {
+                return (
+                    <View style={styles.uploadingContainer}>
+                        <View style={styles.uploadingContent}>
+                            <ActivityIndicator size="small" color={theme.primary} />
+                            <Text style={[styles.uploadingText, { color: theme.textSecondary }]}>
+                                {item.mediaType === 'image' ? 'Загрузка изображения из истории...' : 'Загрузка видео из истории...'}
+                            </Text>
+                        </View>
+                    </View>
+                );
+            }
+
             // Показываем индикатор необходимости перезагрузки для больших файлов
             if (item.needsReload) {
                 const fileSizeMB = item.mediaSize ? Math.round(item.mediaSize / (1024 * 1024)) : 0;
@@ -3630,27 +3431,63 @@ export default function ChatScreen() {
             }
 
             if (item.mediaType === 'image') {
-                // Проверяем, есть ли данные для отображения
-                const hasImageData = item.mediaUri || item.mediaBase64;
+                // Приоритет: локальный URI из галереи -> серверный URL -> base64
+                const imageUri = item.mediaUri ||
+                                 item.serverFileUrl || 
+                                 (item.mediaBase64 ? `data:image/jpeg;base64,${item.mediaBase64}` : null);
 
-                if (!hasImageData && !item.serverFileUrl) {
+                if (!imageUri) {
                     return (
-                        <View style={styles.missingMediaContainer}>
+                        <TouchableOpacity
+                            style={styles.missingMediaContainer}
+                            onPress={async () => {
+                                updateMessageSafely(item.id, { isLoadingServerUrl: true });
+
+                                const localUri = await getLocalMediaUri(item);
+                                if (localUri) {
+                                    updateMessageSafely(item.id, {
+                                        mediaUri: localUri.startsWith('file://') || localUri.startsWith('content://') ? localUri : null,
+                                        serverFileUrl: localUri.startsWith('http') ? localUri : item.serverFileUrl,
+                                        isLoadingServerUrl: false
+                                    });
+                                } else {
+                                    updateMessageSafely(item.id, { isLoadingServerUrl: false });
+                                    Alert.alert('Ошибка', 'Не удалось загрузить изображение');
+                                }
+                            }}
+                        >
                             <MaterialIcons name="image" size={48} color={theme.textSecondary} />
                             <Text style={[styles.missingMediaText, { color: theme.textSecondary }]}>
                                 Изображение {item.mediaSize ? Math.round(item.mediaSize / (1024 * 1024)) + 'MB' : ''}
                             </Text>
                             <Text style={[styles.missingMediaSubtext, { color: theme.placeholder }]}>
-                                Слишком большой файл
+                                Нажмите для загрузки в галерею
                             </Text>
-                        </View>
+                        </TouchableOpacity>
                     );
                 }
 
-                const imageUri = item.serverFileUrl || item.mediaUri || `data:image/jpeg;base64,${item.mediaBase64}`;
                 return (
                     <TouchableOpacity
-                        onPress={() => openImageViewer(imageUri)}
+                        onPress={async () => {
+                            // Если изображение с сервера, сохраняем в галерею при открытии
+                            if (imageUri.startsWith('http') && !item.mediaUri) {
+                                try {
+                                    const localUri = await saveMediaToGallery(
+                                        imageUri,
+                                        item.id,
+                                        'image',
+                                        item.mediaHash
+                                    );
+                                    if (localUri) {
+                                        updateMessageSafely(item.id, { mediaUri: localUri });
+                                    }
+                                } catch (saveError) {
+                                    console.log('🎥 [AUTO-SAVE] Could not save image to gallery:', saveError);
+                                }
+                            }
+                            openImageViewer(imageUri);
+                        }}
                         style={styles.mediaContainer}
                     >
                         <Image
@@ -3664,44 +3501,96 @@ export default function ChatScreen() {
                     </TouchableOpacity>
                 );
             } else if (item.mediaType === 'video') {
-                // Проверяем, есть ли данные для отображения
-                const hasVideoData = item.mediaUri || item.mediaBase64;
+                // Проверяем, загружено ли видео или загружается
+                const hasVideoUri = item.mediaUri || item.serverFileUrl || (item.mediaBase64 ? `data:video/mp4;base64,${item.mediaBase64}` : null);
+                const isVideoRequested = item.videoLoadRequested;
+                const isVideoLoading = item.videoIsLoading;
 
-                if (!hasVideoData && !item.serverFileUrl) {
+                // Если видео не запрошено к загрузке - показываем превью (ленивая загрузка)
+                if (!isVideoRequested && !hasVideoUri) {
                     return (
-                        <View style={styles.missingMediaContainer}>
-                            <MaterialIcons name="videocam" size={48} color={theme.textSecondary} />
-                            <Text style={[styles.missingMediaText, { color: theme.textSecondary }]}>
-                                Видео {item.mediaSize ? Math.round(item.mediaSize / (1024 * 1024)) + 'MB' : ''}
+                        <TouchableOpacity
+                            style={styles.videoPreviewContainer}
+                            onPress={async () => {
+                                console.log('🎥 [LAZY-LOAD] User pressed play - starting video load:', item.id);
+                                await requestVideoLoad(item);
+                            }}
+                        >
+                            <View style={styles.videoPreviewContent}>
+                                <MaterialIcons name="play-circle-filled" size={64} color={theme.primary} />
+                                <Text style={[styles.videoPreviewTitle, { color: theme.text }]}>
+                                    🎥 Видео
+                                </Text>
+                                <Text style={[styles.videoPreviewSize, { color: theme.textSecondary }]}>
+                                    {item.mediaSize ? Math.round(item.mediaSize / (1024 * 1024)) + ' MB' : 'Размер неизвестен'}
+                                </Text>
+                                <Text style={[styles.videoPreviewHint, { color: theme.primary }]}>
+                                    Нажмите ▶ для загрузки и воспроизведения
+                                </Text>
+                                <Text style={[styles.videoPreviewNote, { color: theme.placeholder }]}>
+                                    Видео загружается только при нажатии
+                                </Text>
+                            </View>
+                        </TouchableOpacity>
+                    );
+                }
+
+                // Если видео загружается - показываем индикатор
+                if (isVideoLoading) {
+                    return (
+                        <View style={styles.videoLoadingContainer}>
+                            <ActivityIndicator size="large" color={theme.primary} />
+                            <Text style={[styles.videoLoadingText, { color: theme.textSecondary }]}>
+                                Загрузка видео...
                             </Text>
-                            <Text style={[styles.missingMediaSubtext, { color: theme.placeholder }]}>
-                                Слишком большой файл
+                            <Text style={[styles.videoLoadingSize, { color: theme.placeholder }]}>
+                                {item.mediaSize ? Math.round(item.mediaSize / (1024 * 1024)) + ' MB' : ''}
                             </Text>
                         </View>
                     );
                 }
 
-                const videoUri = item.serverFileUrl || item.mediaUri || `data:video/mp4;base64,${item.mediaBase64}`;
+                // Если не удалось загрузить - показываем ошибку
+                if (isVideoRequested && !hasVideoUri && !isVideoLoading) {
+                    return (
+                        <TouchableOpacity
+                            style={styles.missingMediaContainer}
+                            onPress={async () => {
+                                console.log('🎥 [RETRY] Retrying video load:', item.id);
+                                await requestVideoLoad(item);
+                            }}
+                        >
+                            <MaterialIcons name="videocam-off" size={48} color={theme.textSecondary} />
+                            <Text style={[styles.missingMediaText, { color: theme.textSecondary }]}>
+                                Видео {item.mediaSize ? Math.round(item.mediaSize / (1024 * 1024)) + 'MB' : ''}
+                            </Text>
+                            <Text style={[styles.missingMediaSubtext, { color: theme.placeholder }]}>
+                                Ошибка загрузки. Нажмите для повтора
+                            </Text>
+                        </TouchableOpacity>
+                    );
+                }
+
+                // Видео загружено - показываем плеер
+                const videoUri = hasVideoUri;
+                if (!videoUri) {
+                    return null;
+                }
                 const messageId = String(item.id);
                 const videoState = inlineVideoStates[messageId] || {
                     isPlaying: false, isMuted: false, isExpanded: false, duration: 0, position: 0, isLoaded: false
                 };
 
-                console.log('🎥 [VIDEO-RENDER] Video details:', {
-                    messageId: item.id,
-                    hasServerUrl: !!item.serverFileUrl,
-                    hasMediaUri: !!item.mediaUri,
-                    hasBase64: !!item.mediaBase64,
-                    videoUri: videoUri?.substring(0, 100) + '...',
-                    mediaSize: item.mediaSize,
-                    fileName: item.mediaFileName
-                });
-
-                // Определяем стиль контейнера в зависимости от полноэкранного режима
-                const containerStyle = videoState.isExpanded
+                // Определяем стиль контейнера в зависимости от режима отображения
+                const containerStyle = videoState.isFullscreen
+                    ? styles.deviceFullscreenVideoContainer
+                    : videoState.isExpanded
                     ? styles.fullscreenVideoContainer
                     : styles.inlineVideoContainer;
-                const videoStyle = videoState.isExpanded
+
+                const videoStyle = videoState.isFullscreen
+                    ? styles.deviceFullscreenVideo
+                    : videoState.isExpanded
                     ? styles.fullscreenVideo
                     : styles.inlineVideo;
 
@@ -3720,13 +3609,33 @@ export default function ChatScreen() {
                             shouldPlay={videoState.isPlaying}
                             isMuted={videoState.isMuted}
                             isLooping={false}
-                            onLoad={(data) => {
+                            onLoad={async (data) => {
                                 console.log('🎥 [INLINE-VIDEO] Video loaded successfully:', {
                                     messageId: item.id,
                                     duration: data.durationMillis,
                                     naturalSize: data.naturalSize,
-                                    uri: videoUri?.substring(videoUri.lastIndexOf('/') + 1)
+                                    uri: videoUri?.substring(Math.max(0, videoUri.length - 30))
                                 });
+
+                                // Если воспроизводится с сервера и нет локального URI, сохраняем в галерею
+                                if (videoUri?.startsWith('http') && !item.mediaUri) {
+                                    console.log('🎥 [AUTO-SAVE] Auto-saving video to gallery...');
+                                    try {
+                                        const localUri = await saveMediaToGallery(
+                                            videoUri,
+                                            item.id,
+                                            'video',
+                                            item.mediaHash
+                                        );
+
+                                        if (localUri) {
+                                            console.log('🎥 [AUTO-SAVE] ✅ Video saved to gallery');
+                                            updateMessageSafely(item.id, { mediaUri: localUri });
+                                        }
+                                    } catch (saveError) {
+                                        console.log('🎥 [AUTO-SAVE] Could not save to gallery (non-critical):', saveError);
+                                    }
+                                }
 
                                 // Обновляем состояние с длительностью видео
                                 setInlineVideoStates(prev => ({
@@ -3739,13 +3648,49 @@ export default function ChatScreen() {
                                 }));
                             }}
                             onError={(error) => {
-                                console.error('🎥 [INLINE-VIDEO] ❌ Video load error:', {
+                                console.error('🎥 [INLINE-VIDEO] ❌ Video decoder error:', {
                                     messageId: item.id,
                                     error: error,
                                     uri: videoUri?.substring(videoUri.lastIndexOf('/') + 1),
-                                    uriType: videoUri?.startsWith('data:') ? 'base64' :
-                                             videoUri?.startsWith('http') ? 'url' : 'file'
+                                    fullUri: videoUri,
+                                    errorType: error?.error?.includes('MediaCodecRenderer') ? 'codec' : 
+                                              error?.error?.includes('Decoder') ? 'decoder' : 'unknown'
                                 });
+
+                                // Определяем тип ошибки и показываем соответствующее решение
+                                const isCodecError = error?.error?.includes('MediaCodecRenderer') || 
+                                                   error?.error?.includes('Decoder init failed');
+
+                                if (isCodecError) {
+                                    // Ошибка кодека - предлагаем системный плеер
+                                    Alert.alert(
+                                        'Проблема с воспроизведением',
+                                        'Встроенный плеер не может воспроизвести это видео из-за несовместимых кодеков.\n\nОткрыть в системном видеоплеере?',
+                                        [
+                                            { text: 'Отмена', style: 'cancel' },
+                                            {
+                                                text: 'Системный плеер',
+                                                onPress: async () => {
+                                                    try {
+                                                        if (videoUri?.startsWith('http')) {
+                                                            await Linking.openURL(videoUri);
+                                                        } else if (videoUri?.startsWith('file://')) {
+                                                            // Для локальных файлов пытаемся поделиться
+                                                            const { Sharing } = await import('expo-sharing');
+                                                            await Sharing.shareAsync(videoUri);
+                                                        }
+                                                    } catch (shareError) {
+                                                        console.error('Failed to open in system player:', shareError);
+                                                        Alert.alert('Ошибка', 'Не удалось открыть видео в системном плеере');
+                                                    }
+                                                }
+                                            }
+                                        ]
+                                    );
+                                } else {
+                                    // Обычная ошибка загрузки
+                                    updateMessageSafely(item.id, { needsReload: true });
+                                }
                             }}
                             onPlaybackStatusUpdate={(status: AVPlaybackStatus) => {
                                 if ('error' in status) {
@@ -3847,8 +3792,45 @@ export default function ChatScreen() {
                                 />
                             </TouchableOpacity>
 
-                            {/* Кнопка расширения/сжатия */}
+                            {/* Кнопка полноэкранного режима */}
+                            <TouchableOpacity
+                                style={styles.inlineVideoButton}
+                                onPress={() => toggleVideoFullscreen(messageId, videoUri)}
+                            >
+                                <MaterialIcons
+                                    name={videoState.isFullscreen ? "fullscreen-exit" : "fullscreen"}
+                                    size={videoState.isExpanded ? 28 : 20}
+                                    color="white"
+                                />
+                            </TouchableOpacity>
 
+                            {/* Кнопка открытия в браузере */}
+                            {videoUri?.startsWith('http') && (
+                                <TouchableOpacity
+                                    style={styles.inlineVideoButton}
+                                    onPress={() => openVideoInBrowser(videoUri)}
+                                >
+                                    <MaterialIcons
+                                        name="open-in-browser"
+                                        size={videoState.isExpanded ? 28 : 20}
+                                        color="rgba(255, 255, 255, 0.9)"
+                                    />
+                                </TouchableOpacity>
+                            )}
+
+                            {/* Кнопка расширения в модальное окно (для больших видео) */}
+                            {!videoState.isFullscreen && (
+                                <TouchableOpacity
+                                    style={styles.inlineVideoButton}
+                                    onPress={() => openVideoViewer(videoUri)}
+                                >
+                                    <MaterialIcons
+                                        name="open-in-new"
+                                        size={videoState.isExpanded ? 28 : 20}
+                                        color="rgba(255, 255, 255, 0.8)"
+                                    />
+                                </TouchableOpacity>
+                            )}
                         </View>
 
                         {/* Показываем overlay только если видео не играет */}
@@ -3878,13 +3860,27 @@ export default function ChatScreen() {
                                 />
                             </TouchableOpacity>
                         )}
+
+                        {/* Кнопка закрытия полноэкранного режима */}
+                        {videoState.isFullscreen && (
+                            <TouchableOpacity
+                                style={styles.fullscreenCloseButton}
+                                onPress={() => toggleVideoFullscreen(messageId, videoUri)}
+                            >
+                                <MaterialIcons
+                                    name="close"
+                                    size={28}
+                                    color="white"
+                                />
+                            </TouchableOpacity>
+                        )}
                     </View>
                 );
             } else if (item.mediaType === 'file') {
-                // Проверяем, есть ли данные для отображения документа
-                const hasFileData = item.mediaUri || item.serverFileUrl;
+                // Используем любой доступный источник файла
+                const fileUrl = item.serverFileUrl || item.mediaUri;
 
-                if (!hasFileData) {
+                if (!fileUrl) {
                     return (
                         <View style={styles.missingMediaContainer}>
                             <MaterialIcons name="description" size={48} color={theme.textSecondary} />
@@ -3917,43 +3913,34 @@ export default function ChatScreen() {
                 };
 
                 const fileIcon = getFileIcon(item.mediaFileName, item.mimeType);
-                const fileUrl = item.serverFileUrl || item.mediaUri;
+
+                const isDownloading = downloadingDocuments[item.id];
+                const downloadProgress = documentDownloadProgress[item.id] || 0;
 
                 return (
                     <TouchableOpacity
-                        style={styles.fileContainer}
+                        style={[
+                            styles.fileContainer,
+                            isDownloading && styles.fileContainerDownloading
+                        ]}
                         onPress={() => {
-                            if (fileUrl) {
-                                // Открываем файл в браузере или внешнем приложении
-                                Alert.alert(
-                                    'Открыть файл',
-                                    `Открыть "${item.mediaFileName || 'файл'}" во внешнем приложении?`,
-                                    [
-                                        { text: 'Отмена', style: 'cancel' },
-                                        {
-                                            text: 'Открыть',
-                                            onPress: async () => {
-                                                try {
-                                                    const { WebBrowser } = await import('expo-web-browser');
-                                                    await WebBrowser.openBrowserAsync(fileUrl);
-                                                } catch (error) {
-                                                    console.error('Error opening file:', error);
-                                                    Alert.alert('Ошибка', 'Не удалось открыть файл');
-                                                }
-                                            }
-                                        }
-                                    ]
-                                );
+                            if (!isDownloading) {
+                                downloadAndOpenDocument(item);
                             }
                         }}
                         activeOpacity={0.7}
+                        disabled={isDownloading}
                     >
                         <View style={styles.fileIconContainer}>
-                            <MaterialIcons
-                                name={fileIcon as any}
-                                size={32}
-                                color={theme.primary}
-                            />
+                            {isDownloading ? (
+                                <ActivityIndicator size="small" color={theme.primary} />
+                            ) : (
+                                <MaterialIcons
+                                    name={fileIcon as any}
+                                    size={32}
+                                    color={theme.primary}
+                                />
+                            )}
                         </View>
                         <View style={styles.fileInfo}>
                             <Text style={[styles.fileName, { color: theme.text }]} numberOfLines={2}>
@@ -3967,11 +3954,29 @@ export default function ChatScreen() {
                                     {item.mimeType}
                                 </Text>
                             )}
+                            {isDownloading && (
+                                <View style={styles.downloadProgressContainer}>
+                                    <View style={[styles.downloadProgressBar, { backgroundColor: theme.border }]}>
+                                        <View
+                                            style={[
+                                                styles.downloadProgressFill,
+                                                {
+                                                    backgroundColor: theme.primary,
+                                                    width: `${downloadProgress}%`
+                                                }
+                                            ]}
+                                        />
+                                    </View>
+                                    <Text style={[styles.downloadProgressText, { color: theme.textSecondary }]}>
+                                        Загрузка... {downloadProgress}%
+                                    </Text>
+                                </View>
+                            )}
                         </View>
                         <MaterialIcons
-                            name="download"
+                            name={isDownloading ? "hourglass-empty" : "open-in-new"}
                             size={20}
-                            color={theme.textSecondary}
+                            color={isDownloading ? theme.placeholder : theme.primary}
                         />
                     </TouchableOpacity>
                 );
@@ -4166,26 +4171,81 @@ export default function ChatScreen() {
                     </Pressable>
                 </View>
 
-                {/* Просмотрщик изображений */}
+                {/* Просмотрщик изображений с поддержкой масштабирования */}
                 <Modal
                     visible={isImageViewerVisible}
                     transparent={true}
                     animationType="fade"
-                    onRequestClose={() => setIsImageViewerVisible(false)}
+                    onRequestClose={closeImageViewer}
                 >
                     <View style={styles.imageViewerContainer}>
                         <TouchableOpacity
                             style={styles.imageViewerCloseButton}
-                            onPress={() => setIsImageViewerVisible(false)}
+                            onPress={closeImageViewer}
                         >
-                            <MaterialIcons name="close" size={30} color="white" />
+                            <MaterialIcons name="close" size={32} color="white" />
                         </TouchableOpacity>
+
+                        {/* Индикатор масштаба */}
+                        {imageZoomScale > 1 && (
+                            <View style={styles.imageZoomIndicator}>
+                                <Text style={styles.imageZoomText}>
+                                    {imageZoomScale.toFixed(1)}x
+                                </Text>
+                            </View>
+                        )}
+
+                        {/* Подсказка для пользователя */}
+                        <View style={styles.imageHintContainer}>
+                            <Text style={styles.imageHintText}>
+                                Двойное нажатие для увеличения • Жесты для навигации
+                            </Text>
+                        </View>
+
                         {selectedImage && (
-                            <Image
-                                source={{ uri: selectedImage }}
-                                style={styles.fullScreenImage}
-                                resizeMode="contain"
-                            />
+                            <ScrollView
+                                ref={imageScrollViewRef}
+                                style={styles.imageScrollView}
+                                contentContainerStyle={styles.imageScrollContent}
+                                minimumZoomScale={1}
+                                maximumZoomScale={5}
+                                zoomScale={imageZoomScale}
+                                showsHorizontalScrollIndicator={false}
+                                showsVerticalScrollIndicator={false}
+                                centerContent={true}
+                                pinchGestureEnabled={true}
+                                scrollEnabled={true}
+                                bounces={true}
+                                bouncesZoom={true}
+                                onScrollBeginDrag={() => {
+                                    // Предотвращаем закрытие при прокрутке увеличенного изображения
+                                }}
+                            >
+                                <TouchableOpacity 
+                                    activeOpacity={1}
+                                    onPress={handleImageDoubleTap}
+                                    style={styles.imageTouchContainer}
+                                >
+                                    <Image
+                                        source={{ uri: selectedImage }}
+                                        style={[
+                                            styles.fullScreenImage,
+                                            { 
+                                                transform: [{ scale: imageZoomScale }],
+                                                width: Dimensions.get('window').width,
+                                                height: Dimensions.get('window').height,
+                                            }
+                                        ]}
+                                        resizeMode="contain"
+                                        onLoad={() => {
+                                            console.log('🖼️ [IMAGE-VIEWER] Image loaded for fullscreen view');
+                                        }}
+                                        onError={(error) => {
+                                            console.error('🖼️ [IMAGE-VIEWER] Image load error:', error);
+                                        }}
+                                    />
+                                </TouchableOpacity>
+                            </ScrollView>
                         )}
                     </View>
                 </Modal>
@@ -4224,6 +4284,16 @@ export default function ChatScreen() {
                                 {!audioSessionReady && (
                                     <View style={styles.audioWarningDot} />
                                 )}
+                            </TouchableOpacity>
+                        )}
+
+                        {/* Кнопка открытия в браузере */}
+                        {selectedVideo?.startsWith('http') && (
+                            <TouchableOpacity
+                                style={styles.browserButton}
+                                onPress={() => openVideoInBrowser(selectedVideo)}
+                            >
+                                <MaterialIcons name="open-in-browser" size={24} color="rgba(255, 255, 255, 0.9)" />
                             </TouchableOpacity>
                         )}
 
@@ -4305,38 +4375,111 @@ export default function ChatScreen() {
                                     console.log('🎥 [FULLSCREEN] Video ready for manual playback');
                                 }}
                                 onError={(error) => {
-                                    console.error('🎥 [FULLSCREEN] ❌ Video error:', {
+                                    console.error('🎥 [FULLSCREEN] ❌ Video decoder error:', {
                                         error: error,
                                         uri: selectedVideo?.substring(selectedVideo.lastIndexOf('/') + 1),
                                         uriType: selectedVideo?.startsWith('data:') ? 'base64' :
                                                  selectedVideo?.startsWith('http') ? 'url' : 'file',
-                                        fullUri: selectedVideo
+                                        fullUri: selectedVideo,
+                                        isCodecError: error?.error?.includes('MediaCodecRenderer') || 
+                                                     error?.error?.includes('Decoder')
                                     });
 
-                                    Alert.alert(
-                                        'Ошибка воспроизведения',
-                                        `Не удалось воспроизвести видео.\n\nТип: ${selectedVideo?.startsWith('data:') ? 'Base64' : selectedVideo?.startsWith('http') ? 'URL' : 'Файл'}\n\nОшибка: ${JSON.stringify(error)}`,
-                                        [
-                                            { text: 'Закрыть', onPress: () => setIsVideoViewerVisible(false) },
-                                            {
-                                                text: 'Открыть в браузере',
-                                                onPress: async () => {
-                                                    try {
-                                                        if (selectedVideo?.startsWith('http')) {
-                                                            const { WebBrowser } = await import('expo-web-browser');
-                                                            await WebBrowser.openBrowserAsync(selectedVideo);
-                                                        } else {
-                                                            Alert.alert('Ошибка', 'Невозможно открыть в браузере - это не URL');
+                                    const isCodecError = error?.error?.includes('MediaCodecRenderer') || 
+                                                       error?.error?.includes('Decoder init failed');
+
+                                    if (isCodecError) {
+                                        // Автоматически пытаемся открыть в браузере для HTTP видео
+                                        if (selectedVideo?.startsWith('http')) {
+                                            console.log('🎥 [AUTO-BROWSER] Auto-opening codec-problematic video in browser');
+                                            openVideoInBrowser(selectedVideo).then(() => {
+                                                setIsVideoViewerVisible(false);
+                                            }).catch((browserError) => {
+                                                console.error('🎥 [AUTO-BROWSER] Auto-browser failed:', browserError);
+
+                                                Alert.alert(
+                                                    'Проблема с кодеком видео',
+                                                    `Встроенный плеер не поддерживает кодеки этого видео.\n\n` +
+                                                    `Ошибка: ${error?.error?.split(':')[0] || 'Неизвестная ошибка декодера'}\n\n` +
+                                                    `Попробуйте открыть в браузере.`,
+                                                    [
+                                                        { text: 'Закрыть', onPress: () => setIsVideoViewerVisible(false) },
+                                                        {
+                                                            text: 'Открыть в браузере',
+                                                            onPress: async () => {
+                                                                try {
+                                                                    await openVideoInBrowser(selectedVideo);
+                                                                    setIsVideoViewerVisible(false);
+                                                                } catch (retryError) {
+                                                                    console.error('🎥 [RETRY-BROWSER] Browser retry failed:', retryError);
+                                                                    setIsVideoViewerVisible(false);
+                                                                }
+                                                            }
                                                         }
-                                                    } catch (browserError) {
-                                                        console.error('Browser open error:', browserError);
-                                                        Alert.alert('Ошибка', 'Не удалось открыть в браузере');
+                                                    ]
+                                                );
+                                            });
+                                            return;
+                                        }
+
+                                        Alert.alert(
+                                            'Проблема с кодеком видео',
+                                            `Встроенный плеер не поддерживает кодеки этого видео.\n\n` +
+                                            `Ошибка: ${error?.error?.split(':')[0] || 'Неизвестная ошибка декодера'}\n\n` +
+                                            `${selectedVideo?.startsWith('http') ? 'Попробуем открыть в браузере.' : 'Попробуйте системный плеер.'}`,
+                                            [
+                                                { text: 'Закрыть', onPress: () => setIsVideoViewerVisible(false) },
+                                                selectedVideo?.startsWith('http') ? {
+                                                    text: 'Открыть в браузере',
+                                                    onPress: async () => {
+                                                        try {
+                                                            await openVideoInBrowser(selectedVideo);
+                                                            setIsVideoViewerVisible(false);
+                                                        } catch (retryError) {
+                                                            console.error('🎥 [MANUAL-BROWSER] Manual browser open failed:', retryError);
+                                                            setIsVideoViewerVisible(false);
+                                                        }
                                                     }
-                                                    setIsVideoViewerVisible(false);
+                                                } : {
+                                                    text: 'Системный плеер',
+                                                    onPress: async () => {
+                                                        try {
+                                                            await openInSystemPlayer(selectedVideo);
+                                                            setIsVideoViewerVisible(false);
+                                                        } catch (retryError) {
+                                                            console.error('🎥 [MANUAL-PLAYER] Manual player open failed:', retryError);
+                                                            setIsVideoViewerVisible(false);
+                                                        }
+                                                    }
                                                 }
-                                            }
-                                        ]
-                                    );
+                                            ]
+                                        );
+                                    } else {
+                                        Alert.alert(
+                                            'Ошибка воспроизведения',
+                                            `Не удалось воспроизвести видео.\n\nТип: ${selectedVideo?.startsWith('data:') ? 'Base64' : selectedVideo?.startsWith('http') ? 'URL' : 'Файл'}\n\nОшибка: ${error?.error || 'Неизвестная ошибка'}`,
+                                            [
+                                                { text: 'Закрыть', onPress: () => setIsVideoViewerVisible(false) },
+                                                {
+                                                    text: 'Попробовать в браузере',
+                                                    onPress: async () => {
+                                                        try {
+                                                            if (selectedVideo?.startsWith('http')) {
+                                                                const { WebBrowser } = await import('expo-web-browser');
+                                                                await WebBrowser.openBrowserAsync(selectedVideo);
+                                                            } else {
+                                                                Alert.alert('Ошибка', 'Можно открыть только URL в браузере');
+                                                            }
+                                                        } catch (browserError) {
+                                                            console.error('Browser error:', browserError);
+                                                            Alert.alert('Ошибка', 'Не удалось открыть в браузере');
+                                                        }
+                                                        setIsVideoViewerVisible(false);
+                                                    }
+                                                }
+                                            ]
+                                        );
+                                    }
                                 }}
                                 onPlaybackStatusUpdate={(status) => {
                                     if ('error' in status) {
@@ -4369,12 +4512,110 @@ export default function ChatScreen() {
                         )}
                     </View>
                 </Modal>
+
+                {/* Модальное окно для полноэкранного инлайн видео */}
+                <Modal
+                    visible={isFullscreenModalVisible}
+                    transparent={false}
+                    animationType="fade"
+                    onRequestClose={() => {
+                        setIsFullscreenModalVisible(false);
+                        setFullscreenModalVideoUri(null);
+                        if (fullscreenVideoId) {
+                            setInlineVideoStates(prev => ({
+                                ...prev,
+                                [fullscreenVideoId]: {
+                                    ...prev[fullscreenVideoId],
+                                    isFullscreen: false,
+                                    isExpanded: false
+                                }
+                            }));
+                        }
+                        setIsAnyVideoFullscreen(false);
+                        setFullscreenVideoId(null);
+                    }}
+                >
+                    <View style={styles.fullscreenModalContainer}>
+                        <TouchableOpacity
+                            style={styles.fullscreenModalCloseButton}
+                            onPress={() => {
+                                setIsFullscreenModalVisible(false);
+                                setFullscreenModalVideoUri(null);
+                                if (fullscreenVideoId) {
+                                    setInlineVideoStates(prev => ({
+                                        ...prev,
+                                        [fullscreenVideoId]: {
+                                            ...prev[fullscreenVideoId],
+                                            isFullscreen: false,
+                                            isExpanded: false
+                                        }
+                                    }));
+                                }
+                                setIsAnyVideoFullscreen(false);
+                                setFullscreenVideoId(null);
+                            }}
+                        >
+                            <MaterialIcons name="close" size={32} color="white" />
+                        </TouchableOpacity>
+
+                        {fullscreenModalVideoUri && (
+                            <Video
+                                source={{ uri: fullscreenModalVideoUri }}
+                                style={styles.fullscreenModalVideo}
+                                resizeMode={ResizeMode.CONTAIN}
+                                useNativeControls={true}
+                                shouldPlay={true}
+                                isLooping={false}
+                                onLoad={async (data) => {
+                                    console.log('🎥 [FULLSCREEN-MODAL] Video loaded:', {
+                                        duration: data.durationMillis,
+                                        naturalSize: data.naturalSize,
+                                        source: fullscreenModalVideoUri?.startsWith('http') ? 'server' : 
+                                               fullscreenModalVideoUri?.startsWith('file://') ? 'gallery' : 'other'
+                                    });
+
+                                    // Если воспроизводится с сервера в полноэкранном режиме, автоматически сохраняем в галерею
+                                    if (fullscreenModalVideoUri?.startsWith('http') && fullscreenVideoId) {
+                                        console.log('🎥 [FULLSCREEN-MODAL] Auto-saving video to gallery from fullscreen...');
+                                        try {
+                                            // Находим соответствующее сообщение для получения метаданных
+                                            const message = messages.find(msg => String(msg.id) === fullscreenVideoId);
+                                            if (message) {
+                                                const localUri = await saveMediaToGallery(
+                                                    fullscreenModalVideoUri,
+                                                    message.id,
+                                                    'video',
+                                                    message.mediaHash
+                                                );
+
+                                                if (localUri) {
+                                                    console.log('🎥 [FULLSCREEN-MODAL] ✅ Video saved to gallery from fullscreen');
+                                                    // Обновляем сообщение с локальным URI для будущего использования
+                                                    updateMessageSafely(message.id, { mediaUri: localUri });
+                                                }
+                                            }
+                                        } catch (saveError) {
+                                            console.log('🎥 [FULLSCREEN-MODAL] Could not save to gallery from fullscreen (non-critical):', saveError);
+                                        }
+                                    }
+                                }}
+                                onError={(error) => {
+                                    console.error('🎥 [FULLSCREEN-MODAL] Video error:', error);
+                                    Alert.alert('Ошибка', 'Не удалось воспроизвести видео в полноэкранном режиме');
+                                }}
+                            />
+                        )}
+                    </View>
+                </Modal>
             </KeyboardAvoidingView>
         </View>
     );
 }
 
-const createStyles = (theme: any) => StyleSheet.create({
+const createStyles = (theme: any) => {
+    const screenDimensions = Dimensions.get('screen');
+
+    return StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: theme.background,
@@ -4604,22 +4845,77 @@ const createStyles = (theme: any) => StyleSheet.create({
     },
     imageViewerContainer: {
         flex: 1,
-        backgroundColor: 'rgba(0, 0, 0, 0.9)',
+        backgroundColor: 'black',
         justifyContent: 'center',
         alignItems: 'center',
     },
     imageViewerCloseButton: {
         position: 'absolute',
-        top: 50,
+        top: 60,
         right: 20,
-        zIndex: 1,
-        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        zIndex: 10,
+        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        borderRadius: 25,
+        padding: 8,
+        elevation: 5,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.25,
+        shadowRadius: 3.84,
+    },
+    imageZoomIndicator: {
+        position: 'absolute',
+        top: 60,
+        left: 20,
+        zIndex: 9,
+        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        borderRadius: 15,
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+    },
+    imageZoomText: {
+        color: 'white',
+        fontSize: 14,
+        fontWeight: 'bold',
+    },
+    imageHintContainer: {
+        position: 'absolute',
+        bottom: 60,
+        left: 20,
+        right: 20,
+        zIndex: 9,
+        backgroundColor: 'rgba(0, 0, 0, 0.6)',
         borderRadius: 20,
-        padding: 5,
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        alignItems: 'center',
+    },
+    imageHintText: {
+        color: 'rgba(255, 255, 255, 0.8)',
+        fontSize: 12,
+        textAlign: 'center',
+        fontStyle: 'italic',
+    },
+    imageScrollView: {
+        flex: 1,
+        width: '100%',
+        height: '100%',
+    },
+    imageScrollContent: {
+        flexGrow: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    imageTouchContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        width: '100%',
+        height: '100%',
     },
     fullScreenImage: {
-        width: '90%',
-        height: '80%',
+        maxWidth: '100%',
+        maxHeight: '100%',
     },
     videoPlayOverlay: {
         position: 'absolute',
@@ -4783,6 +5079,30 @@ const createStyles = (theme: any) => StyleSheet.create({
         fontSize: 10,
         fontStyle: 'italic',
     },
+    fileContainerDownloading: {
+        opacity: 0.7,
+        borderColor: theme.primary,
+        borderWidth: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.02)',
+    },
+    downloadProgressContainer: {
+        marginTop: 6,
+        width: '100%',
+    },
+    downloadProgressBar: {
+        height: 3,
+        borderRadius: 2,
+        overflow: 'hidden',
+        marginBottom: 2,
+    },
+    downloadProgressFill: {
+        height: '100%',
+        borderRadius: 2,
+    },
+    downloadProgressText: {
+        fontSize: 10,
+        fontStyle: 'italic',
+    },
     forcePlayButton: {
         position: 'absolute',
         top: '50%',
@@ -4866,6 +5186,15 @@ const createStyles = (theme: any) => StyleSheet.create({
         borderRadius: 4,
         backgroundColor: 'orange',
     },
+    browserButton: {
+        position: 'absolute',
+        bottom: 160,
+        left: 20,
+        backgroundColor: 'rgba(0, 123, 255, 0.8)',
+        padding: 12,
+        borderRadius: 25,
+        zIndex: 2,
+    },
     systemPlayerButton: {
         position: 'absolute',
         bottom: 100,
@@ -4881,8 +5210,9 @@ const createStyles = (theme: any) => StyleSheet.create({
         marginBottom: 8,
         borderRadius: 12,
         overflow: 'hidden',
-        width: 280,
-        height: 200,
+        maxWidth: '100%', // Ограничиваем максимальную ширину
+        width: 250, // Уменьшаем ширину для лучшего помещения в сообщение
+        height: 180, // Соответственно корректируем высоту
     },
     inlineVideo: {
         width: '100%',
@@ -4905,15 +5235,63 @@ const createStyles = (theme: any) => StyleSheet.create({
         height: '100%',
         borderRadius: 0,
     },
+    // Новые стили для полноэкранного режима на весь экран устройства
+    deviceFullscreenVideoContainer: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 2000, // Выше чем обычный полноэкранный режим
+        backgroundColor: 'black',
+        marginBottom: 0,
+        borderRadius: 0,
+    },
+    deviceFullscreenVideo: {
+        width: '100%',
+        height: '100%',
+        borderRadius: 0,
+    },
+    // Стили для модального полноэкранного видео
+    fullscreenModalContainer: {
+        flex: 1,
+        backgroundColor: 'black',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    fullscreenModalVideo: {
+        width: '100%',
+        height: '100%',
+    },
+    fullscreenModalCloseButton: {
+        position: 'absolute',
+        top: 50,
+        right: 20,
+        zIndex: 10,
+        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        borderRadius: 25,
+        padding: 10,
+    },
+    fullscreenModeControls: {
+        position: 'absolute',
+        bottom: 100,
+        right: 20,
+        flexDirection: 'row',
+        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+        borderRadius: 25,
+        padding: 8,
+        zIndex: 2001, // Выше видео контейнера
+    },
     inlineVideoControls: {
         position: 'absolute',
-        bottom: 8,
-        right: 8,
+        bottom: 6,
+        right: 6,
         flexDirection: 'row',
-        backgroundColor: 'rgba(0, 0, 0, 0.7)',
-        borderRadius: 20,
-        padding: 4,
-        zIndex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+        borderRadius: 18,
+        padding: 3,
+        zIndex: 2,
+        maxWidth: '90%', // Ограничиваем ширину контролов
     },
     fullscreenVideoControls: {
         position: 'absolute',
@@ -4923,27 +5301,27 @@ const createStyles = (theme: any) => StyleSheet.create({
         backgroundColor: 'rgba(0, 0, 0, 0.8)',
         borderRadius: 25,
         padding: 8,
-        zIndex: 1,
+        zIndex: 2,
     },
     inlineVideoButton: {
-        padding: 6,
-        marginHorizontal: 2,
-        borderRadius: 15,
+        padding: 5,
+        marginHorizontal: 1,
+        borderRadius: 12,
         backgroundColor: 'rgba(255, 255, 255, 0.2)',
         alignItems: 'center',
         justifyContent: 'center',
-        minWidth: 30,
-        minHeight: 30,
+        minWidth: 26,
+        minHeight: 26,
     },
     videoProgressContainer: {
         position: 'absolute',
-        bottom: 40,
-        left: 8,
-        right: 8,
-        zIndex: 1,
+        bottom: 35,
+        left: 6,
+        right: 6,
+        zIndex: 2,
     },
     videoProgressBar: {
-        height: 4,
+        height: 3,
         backgroundColor: 'rgba(255, 255, 255, 0.3)',
         borderRadius: 2,
         overflow: 'hidden',
@@ -4955,24 +5333,24 @@ const createStyles = (theme: any) => StyleSheet.create({
     },
     videoProgressTouch: {
         position: 'absolute',
-        top: -10,
-        bottom: -10,
+        top: -8,
+        bottom: -8,
         left: 0,
         right: 0,
     },
     videoTimeContainer: {
         position: 'absolute',
-        bottom: 50,
-        left: 8,
-        backgroundColor: 'rgba(0, 0, 0, 0.7)',
-        paddingHorizontal: 8,
-        paddingVertical: 2,
-        borderRadius: 4,
-        zIndex: 1,
+        bottom: 42,
+        left: 6,
+        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+        paddingHorizontal: 6,
+        paddingVertical: 1,
+        borderRadius: 3,
+        zIndex: 2,
     },
     videoTimeText: {
         color: 'white',
-        fontSize: 12,
+        fontSize: 10,
         fontFamily: 'monospace',
     },
     fullscreenPlayOverlay: {
@@ -4980,6 +5358,79 @@ const createStyles = (theme: any) => StyleSheet.create({
         top: '50%',
         left: '50%',
         transform: [{ translateX: -40 }, { translateY: -40 }],
-        zIndex: 2,
+        zIndex: 3,
     },
-});
+    fullscreenCloseButton: {
+        position: 'absolute',
+        top: 60,
+        right: 20,
+        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        borderRadius: 20,
+        padding: 8,
+        zIndex: 10, // Поверх всех элементов
+    },
+    // Стили для превью видео (ленивая загрузка)
+    videoPreviewContainer: {
+        marginBottom: 8,
+        borderRadius: 12,
+        backgroundColor: theme.surface,
+        borderWidth: 2,
+        borderColor: theme.primary,
+        borderStyle: 'dashed',
+        padding: 16,
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: 110,
+        maxWidth: '100%',
+        width: 250, // Соответствует ширине инлайн видео
+    },
+    videoPreviewContent: {
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    videoPreviewTitle: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        marginTop: 8,
+        marginBottom: 4,
+    },
+    videoPreviewSize: {
+        fontSize: 14,
+        marginBottom: 8,
+    },
+    videoPreviewHint: {
+        fontSize: 12,
+        fontStyle: 'italic',
+        textAlign: 'center',
+    },
+    videoPreviewNote: {
+        fontSize: 10,
+        fontStyle: 'italic',
+        textAlign: 'center',
+        marginTop: 4,
+        opacity: 0.7,
+    },
+    // Стили для индикатора загрузки видео
+    videoLoadingContainer: {
+        marginBottom: 8,
+        borderRadius: 12,
+        backgroundColor: theme.surface,
+        borderWidth: 1,
+        borderColor: theme.border,
+        padding: 16,
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: 110,
+        maxWidth: '100%',
+        width: 250, // Соответствует ширине инлайн видео
+    },
+    videoLoadingText: {
+        fontSize: 14,
+        marginTop: 12,
+        marginBottom: 4,
+    },
+    videoLoadingSize: {
+        fontSize: 12,
+    },
+    });
+};
