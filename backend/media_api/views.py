@@ -167,3 +167,84 @@ class UserFilesListView(APIView):
             },
             status=status.HTTP_200_OK
         )
+
+
+class MessageMediaUrlView(APIView):
+    """API view для получения URL медиафайлов сообщений."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, file_id, *args, **kwargs):
+        try:
+            # Получаем файл по ID
+            uploaded_file = get_object_or_404(UploadedFile, id=file_id)
+
+            # Проверяем права доступа (файл должен принадлежать пользователю или быть частью чата, к которому у пользователя есть доступ)
+            if uploaded_file.user != request.user:
+                # Дополнительная проверка: возможно файл используется в чате, к которому пользователь имеет доступ
+                # Здесь можно добавить логику проверки доступа к чату
+                return Response(
+                    {
+                        'success': False,
+                        'message': 'У вас нет прав доступа к этому файлу'
+                    },
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+            # Формируем полный URL к файлу
+            file_url = request.build_absolute_uri(uploaded_file.file.url)
+
+            # Определяем тип ответа в зависимости от типа файла
+            if isinstance(uploaded_file, ImageFile):
+                response_data = {
+                    'success': True,
+                    'file_id': uploaded_file.id,
+                    'file_type': 'image',
+                    'url': file_url,
+                    'original_name': uploaded_file.original_name,
+                    'size': uploaded_file.file_size,
+                    'mime_type': uploaded_file.mime_type,
+                    'width': uploaded_file.width,
+                    'height': uploaded_file.height,
+                }
+            elif isinstance(uploaded_file, VideoFile):
+                response_data = {
+                    'success': True,
+                    'file_id': uploaded_file.id,
+                    'file_type': 'video',
+                    'url': file_url,
+                    'original_name': uploaded_file.original_name,
+                    'size': uploaded_file.file_size,
+                    'mime_type': uploaded_file.mime_type,
+                    'duration': uploaded_file.duration,
+                    'width': uploaded_file.width,
+                    'height': uploaded_file.height,
+                }
+            else:
+                response_data = {
+                    'success': True,
+                    'file_id': uploaded_file.id,
+                    'file_type': uploaded_file.file_type,
+                    'url': file_url,
+                    'original_name': uploaded_file.original_name,
+                    'size': uploaded_file.file_size,
+                    'mime_type': uploaded_file.mime_type,
+                }
+
+            return Response(response_data, status=status.HTTP_200_OK)
+
+        except Http404:
+            return Response(
+                {
+                    'success': False,
+                    'message': 'Файл не найден'
+                },
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {
+                    'success': False,
+                    'message': f'Ошибка при получении URL файла: {str(e)}'
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
