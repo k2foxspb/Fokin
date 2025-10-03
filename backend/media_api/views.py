@@ -173,8 +173,19 @@ class MessageMediaUrlView(APIView):
     """API view для получения URL медиафайлов сообщений."""
     permission_classes = [IsAuthenticated]
 
-    def get(self, request, file_id, *args, **kwargs):
+    def get(self, request, *args, **kwargs):
         try:
+            # Извлекаем file_id из URL параметров
+            file_id = kwargs.get('file_id')
+            if not file_id:
+                return Response(
+                    {
+                        'success': False,
+                        'message': 'ID файла не указан'
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
             # Получаем файл по ID
             uploaded_file = get_object_or_404(UploadedFile, id=file_id)
 
