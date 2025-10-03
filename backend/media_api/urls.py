@@ -9,5 +9,5 @@ urlpatterns = [
     path('upload/file/', views.FileUploadView.as_view(), name='upload-file'),
     path('delete/<int:file_id>/', views.DeleteFileView.as_view(), name='delete-file'),
     path('files/', views.UserFilesListView.as_view(), name='user-files'),
-    path('message/<int:file_id>/url/', views.MessageMediaUrlView.as_view(), name='message-media-url'),
+    path('message/<int:message_id>/url/', views.MessageMediaUrlView.as_view(), name='message-media-url'),
 ]

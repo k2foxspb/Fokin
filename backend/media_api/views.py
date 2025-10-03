@@ -175,21 +175,85 @@ class MessageMediaUrlView(APIView):
 
     def get(self, request, *args, **kwargs):
         try:
-            # Извлекаем file_id из URL параметров
-            file_id = kwargs.get('file_id')
-            if not file_id:
+            # Извлекаем message_id из URL параметров
+            message_id = kwargs.get('message_id')
+            if not message_id:
                 return Response(
                     {
                         'success': False,
-                        'message': 'ID файла не указан'
+                        'message': 'ID сообщения не указан'
                     },
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            # Получаем файл по ID
-            uploaded_file = get_object_or_404(UploadedFile, id=file_id)
+            # Импортируем модель сообщения из chatapp
+            from chatapp.models import Message, PrivateMessage
 
-            # Проверяем права доступа (файл должен принадлежать пользователю или быть частью чата, к которому у пользователя есть доступ)
+            # Ищем сообщение в обычных чатах или приватных чатах
+            message = None
+            try:
+                message = Message.objects.get(id=message_id)
+            except Message.DoesNotExist:
+                try:
+                    message = PrivateMessage.objects.get(id=message_id)
+                except PrivateMessage.DoesNotExist:
+                    return Response(
+                        {
+                            'success': False,
+                            'message': 'Сообщение не найдено'
+                        },
+                        status=status.HTTP_404_NOT_FOUND
+                    )
+
+            # Проверяем права доступа к сообщению
+            if hasattr(message, 'sender') and message.sender != request.user:
+                # Дополнительная проверка: возможно пользователь имеет доступ к чату
+                if hasattr(message, 'room'):
+                    # Проверяем доступ к комнате чата
+                    room = message.room
+                    if hasattr(room, 'users') and request.user not in room.users.all():
+                        return Response(
+                            {
+                                'success': False,
+                                'message': 'У вас нет прав доступа к этому сообщению'
+                            },
+                            status=status.HTTP_403_FORBIDDEN
+                        )
+                elif hasattr(message, 'sender') and message.sender != request.user:
+                    # Для приватных сообщений проверяем, является ли пользователь отправителем или получателем
+                    if hasattr(message, 'recipient') and message.recipient != request.user:
+                        return Response(
+                            {
+                                'success': False,
+                                'message': 'У вас нет прав доступа к этому сообщению'
+                            },
+                            status=status.HTTP_403_FORBIDDEN
+                        )
+
+            # Получаем медиафайл, связанный с сообщением
+            # Предполагаем, что медиафайл хранится в поле или связан через hash
+            uploaded_file = None
+
+            # Если в сообщении есть прямая ссылка на файл
+            if hasattr(message, 'media_file') and message.media_file:
+                uploaded_file = message.media_file
+            else:
+                # Попытаемся найти файл по ID сообщения или другим критериям
+                # Это зависит от того, как хранятся связи между сообщениями и файлами
+                uploaded_file = UploadedFile.objects.filter(
+                    user=message.sender if hasattr(message, 'sender') else request.user
+                ).first()
+
+            if not uploaded_file:
+                return Response(
+                    {
+                        'success': False,
+                        'message': 'Медиафайл для этого сообщения не найден'
+                    },
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+            # Проверяем права доступа к файлу
             if uploaded_file.user != request.user:
                 # Дополнительная проверка: возможно файл используется в чате, к которому пользователь имеет доступ
                 # Здесь можно добавить логику проверки доступа к чату
