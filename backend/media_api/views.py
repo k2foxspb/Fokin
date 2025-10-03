@@ -5,6 +5,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
 from django.shortcuts import get_object_or_404
 from django.http import Http404
+from django.db import models
 
 from .models import UploadedFile, ImageFile, VideoFile
 from .serializers import (
@@ -230,28 +231,113 @@ class MessageMediaUrlView(APIView):
                             status=status.HTTP_403_FORBIDDEN
                         )
 
+            # Логирование для отладки
+            print(f"🔍 [DEBUG] MessageMediaUrlView: Processing message_id={message_id}")
+            print(f"🔍 [DEBUG] Message found: id={message.id}, sender={getattr(message, 'sender', None)}")
+
             # Получаем медиафайл, связанный с сообщением
-            # Предполагаем, что медиафайл хранится в поле или связан через hash
             uploaded_file = None
 
-            # Если в сообщении есть прямая ссылка на файл
+            # Сначала проверяем прямую связь с файлом в сообщении
             if hasattr(message, 'media_file') and message.media_file:
                 uploaded_file = message.media_file
-            else:
-                # Попытаемся найти файл по ID сообщения или другим критериям
-                # Это зависит от того, как хранятся связи между сообщениями и файлами
-                uploaded_file = UploadedFile.objects.filter(
-                    user=message.sender if hasattr(message, 'sender') else request.user
-                ).first()
+                print(f"🔍 [DEBUG] Found media_file directly in message: {uploaded_file.id}")
+
+            # Если нет прямой связи, ищем по различным критериям
+            if not uploaded_file:
+                sender = getattr(message, 'sender', None)
+                message_timestamp = getattr(message, 'timestamp', None)
+
+                print(f"🔍 [DEBUG] Searching for file by criteria: sender={sender}, message_id={message_id}")
+
+                # Стратегия 1: Поиск по имени файла, содержащему message_id
+                if sender:
+                    # Ищем файлы с именем, содержащим ID сообщения
+                    potential_files = UploadedFile.objects.filter(
+                        user=sender
+                    ).filter(
+                        models.Q(original_name__contains=str(message_id)) |
+                        models.Q(file__icontains=f'media_{message_id}') |
+                        models.Q(file__icontains=str(message_id))
+                    ).order_by('-uploaded_at')
+
+                    if potential_files.exists():
+                        uploaded_file = potential_files.first()
+                        print(f"🔍 [DEBUG] Found file by name pattern: {uploaded_file.id}, name={uploaded_file.original_name}")
+
+                # Стратегия 2: Поиск по времени загрузки (если есть timestamp сообщения)
+                if not uploaded_file and sender and message_timestamp:
+                    from django.utils import timezone
+                    from datetime import timedelta
+
+                    # Ищем файлы, загруженные в пределах 10 минут от времени сообщения
+                    if isinstance(message_timestamp, str):
+                        try:
+                            from django.utils.dateparse import parse_datetime
+                            message_time = parse_datetime(message_timestamp)
+                        except:
+                            message_time = None
+                    else:
+                        message_time = message_timestamp
+
+                    if message_time:
+                        time_window = timedelta(minutes=10)
+                        start_time = message_time - time_window
+                        end_time = message_time + time_window
+
+                        potential_files = UploadedFile.objects.filter(
+                            user=sender,
+                            uploaded_at__gte=start_time,
+                            uploaded_at__lte=end_time
+                        ).order_by('-uploaded_at')
+
+                        if potential_files.exists():
+                            uploaded_file = potential_files.first()
+                            print(f"🔍 [DEBUG] Found file by timestamp: {uploaded_file.id}, uploaded_at={uploaded_file.uploaded_at}")
+
+                # Стратегия 3: Поиск по медиа хэшу (если есть в сообщении)
+                if not uploaded_file and hasattr(message, 'media_hash') and message.media_hash:
+                    # Если в модели UploadedFile есть поле для хэша
+                    if hasattr(UploadedFile, 'media_hash'):
+                        potential_files = UploadedFile.objects.filter(
+                            media_hash=message.media_hash
+                        ).order_by('-uploaded_at')
+
+                        if potential_files.exists():
+                            uploaded_file = potential_files.first()
+                            print(f"🔍 [DEBUG] Found file by media_hash: {uploaded_file.id}")
+
+                # Стратегия 4: Последний загруженный медиафайл пользователя (fallback)
+                if not uploaded_file and sender:
+                    print(f"🔍 [DEBUG] Fallback: getting latest media file from user {sender.id}")
+
+                    # Ищем последний видео или изображение пользователя
+                    from django.db import models as django_models
+
+                    potential_files = UploadedFile.objects.filter(
+                        user=sender
+                    ).filter(
+                        django_models.Q(file_type='video') | 
+                        django_models.Q(file_type='image') |
+                        django_models.Q(mime_type__startswith='video/') |
+                        django_models.Q(mime_type__startswith='image/')
+                    ).order_by('-uploaded_at')
+
+                    if potential_files.exists():
+                        uploaded_file = potential_files.first()
+                        print(f"🔍 [DEBUG] Fallback file found: {uploaded_file.id}, type={uploaded_file.file_type}")
 
             if not uploaded_file:
+                print(f"🔍 [DEBUG] No media file found for message_id={message_id}")
                 return Response(
                     {
                         'success': False,
-                        'message': 'Медиафайл для этого сообщения не найден'
+                        'message': f'Медиафайл для сообщения {message_id} не найден'
                     },
                     status=status.HTTP_404_NOT_FOUND
                 )
+
+            print(f"🔍 [DEBUG] Final uploaded_file: id={uploaded_file.id}, url={uploaded_file.file.url}")
 
             # Проверяем права доступа к файлу
             if uploaded_file.user != request.user:
