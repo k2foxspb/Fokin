@@ -6,6 +6,7 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from django.shortcuts import get_object_or_404
 from django.http import Http404
 from django.db import models
+from django.utils import timezone
 
 from .models import UploadedFile, ImageFile, VideoFile
 from .serializers import (
