@@ -29,11 +29,34 @@ class BaseUploadView(APIView):
                     uploaded_file, 
                     context={'request': request}
                 )
+
+                # Запускаем фоновую обработку через Celery
+                from .tasks import compress_video_task, optimize_image_task, generate_video_thumbnail_task
+
+                if isinstance(uploaded_file, VideoFile):
+                    # Фоновое сжатие видео для ускорения передачи
+                    compress_video_task.apply_async(
+                        args=[uploaded_file.id],
+                        countdown=5  # Запуск через 5 секунд
+                    )
+                    # Генерация превью
+                    generate_video_thumbnail_task.apply_async(
+                        args=[uploaded_file.id],
+                        countdown=2
+                    )
+                elif isinstance(uploaded_file, ImageFile):
+                    # Фоновая оптимизация изображения
+                    optimize_image_task.apply_async(
+                        args=[uploaded_file.id],
+                        countdown=2
+                    )
+
                 return Response(
                     {
                         'success': True,
-                        'message': 'Файл успешно загружен',
-                        'file': response_serializer.data
+                        'message': 'Файл успешно загружен и отправлен на обработку',
+                        'file': response_serializer.data,
+                        'processing': True  # Индикатор фоновой обработки
                     },
                     status=status.HTTP_201_CREATED
                 )
@@ -137,6 +160,74 @@ class DeleteFileView(APIView):
             )
 
 
+class BatchMediaUrlView(APIView):
+    """API view для пакетного получения URL медиафайлов."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        """
+        Получение URL для множества сообщений за один запрос.
+        Ожидается JSON: {"message_ids": [1, 2, 3, 4, 5]}
+        """
+        try:
+            from django.core.cache import cache
+            from .tasks import prefetch_media_urls_task
+
+            message_ids = request.data.get('message_ids', [])
+
+            if not message_ids or not isinstance(message_ids, list):
+                return Response(
+                    {
+                        'success': False,
+                        'message': 'Необходимо передать массив message_ids'
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            print(f'⚡ [BATCH-API] Processing batch request for {len(message_ids)} messages')
+
+            results = {}
+            cache_hits = 0
+            cache_misses = []
+
+            # Проверяем кэш для всех запрошенных сообщений
+            for message_id in message_ids[:50]:  # Ограничиваем 50 сообщениями
+                cache_key = f'media_url_{message_id}'
+                cached_data = cache.get(cache_key)
+
+                if cached_data:
+                    results[str(message_id)] = cached_data
+                    cache_hits += 1
+                else:
+                    cache_misses.append(message_id)
+
+            # Если есть промахи кэша, запускаем фоновую задачу для предзагрузки
+            if cache_misses:
+                print(f'⚡ [BATCH-API] Cache misses: {len(cache_misses)}, starting prefetch task')
+                prefetch_media_urls_task.apply_async(args=[cache_misses])
+
+            return Response(
+                {
+                    'success': True,
+                    'total_requested': len(message_ids),
+                    'cache_hits': cache_hits,
+                    'cache_misses': len(cache_misses),
+                    'results': results,
+                    'prefetch_started': len(cache_misses) > 0
+                },
+                status=status.HTTP_200_OK
+            )
+
+        except Exception as e:
+            return Response(
+                {
+                    'success': False,
+                    'message': f'Ошибка при пакетной загрузке: {str(e)}'
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
 class UserFilesListView(APIView):
     """API view для получения списка файлов пользователя."""
     permission_classes = [IsAuthenticated]
@@ -171,11 +262,13 @@ class UserFilesListView(APIView):
 
 
 class MessageMediaUrlView(APIView):
-    """API view для получения URL медиафайлов сообщений."""
+    """API view для получения URL медиафайлов сообщений с Redis кэшированием."""
     permission_classes = [IsAuthenticated]
 
     def get(self, request, *args, **kwargs):
         try:
+            from django.core.cache import cache
+
             # Извлекаем message_id из URL параметров
             message_id = kwargs.get('message_id')
             if not message_id:
@@ -186,6 +279,26 @@ class MessageMediaUrlView(APIView):
                     },
                     status=status.HTTP_400_BAD_REQUEST
                 )
+
+            # Проверяем Redis кэш для мгновенного ответа
+            cache_key = f'media_url_{message_id}'
+            cached_data = cache.get(cache_key)
+
+            if cached_data:
+                print(f'⚡ [REDIS-CACHE] Cache HIT for message {message_id}')
+
+                # Формируем полный URL с текущим доменом
+                if 'file_url' in cached_data and not cached_data['file_url'].startswith('http'):
+                    cached_data['url'] = request.build_absolute_uri(cached_data['file_url'])
+                else:
+                    cached_data['url'] = cached_data.get('file_url', '')
+
+                cached_data['success'] = True
+                cached_data['cached'] = True
+
+                return Response(cached_data, status=status.HTTP_200_OK)
+
+            print(f'⚡ [REDIS-CACHE] Cache MISS for message {message_id}')
 
             # Импортируем модель сообщения из chatapp
             from chatapp.models import Message, PrivateMessage
@@ -361,6 +474,7 @@ class MessageMediaUrlView(APIView):
                     'file_id': uploaded_file.id,
                     'file_type': 'image',
                     'url': file_url,
+                    'file_url': uploaded_file.file.url,  # Относительный URL для кэша
                     'original_name': uploaded_file.original_name,
                     'size': uploaded_file.file_size,
                     'mime_type': uploaded_file.mime_type,
@@ -373,6 +487,7 @@ class MessageMediaUrlView(APIView):
                     'file_id': uploaded_file.id,
                     'file_type': 'video',
                     'url': file_url,
+                    'file_url': uploaded_file.file.url,  # Относительный URL для кэша
                     'original_name': uploaded_file.original_name,
                     'size': uploaded_file.file_size,
                     'mime_type': uploaded_file.mime_type,
@@ -386,10 +501,17 @@ class MessageMediaUrlView(APIView):
                     'file_id': uploaded_file.id,
                     'file_type': uploaded_file.file_type,
                     'url': file_url,
+                    'file_url': uploaded_file.file.url,  # Относительный URL для кэша
                     'original_name': uploaded_file.original_name,
                     'size': uploaded_file.file_size,
                     'mime_type': uploaded_file.mime_type,
                 }
+
+            # Кэшируем результат в Redis на 1 час для мгновенного доступа при повторных запросах
+            cache_key = f'media_url_{message_id}'
+            cache.set(cache_key, response_data, timeout=3600)  # 1 час
+
+            print(f'⚡ [REDIS-CACHE] Cached media URL for message {message_id}')
 
             return Response(response_data, status=status.HTTP_200_OK)
 
