@@ -25,15 +25,19 @@ def compress_video_task(self, video_file_id):
         output_filename = f'compressed_{os.path.basename(input_path)}'
         output_path = os.path.join(os.path.dirname(input_path), output_filename)
 
-        # Турбо-сжатие с H.264 для максимальной совместимости и скорости
+        # Турбо-сжатие с максимальной совместимостью для мобильных устройств
         compress_cmd = [
             'ffmpeg',
             '-i', input_path,
             '-c:v', 'libx264',  # H.264 кодек
+            '-profile:v', 'baseline',  # Baseline profile для максимальной совместимости
+            '-level', '3.0',  # Уровень совместимости
             '-preset', 'veryfast',  # Быстрое кодирование
             '-crf', '23',  # Оптимальное качество/размер
+            '-vf', 'scale=\'min(1280,iw)\':\'min(720,ih)\':force_original_aspect_ratio=decrease',  # Макс 720p
             '-c:a', 'aac',  # AAC аудио кодек
             '-b:a', '128k',  # Битрейт аудио
+            '-ar', '44100',  # Частота дискретизации
             '-movflags', '+faststart',  # Оптимизация для стриминга
             '-pix_fmt', 'yuv420p',  # Совместимость с большинством плееров
             '-max_muxing_queue_size', '1024',  # Увеличенная очередь
