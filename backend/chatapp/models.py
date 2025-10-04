@@ -107,10 +107,21 @@ class PrivateMessage(models.Model):
     media_filename = models.CharField(max_length=255, blank=True, null=True)
     media_size = models.BigIntegerField(blank=True, null=True)
 
+    # Прямая связь с медиафайлом для быстрого доступа
+    media_file = models.ForeignKey(
+        'media_api.UploadedFile',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='messages',
+        verbose_name='Медиафайл'
+    )
+
     class Meta:
         indexes = [
             models.Index(fields=['room', 'timestamp']),
             models.Index(fields=['media_hash']),
+            models.Index(fields=['media_file']),
         ]
         ordering = ['timestamp']
 

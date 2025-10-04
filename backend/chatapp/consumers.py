@@ -523,9 +523,28 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
     def save_message(self, sender, message_content, room, media_type='text', 
                     media_hash=None, media_filename=None, media_size=None):
         try:
+            from media_api.models import UploadedFile
+
             recipient = room.user2 if room.user1 == sender else room.user1
 
             logger.info(f"💾 [DB] Saving message: type={media_type}, hash={media_hash}")
+
+            # Ищем медиафайл по hash если это медиа-сообщение
+            media_file = None
+            if media_type in ['image', 'video'] and media_hash:
+                try:
+                    # Поиск файла по hash и отправителю
+                    media_file = UploadedFile.objects.filter(
+                        user=sender,
+                        file_type=media_type
+                    ).order_by('-uploaded_at').first()
+
+                    if media_file:
+                        logger.info(f"💾 [DB] Found media_file: {media_file.id} for hash {media_hash}")
+                    else:
+                        logger.warning(f"💾 [DB] Media file not found for hash {media_hash}")
+                except Exception as file_error:
+                    logger.error(f"💾 [DB] Error finding media file: {file_error}")
 
             message = PrivateMessage.objects.create(
                 room=room,
@@ -536,10 +555,11 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
                 media_type=media_type,
                 media_hash=media_hash,
                 media_filename=media_filename,
-                media_size=media_size
+                media_size=media_size,
+                media_file=media_file
             )
 
-            logger.info(f"💾 [DB] ✅ Message saved with ID: {message.id}")
+            logger.info(f"💾 [DB] ✅ Message saved with ID: {message.id}, media_file: {media_file.id if media_file else None}")
             return message
         except Exception as e:
             logger.error(f"💾 [DB] ❌ Error saving message: {e}")

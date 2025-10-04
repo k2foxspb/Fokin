@@ -285,20 +285,27 @@ class MessageMediaUrlView(APIView):
             cached_data = cache.get(cache_key)
 
             if cached_data:
-                print(f'⚡ [REDIS-CACHE] Cache HIT for message {message_id}')
+                print(f'⚡ [REDIS-CACHE] ✅ Cache HIT for message {message_id}')
 
-                # Формируем полный URL с текущим доменом
-                if 'file_url' in cached_data and not cached_data['file_url'].startswith('http'):
-                    cached_data['url'] = request.build_absolute_uri(cached_data['file_url'])
+                # Проверяем валидность кэша (есть ли все необходимые данные)
+                if 'file_url' in cached_data and cached_data.get('file_id'):
+                    # Формируем полный URL с текущим доменом
+                    if not cached_data['file_url'].startswith('http'):
+                        cached_data['url'] = request.build_absolute_uri(cached_data['file_url'])
+                    else:
+                        cached_data['url'] = cached_data.get('file_url', '')
+
+                    cached_data['success'] = True
+                    cached_data['cached'] = True
+
+                    print(f'⚡ [REDIS-CACHE] ✅ Valid cache data, returning from cache')
+                    return Response(cached_data, status=status.HTTP_200_OK)
                 else:
-                    cached_data['url'] = cached_data.get('file_url', '')
+                    # Невалидные данные в кэше - удаляем и загружаем с сервера
+                    print(f'⚡ [REDIS-CACHE] ⚠️ Invalid cache data, deleting and loading from server')
+                    cache.delete(cache_key)
 
-                cached_data['success'] = True
-                cached_data['cached'] = True
-
-                return Response(cached_data, status=status.HTTP_200_OK)
-
-            print(f'⚡ [REDIS-CACHE] Cache MISS for message {message_id}')
+            print(f'⚡ [REDIS-CACHE] ❌ Cache MISS for message {message_id} - loading from database')
 
             # Импортируем модель сообщения из chatapp
             from chatapp.models import Message, PrivateMessage
@@ -357,75 +364,45 @@ class MessageMediaUrlView(APIView):
                 print(f"🔍 [DEBUG] ✅ Found media_file directly in message: {uploaded_file.id}")
                 print(f"🔍 [DEBUG] File details: type={uploaded_file.file_type}, name={uploaded_file.original_name}")
 
-            # ТОЛЬКО если нет прямой связи, ищем по message_id в имени файла
-            elif not uploaded_file:
+            # Fallback для старых сообщений без прямой связи: поиск по медиа хэшу
+            elif not uploaded_file and hasattr(message, 'media_hash') and message.media_hash:
                 sender = getattr(message, 'sender', None)
-                message_timestamp = getattr(message, 'timestamp', None)
+                media_type = getattr(message, 'media_type', None)
 
-                print(f"🔍 [DEBUG] Searching for file by criteria: sender={sender}, message_id={message_id}")
+                print(f"🔍 [DEBUG] No direct media_file link, searching by hash: {message.media_hash}")
 
-                # Стратегия 1: ТОЧНЫЙ поиск по имени файла с message_id
-                if sender:
-                    # Ищем файлы с ТОЧНЫМ паттерном media_{message_id}
-                    potential_files = UploadedFile.objects.filter(
-                        user=sender
-                    ).filter(
-                        models.Q(file__icontains=f'media_{message_id}.') |  # media_123.mp4
-                        models.Q(file__icontains=f'temp_{message_id}.') |   # temp_123.mp4
-                        models.Q(original_name__exact=f'media_{message_id}.jpg') |
-                        models.Q(original_name__exact=f'media_{message_id}.mp4')
-                    ).order_by('-uploaded_at')
-
-                    if potential_files.exists():
-                        uploaded_file = potential_files.first()
-                        print(f"🔍 [DEBUG] ✅ Found file by EXACT name pattern: {uploaded_file.id}, name={uploaded_file.original_name}")
-
-                # Стратегия 2: Поиск по времени загрузки (если есть timestamp сообщения)
-                if not uploaded_file and sender and message_timestamp:
-                    from django.utils import timezone
+                if sender and media_type in ['image', 'video']:
                     from datetime import timedelta
 
-                    # Ищем файлы, загруженные в пределах 10 минут от времени сообщения
-                    if isinstance(message_timestamp, str):
-                        try:
-                            from django.utils.dateparse import parse_datetime
-                            message_time = parse_datetime(message_timestamp)
-                        except:
-                            message_time = None
-                    else:
-                        message_time = message_timestamp
-
+                    # Поиск файла по типу, пользователю и времени (в пределах 30 минут от сообщения)
+                    message_time = getattr(message, 'timestamp', None)
                     if message_time:
-                        time_window = timedelta(minutes=10)
+                        time_window = timedelta(minutes=30)
                         start_time = message_time - time_window
                         end_time = message_time + time_window
 
                         potential_files = UploadedFile.objects.filter(
                             user=sender,
+                            file_type=media_type,
                             uploaded_at__gte=start_time,
                             uploaded_at__lte=end_time
                         ).order_by('-uploaded_at')
 
                         if potential_files.exists():
                             uploaded_file = potential_files.first()
-                            print(f"🔍 [DEBUG] Found file by timestamp: {uploaded_file.id}, uploaded_at={uploaded_file.uploaded_at}")
+                            print(f"🔍 [DEBUG] ✅ Found file by hash/time: {uploaded_file.id}")
 
-                # Стратегия 3: Поиск по медиа хэшу (если есть в сообщении)
-                if not uploaded_file and hasattr(message, 'media_hash') and message.media_hash:
-                    # Если в модели UploadedFile есть поле для хэша
-                    if hasattr(UploadedFile, 'media_hash'):
-                        potential_files = UploadedFile.objects.filter(
-                            media_hash=message.media_hash
-                        ).order_by('-uploaded_at')
+                            # Обновляем сообщение для будущих запросов
+                            try:
+                                message.media_file = uploaded_file
+                                message.save(update_fields=['media_file'])
+                                print(f"🔍 [DEBUG] ✅ Updated message with media_file link")
+                            except Exception as update_error:
+                                print(f"🔍 [DEBUG] ⚠️ Could not update message: {update_error}")
 
-                        if potential_files.exists():
-                            uploaded_file = potential_files.first()
-                            print(f"🔍 [DEBUG] Found file by media_hash: {uploaded_file.id}")
-
-            # Если ничего не найдено - не используем fallback на последний файл
-            # Это приводит к неправильным связям
+            # Если ничего не найдено - возвращаем ошибку
             if not uploaded_file:
-                print(f"🔍 [DEBUG] No media file found for message_id={message_id}")
+                print(f"🔍 [DEBUG] ❌ No media file found for message_id={message_id}")
                 return Response(
                     {
                         'success': False,
@@ -491,11 +468,15 @@ class MessageMediaUrlView(APIView):
                     'mime_type': uploaded_file.mime_type,
                 }
 
-            # Кэшируем результат в Redis на 1 час для мгновенного доступа при повторных запросах
-            cache_key = f'media_url_{message_id}'
-            cache.set(cache_key, response_data, timeout=3600)  # 1 час
+            # Кэшируем результат в Redis для быстрого доступа при повторных запросах
+            # TTL берем из настроек (по умолчанию 24 часа)
+            from django.conf import settings
+            cache_ttl = getattr(settings, 'CACHE_TTL', {}).get('media_url', 86400)
 
-            print(f'⚡ [REDIS-CACHE] Cached media URL for message {message_id}')
+            cache_key = f'media_url_{message_id}'
+            cache.set(cache_key, response_data, timeout=cache_ttl)
+
+            print(f'⚡ [REDIS-CACHE] ✅ Cached media URL for message {message_id} (TTL: {cache_ttl}s)')
 
             return Response(response_data, status=status.HTTP_200_OK)
 
