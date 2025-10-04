@@ -533,16 +533,29 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
             media_file = None
             if media_type in ['image', 'video', 'document', 'other'] and media_hash:
                 try:
-                    # Поиск файла по hash и отправителю
-                    media_file = UploadedFile.objects.filter(
-                        user=sender,
-                        file_type=media_type
-                    ).order_by('-uploaded_at').first()
+                    # ВАЖНО: для документов используем время загрузки (последний загруженный файл)
+                    from datetime import timedelta
 
-                    if media_file:
-                        logger.info(f"💾 [DB] Found media_file: {media_file.id} for hash {media_hash}")
+                    # Для документов ищем по расширенному временному окну
+                    time_window = timedelta(minutes=30)
+                    message_time = timezone.now()
+                    start_time = message_time - time_window
+
+                    # Поиск файла по типу и отправителю в временном окне
+                    potential_files = UploadedFile.objects.filter(
+                        user=sender,
+                        file_type=media_type,
+                        uploaded_at__gte=start_time,
+                        uploaded_at__lte=message_time + timedelta(minutes=1)  # Небольшой запас
+                    ).order_by('-uploaded_at')
+
+                    if potential_files.exists():
+                        media_file = potential_files.first()
+                        logger.info(f"💾 [DB] Found media_file: {media_file.id} (type={media_type}) for hash {media_hash}")
+                        logger.info(f"💾 [DB] File details: name={media_file.original_name}, size={media_file.file_size}")
                     else:
-                        logger.warning(f"💾 [DB] Media file not found for hash {media_hash}")
+                        logger.warning(f"💾 [DB] Media file not found for hash {media_hash}, type={media_type}, sender={sender.id}")
+                        logger.warning(f"💾 [DB] Search window: {start_time} to {message_time}")
                 except Exception as file_error:
                     logger.error(f"💾 [DB] Error finding media file: {file_error}")
 

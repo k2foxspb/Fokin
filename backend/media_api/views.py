@@ -386,6 +386,7 @@ class MessageMediaUrlView(APIView):
                 media_type = getattr(message, 'media_type', None)
 
                 print(f"🔍 [DEBUG] No direct media_file link, searching by hash: {message.media_hash}")
+                print(f"🔍 [DEBUG] Message details: sender={sender.id if sender else None}, media_type={media_type}")
 
                 if sender and media_type in ['image', 'video', 'document', 'other']:
                     from datetime import timedelta
@@ -397,12 +398,16 @@ class MessageMediaUrlView(APIView):
                         start_time = message_time - time_window
                         end_time = message_time + time_window
 
+                        print(f"🔍 [DEBUG] Searching files: type={media_type}, time_window={start_time} to {end_time}")
+
                         potential_files = UploadedFile.objects.filter(
                             user=sender,
                             file_type=media_type,
                             uploaded_at__gte=start_time,
                             uploaded_at__lte=end_time
                         ).order_by('-uploaded_at')
+
+                        print(f"🔍 [DEBUG] Found {potential_files.count()} potential files")
 
                         if potential_files.exists():
                             uploaded_file = potential_files.first()
@@ -416,16 +421,43 @@ class MessageMediaUrlView(APIView):
                             except Exception as update_error:
                                 print(f"🔍 [DEBUG] ⚠️ Could not update message: {update_error}")
 
-            # Если ничего не найдено - возвращаем ошибку
+            # Если ничего не найдено - пробуем расширенный поиск
             if not uploaded_file:
-                print(f"🔍 [DEBUG] ❌ No media file found for message_id={message_id}")
-                return Response(
-                    {
-                        'success': False,
-                        'message': f'Медиафайл для сообщения {message_id} не найден'
-                    },
-                    status=status.HTTP_404_NOT_FOUND
-                )
+                print(f"🔍 [DEBUG] ❌ No media file found, trying extended search for message_id={message_id}")
+
+                # Расширенный поиск: все файлы отправителя за последний час
+                if sender:
+                    from datetime import timedelta
+                    recent_files = UploadedFile.objects.filter(
+                        user=sender,
+                        uploaded_at__gte=timezone.now() - timedelta(hours=1)
+                    ).order_by('-uploaded_at')
+
+                    print(f"🔍 [DEBUG] Extended search found {recent_files.count()} files in last hour")
+
+                    if recent_files.exists():
+                        # Берем самый последний файл
+                        uploaded_file = recent_files.first()
+                        print(f"🔍 [DEBUG] Using most recent file: {uploaded_file.id} ({uploaded_file.original_name})")
+
+                        # Обновляем сообщение для будущих запросов
+                        try:
+                            message.media_file = uploaded_file
+                            message.save(update_fields=['media_file'])
+                            print(f"🔍 [DEBUG] ✅ Updated message with media_file link")
+                        except Exception as update_error:
+                            print(f"🔍 [DEBUG] ⚠️ Could not update message: {update_error}")
+
+                # Если все равно не найдено - возвращаем ошибку
+                if not uploaded_file:
+                    print(f"🔍 [DEBUG] ❌ No media file found even after extended search")
+                    return Response(
+                        {
+                            'success': False,
+                            'message': f'Медиафайл для сообщения {message_id} не найден'
+                        },
+                        status=status.HTTP_404_NOT_FOUND
+                    )
 
             print(f"🔍 [DEBUG] Final uploaded_file: id={uploaded_file.id}, url={uploaded_file.file.url}")
 
