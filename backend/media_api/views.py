@@ -351,32 +351,34 @@ class MessageMediaUrlView(APIView):
             # Получаем медиафайл, связанный с сообщением
             uploaded_file = None
 
-            # Сначала проверяем прямую связь с файлом в сообщении
+            # КРИТИЧЕСКИ ВАЖНО: Сначала проверяем прямую связь с файлом в сообщении
             if hasattr(message, 'media_file') and message.media_file:
                 uploaded_file = message.media_file
-                print(f"🔍 [DEBUG] Found media_file directly in message: {uploaded_file.id}")
+                print(f"🔍 [DEBUG] ✅ Found media_file directly in message: {uploaded_file.id}")
+                print(f"🔍 [DEBUG] File details: type={uploaded_file.file_type}, name={uploaded_file.original_name}")
 
-            # Если нет прямой связи, ищем по различным критериям
-            if not uploaded_file:
+            # ТОЛЬКО если нет прямой связи, ищем по message_id в имени файла
+            elif not uploaded_file:
                 sender = getattr(message, 'sender', None)
                 message_timestamp = getattr(message, 'timestamp', None)
 
                 print(f"🔍 [DEBUG] Searching for file by criteria: sender={sender}, message_id={message_id}")
 
-                # Стратегия 1: Поиск по имени файла, содержащему message_id
+                # Стратегия 1: ТОЧНЫЙ поиск по имени файла с message_id
                 if sender:
-                    # Ищем файлы с именем, содержащим ID сообщения
+                    # Ищем файлы с ТОЧНЫМ паттерном media_{message_id}
                     potential_files = UploadedFile.objects.filter(
                         user=sender
                     ).filter(
-                        models.Q(original_name__contains=str(message_id)) |
-                        models.Q(file__icontains=f'media_{message_id}') |
-                        models.Q(file__icontains=str(message_id))
+                        models.Q(file__icontains=f'media_{message_id}.') |  # media_123.mp4
+                        models.Q(file__icontains=f'temp_{message_id}.') |   # temp_123.mp4
+                        models.Q(original_name__exact=f'media_{message_id}.jpg') |
+                        models.Q(original_name__exact=f'media_{message_id}.mp4')
                     ).order_by('-uploaded_at')
 
                     if potential_files.exists():
                         uploaded_file = potential_files.first()
-                        print(f"🔍 [DEBUG] Found file by name pattern: {uploaded_file.id}, name={uploaded_file.original_name}")
+                        print(f"🔍 [DEBUG] ✅ Found file by EXACT name pattern: {uploaded_file.id}, name={uploaded_file.original_name}")
 
                 # Стратегия 2: Поиск по времени загрузки (если есть timestamp сообщения)
                 if not uploaded_file and sender and message_timestamp:
@@ -420,26 +422,8 @@ class MessageMediaUrlView(APIView):
                             uploaded_file = potential_files.first()
                             print(f"🔍 [DEBUG] Found file by media_hash: {uploaded_file.id}")
 
-                # Стратегия 4: Последний загруженный медиафайл пользователя (fallback)
-                if not uploaded_file and sender:
-                    print(f"🔍 [DEBUG] Fallback: getting latest media file from user {sender.id}")
-
-                    # Ищем последний видео или изображение пользователя
-                    from django.db import models as django_models
-
-                    potential_files = UploadedFile.objects.filter(
-                        user=sender
-                    ).filter(
-                        django_models.Q(file_type='video') | 
-                        django_models.Q(file_type='image') |
-                        django_models.Q(mime_type__startswith='video/') |
-                        django_models.Q(mime_type__startswith='image/')
-                    ).order_by('-uploaded_at')
-
-                    if potential_files.exists():
-                        uploaded_file = potential_files.first()
-                        print(f"🔍 [DEBUG] Fallback file found: {uploaded_file.id}, type={uploaded_file.file_type}")
-
+            # Если ничего не найдено - не используем fallback на последний файл
+            # Это приводит к неправильным связям
             if not uploaded_file:
                 print(f"🔍 [DEBUG] No media file found for message_id={message_id}")
                 return Response(
