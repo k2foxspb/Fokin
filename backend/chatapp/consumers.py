@@ -16,9 +16,74 @@ from .push_notifications import PushNotificationService
 
 logger = logging.getLogger('chatapp.consumers')
 
+class BaseConsumerMixin:
+    """Базовый миксин с общими методами для всех consumer'ов"""
+
+    @database_sync_to_async
+    def set_user_online(self, user_id):
+        """Устанавливаем статус пользователя онлайн в БД"""
+        try:
+            User = get_user_model()
+            user = User.objects.get(id=user_id)
+            user.is_online = 'online'
+            user.save(update_fields=['is_online'])
+            logger.info(f"User {user_id} set to online")
+        except Exception as e:
+            logger.error(f"Error setting user {user_id} online: {e}")
+
+    @database_sync_to_async
+    def set_user_offline(self, user_id):
+        """Устанавливаем статус пользователя оффлайн в БД"""
+        try:
+            User = get_user_model()
+            user = User.objects.get(id=user_id)
+            user.is_online = 'offline'
+            user.last_seen = timezone.now()
+            user.save(update_fields=['is_online', 'last_seen'])
+            logger.info(f"User {user_id} set to offline")
+        except Exception as e:
+            logger.error(f"Error setting user {user_id} offline: {e}")
+
+    async def broadcast_user_status(self, user_id, status):
+        """Отправляем обновление статуса всем заинтересованным пользователям"""
+        try:
+            chat_users = await self.get_chat_users(user_id)
+            for chat_user_id in chat_users:
+                await self.channel_layer.group_send(
+                    f'notifications_{chat_user_id}',
+                    {
+                        'type': 'user_status_update',
+                        'user_id': user_id,
+                        'status': status
+                    }
+                )
+        except Exception as e:
+            logger.error(f"Error broadcasting user status: {e}")
+
+    @database_sync_to_async
+    def get_chat_users(self, user_id):
+        """Получаем список пользователей, с которыми есть чаты"""
+        try:
+            User = get_user_model()
+            user = User.objects.get(id=user_id)
+
+            chat_users = set()
+
+            # Чаты, где пользователь является user1
+            rooms_as_user1 = PrivateChatRoom.objects.filter(user1=user).values_list('user2_id', flat=True)
+            chat_users.update(rooms_as_user1)
+
+            # Чаты, где пользователь является user2  
+            rooms_as_user2 = PrivateChatRoom.objects.filter(user2=user).values_list('user1_id', flat=True)
+            chat_users.update(rooms_as_user2)
+
+            return list(chat_users)
+        except Exception as e:
+            logger.error(f"Error getting chat users: {e}")
+            return []
 
 
-class ChatConsumer(AsyncWebsocketConsumer):
+class ChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.room_name = None
@@ -134,72 +199,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             'user': event['user']
         }))
 
-    @database_sync_to_async
-    def set_user_online(self, user_id):
-        """Устанавливаем статус пользователя онлайн в БД"""
-        try:
-            User = get_user_model()
-            user = User.objects.get(id=user_id)
-            user.is_online = 'online'
-            user.save(update_fields=['is_online'])
-            logger.info(f"User {user_id} set to online in ChatConsumer")
-        except Exception as e:
-            logger.error(f"Error setting user {user_id} online in ChatConsumer: {e}")
-
-    @database_sync_to_async
-    def set_user_offline(self, user_id):
-        """Устанавливаем статус пользователя оффлайн в БД"""
-        try:
-            from django.utils import timezone
-            User = get_user_model()
-            user = User.objects.get(id=user_id)
-            user.is_online = 'offline'
-            user.last_seen = timezone.now()
-            user.save(update_fields=['is_online', 'last_seen'])
-            logger.info(f"User {user_id} set to offline in ChatConsumer")
-        except Exception as e:
-            logger.error(f"Error setting user {user_id} offline in ChatConsumer: {e}")
-
-    async def broadcast_user_status(self, user_id, status):
-        """Отправляем обновление статуса всем заинтересованным пользователям"""
-        try:
-            chat_users = await self.get_chat_users(user_id)
-            for chat_user_id in chat_users:
-                await self.channel_layer.group_send(
-                    f'notifications_{chat_user_id}',
-                    {
-                        'type': 'user_status_update',
-                        'user_id': user_id,
-                        'status': status
-                    }
-                )
-        except Exception as e:
-            logger.error(f"Error broadcasting user status: {e}")
-
-    @database_sync_to_async
-    def get_chat_users(self, user_id):
-        """Получаем список пользователей, с которыми есть чаты"""
-        try:
-            User = get_user_model()
-            user = User.objects.get(id=user_id)
-
-            chat_users = set()
-
-            # Чаты, где пользователь является user1
-            rooms_as_user1 = PrivateChatRoom.objects.filter(user1=user).values_list('user2_id', flat=True)
-            chat_users.update(rooms_as_user1)
-
-            # Чаты, где пользователь является user2  
-            rooms_as_user2 = PrivateChatRoom.objects.filter(user2=user).values_list('user1_id', flat=True)
-            chat_users.update(rooms_as_user2)
-
-            return list(chat_users)
-        except Exception as e:
-            logger.error(f"Error getting chat users: {e}")
-            return []
-
-
-class PrivateChatConsumer(AsyncWebsocketConsumer):
+class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
     # Глобальный трекинг активных пользователей (в реальном приложении используйте Redis)
     connected_users = set()
 
@@ -584,70 +584,6 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
             logger.error(f"Error getting/creating room: {e}")
             raise
 
-    @database_sync_to_async
-    def set_user_online(self, user_id):
-        """Устанавливаем статус пользователя онлайн в БД"""
-        try:
-            User = get_user_model()
-            user = User.objects.get(id=user_id)
-            user.is_online = 'online'
-            user.save(update_fields=['is_online'])
-            logger.info(f"User {user_id} set to online in PrivateChatConsumer")
-        except Exception as e:
-            logger.error(f"Error setting user {user_id} online in PrivateChatConsumer: {e}")
-
-    @database_sync_to_async
-    def set_user_offline(self, user_id):
-        """Устанавливаем статус пользователя оффлайн в БД"""
-        try:
-            from django.utils import timezone
-            User = get_user_model()
-            user = User.objects.get(id=user_id)
-            user.is_online = 'offline'
-            user.last_seen = timezone.now()
-            user.save(update_fields=['is_online', 'last_seen'])
-            logger.info(f"User {user_id} set to offline in PrivateChatConsumer")
-        except Exception as e:
-            logger.error(f"Error setting user {user_id} offline in PrivateChatConsumer: {e}")
-
-    async def broadcast_user_status(self, user_id, status):
-        """Отправляем обновление статуса всем заинтересованным пользователям"""
-        try:
-            chat_users = await self.get_chat_users_for_status(user_id)
-            for chat_user_id in chat_users:
-                await self.channel_layer.group_send(
-                    f'notifications_{chat_user_id}',
-                    {
-                        'type': 'user_status_update',
-                        'user_id': user_id,
-                        'status': status
-                    }
-                )
-        except Exception as e:
-            logger.error(f"Error broadcasting user status: {e}")
-
-    @database_sync_to_async
-    def get_chat_users_for_status(self, user_id):
-        """Получаем список пользователей, с которыми есть чаты"""
-        try:
-            User = get_user_model()
-            user = User.objects.get(id=user_id)
-
-            chat_users = set()
-
-            # Чаты, где пользователь является user1
-            rooms_as_user1 = PrivateChatRoom.objects.filter(user1=user).values_list('user2_id', flat=True)
-            chat_users.update(rooms_as_user1)
-
-            # Чаты, где пользователь является user2  
-            rooms_as_user2 = PrivateChatRoom.objects.filter(user2=user).values_list('user1_id', flat=True)
-            chat_users.update(rooms_as_user2)
-
-            return list(chat_users)
-        except Exception as e:
-            logger.error(f"Error getting chat users for status: {e}")
-            return []
-
     async def send_notification_updates(self):
         """Отправляем обновления счетчиков уведомлений"""
         try:
@@ -737,6 +673,50 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
         except Exception as e:
             logger.error(f"Error getting user chats for update: {e}")
             return []
+
+    @database_sync_to_async
+    def prefetch_media_url_to_cache(self, message_instance):
+        """
+        Предзагружаем URL медиафайла в Redis кэш для быстрого доступа
+        """
+        try:
+            from django.core.cache import cache
+            from django.conf import settings
+
+            if not message_instance.media_file:
+                return
+
+            cache_key = f'media_url_{message_instance.id}'
+            cache_ttl = getattr(settings, 'CACHE_TTL', {}).get('media_url', 86400)
+
+            # Формируем данные для кэша
+            uploaded_file = message_instance.media_file
+
+            cache_data = {
+                'success': True,
+                'file_id': uploaded_file.id,
+                'file_type': uploaded_file.file_type,
+                'file_url': uploaded_file.file.url,  # Относительный URL
+                'original_name': uploaded_file.original_name,
+                'size': uploaded_file.file_size,
+                'mime_type': uploaded_file.mime_type,
+            }
+
+            # Добавляем специфичные для типа поля
+            if hasattr(uploaded_file, 'width') and hasattr(uploaded_file, 'height'):
+                cache_data['width'] = uploaded_file.width
+                cache_data['height'] = uploaded_file.height
+
+            if hasattr(uploaded_file, 'duration'):
+                cache_data['duration'] = uploaded_file.duration
+
+            # Кэшируем
+            cache.set(cache_key, cache_data, timeout=cache_ttl)
+
+            logger.info(f"⚡ [PREFETCH] Media URL cached for message {message_instance.id} (TTL: {cache_ttl}s)")
+
+        except Exception as e:
+            logger.error(f"⚡ [PREFETCH] Error prefetching media URL to cache: {e}")
 
     async def send_push_notification_if_needed(self, message_instance):
         """
@@ -864,7 +844,7 @@ class PrivateChatConsumer(AsyncWebsocketConsumer):
             return False  # По умолчанию считаем offline для отправки push
 
 
-class NotificationConsumer(AsyncWebsocketConsumer):
+class NotificationConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.user_id = None
@@ -1108,32 +1088,6 @@ class NotificationConsumer(AsyncWebsocketConsumer):
             await self.set_user_offline(self.user_id)
             await self.broadcast_user_status(self.user_id, 'offline')
 
-    @database_sync_to_async
-    def set_user_online(self, user_id):
-        """Устанавливаем статус пользователя онлайн в БД"""
-        try:
-            User = get_user_model()
-            user = User.objects.get(id=user_id)
-            user.is_online = 'online'
-            user.save(update_fields=['is_online'])
-            logger.info(f"User {user_id} set to online")
-        except Exception as e:
-            logger.error(f"Error setting user {user_id} online: {e}")
-
-    @database_sync_to_async
-    def set_user_offline(self, user_id):
-        """Устанавливаем статус пользователя оффлайн в БД"""
-        try:
-            from django.utils import timezone
-            User = get_user_model()
-            user = User.objects.get(id=user_id)
-            user.is_online = 'offline'
-            user.last_seen = timezone.now()
-            user.save(update_fields=['is_online', 'last_seen'])
-            logger.info(f"User {user_id} set to offline")
-        except Exception as e:
-            logger.error(f"Error setting user {user_id} offline: {e}")
-
     async def receive(self, text_data):
         try:
             data = json.loads(text_data)
@@ -1270,7 +1224,7 @@ class NotificationConsumer(AsyncWebsocketConsumer):
             return []
 
 
-class ChatListConsumer(AsyncWebsocketConsumer):
+class ChatListConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.user = None
@@ -1398,66 +1352,4 @@ class ChatListConsumer(AsyncWebsocketConsumer):
             logger.error(f"Error getting user chats: {e}")
             return []
 
-    @database_sync_to_async
-    def set_user_online(self, user_id):
-        """Устанавливаем статус пользователя онлайн в БД"""
-        try:
-            User = get_user_model()
-            user = User.objects.get(id=user_id)
-            user.is_online = 'online'
-            user.save(update_fields=['is_online'])
-            logger.info(f"User {user_id} set to online in ChatListConsumer")
-        except Exception as e:
-            logger.error(f"Error setting user {user_id} online in ChatListConsumer: {e}")
-
-    @database_sync_to_async
-    def set_user_offline(self, user_id):
-        """Устанавливаем статус пользователя оффлайн в БД"""
-        try:
-            from django.utils import timezone
-            User = get_user_model()
-            user = User.objects.get(id=user_id)
-            user.is_online = 'offline'
-            user.last_seen = timezone.now()
-            user.save(update_fields=['is_online', 'last_seen'])
-            logger.info(f"User {user_id} set to offline in ChatListConsumer")
-        except Exception as e:
-            logger.error(f"Error setting user {user_id} offline in ChatListConsumer: {e}")
-
-    async def broadcast_user_status(self, user_id, status):
-        """Отправляем обновление статуса всем заинтересованным пользователям"""
-        try:
-            chat_users = await self.get_chat_users_for_broadcast(user_id)
-            for chat_user_id in chat_users:
-                await self.channel_layer.group_send(
-                    f'notifications_{chat_user_id}',
-                    {
-                        'type': 'user_status_update',
-                        'user_id': user_id,
-                        'status': status
-                    }
-                )
-        except Exception as e:
-            logger.error(f"Error broadcasting user status from ChatListConsumer: {e}")
-
-    @database_sync_to_async
-    def get_chat_users_for_broadcast(self, user_id):
-        """Получаем список пользователей, с которыми есть чаты"""
-        try:
-            User = get_user_model()
-            user = User.objects.get(id=user_id)
-
-            chat_users = set()
-
-            # Чаты, где пользователь является user1
-            rooms_as_user1 = PrivateChatRoom.objects.filter(user1=user).values_list('user2_id', flat=True)
-            chat_users.update(rooms_as_user1)
-
-            # Чаты, где пользователь является user2  
-            rooms_as_user2 = PrivateChatRoom.objects.filter(user2=user).values_list('user1_id', flat=True)
-            chat_users.update(rooms_as_user2)
-
-            return list(chat_users)
-        except Exception as e:
-            logger.error(f"Error getting chat users for broadcast: {e}")
-            return []
+    # Все общие методы теперь в BaseConsumerMixin
