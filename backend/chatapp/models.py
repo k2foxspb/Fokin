@@ -92,6 +92,8 @@ class PrivateMessage(models.Model):
         ('text', 'Text'),
         ('image', 'Image'),
         ('video', 'Video'),
+        ('document', 'Document'),
+        ('other', 'Other'),
     ]
 
     room = models.ForeignKey(PrivateChatRoom, on_delete=models.CASCADE, related_name='messages')
@@ -132,4 +134,4 @@ class PrivateMessage(models.Model):
 
     @property
     def is_media_message(self):
-        return self.media_type in ['image', 'video'] and bool(self.media_hash)
+        return self.media_type in ['image', 'video', 'document', 'other'] and bool(self.media_hash)

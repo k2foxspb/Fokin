@@ -340,7 +340,7 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
                 await self.send(text_data=json.dumps({'error': 'Failed to send message'}))
 
     async def handle_media_message(self, data):
-        """Обработка медиа-сообщений"""
+        """Обработка медиа-сообщений (изображения, видео, документы)"""
         logger.info(f"📷 [CONSUMER] Processing media message")
 
         message_content = data.get('message', '')
@@ -355,7 +355,7 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
         # Определяем получателя
         recipient_id = user2_id if user1_id == self.user.id else user1_id
 
-        logger.info(f"📷 [CONSUMER] Media message details: type={media_type}, hash={media_hash}, size={media_size}")
+        logger.info(f"📷 [CONSUMER] Media message details: type={media_type}, hash={media_hash}, size={media_size}, filename={media_filename}")
 
         if media_type and media_hash and recipient_id:
             try:
@@ -531,7 +531,7 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
 
             # Ищем медиафайл по hash если это медиа-сообщение
             media_file = None
-            if media_type in ['image', 'video'] and media_hash:
+            if media_type in ['image', 'video', 'document', 'other'] and media_hash:
                 try:
                     # Поиск файла по hash и отправителю
                     media_file = UploadedFile.objects.filter(
