@@ -387,7 +387,7 @@ class MessageMediaUrlView(APIView):
 
                 print(f"🔍 [DEBUG] No direct media_file link, searching by hash: {message.media_hash}")
 
-                if sender and media_type in ['image', 'video']:
+                if sender and media_type in ['image', 'video', 'document', 'other']:
                     from datetime import timedelta
 
                     # Поиск файла по типу, пользователю и времени (в пределах 30 минут от сообщения)
@@ -510,16 +510,20 @@ class MessageMediaUrlView(APIView):
                     'height': uploaded_file.height,
                 }
             else:
+                # Для документов и других типов файлов
                 response_data = {
                     'success': True,
                     'file_id': uploaded_file.id,
-                    'file_type': uploaded_file.file_type,
+                    'file_type': uploaded_file.file_type,  # 'document', 'other', etc.
                     'url': file_url,
                     'file_url': uploaded_file.file.url,  # Относительный URL для кэша
                     'original_name': uploaded_file.original_name,
                     'size': uploaded_file.file_size,
                     'mime_type': uploaded_file.mime_type,
                 }
+
+                # Логируем для отладки
+                print(f'📄 [MEDIA-API] Returning document/file URL: {uploaded_file.file_type}')
 
             # Кэшируем результат в Redis для быстрого доступа при повторных запросах
             # TTL берем из настроек (по умолчанию 24 часа)
