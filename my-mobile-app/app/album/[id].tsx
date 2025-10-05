@@ -29,7 +29,7 @@ import PhotoUploadModal from '../../components/PhotoUploadModal';
 import AlbumEditModal from '../../components/AlbumEditModal';
 import {API_CONFIG} from '../../config';
 import {useTheme} from '../../contexts/ThemeContext';
-import CachedImage from "../../components/CachedImage";
+import DirectImage from "../../components/DirectImage";
 
 const {width, height} = Dimensions.get('window');
 const photoSize = (width - 48) / 3; // 3 columns with margins
@@ -540,12 +540,11 @@ export default function AlbumDetail() {
                 }}
                 activeOpacity={0.8}
             >
-                    <CachedImage
+                    <DirectImage
                         uri={item.thumbnail_url}
-                    style={styles.photoImage}
-                    resizeMode="cover"
-                    onError={(error) => console.error('Image load error:', error)}
-                />
+                        style={styles.photoImage}
+                        resizeMode="cover"
+                    />
             </TouchableOpacity>
         );
     };

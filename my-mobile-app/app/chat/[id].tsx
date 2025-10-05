@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useRef} from 'react';
+import React, {useState, useEffect, useRef, useCallback} from 'react';
 
 import {
     View,
@@ -12,34 +12,37 @@ import {
     Alert,
     ActivityIndicator,
     TouchableOpacity,
-    SafeAreaView,
     Image,
     Modal,
     AppState,
     Linking,
     Dimensions,
-    ScrollView,
 } from 'react-native';
-import {Stack, useLocalSearchParams, useRouter} from 'expo-router';
+import {GestureDetector, Gesture, GestureHandlerRootView} from 'react-native-gesture-handler';
+import Animated, {
+    useSharedValue,
+    useAnimatedStyle,
+    withSpring,
+    runOnJS
+} from 'react-native-reanimated';
+import {useLocalSearchParams, useRouter} from 'expo-router';
 import {useWebSocket} from '../../hooks/useWebSocket';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {MaterialIcons} from '@expo/vector-icons';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useNotifications } from '../../contexts/NotificationContext';
-import CachedImage from '../../components/CachedImage';
+import DirectImage from '../../components/DirectImage';
+import LazyMedia from '../../components/LazyMedia';
 import {API_CONFIG} from '../../config';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
-import { ImageManipulator } from 'expo-image-manipulator';
 import { Video, ResizeMode, Audio, AVPlaybackStatus } from 'expo-av';
-
 import * as DocumentPicker from 'expo-document-picker';
-import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
 import * as WebBrowser from 'expo-web-browser';
 import * as IntentLauncher from 'expo-intent-launcher';
+import {useSafeAreaInsets} from "react-native-safe-area-context";
 
 interface Message {
     id: number;
@@ -48,7 +51,6 @@ interface Message {
     sender__username: string;
     sender_id?: number;
     mediaType?: 'image' | 'video' | 'file';
-    mediaUri?: string;
     mediaBase64?: string;
     mediaHash?: string;
     mediaFileName?: string;
@@ -57,15 +59,13 @@ interface Message {
     isUploading?: boolean;
     uploadProgress?: number;
     needsReload?: boolean;
-    serverFileUrl?: string; // URL файла на сервере для больших файлов
-    uploadMethod?: 'websocket' | 'http' | 'chunk'; // Метод загрузки
-    isLoadingServerUrl?: boolean; // Индикатор загрузки URL с сервера
-    videoLoadRequested?: boolean; // Запрошена ли загрузка видео пользователем
-    videoIsLoading?: boolean; // Загружается ли видео в данный момент
+    serverFileUrl?: string;
+    isLoadingServerUrl?: boolean;
+    mediaUri?: string | null;
 }
 
 interface User {
-    
+
     id: number;
     username: string;
     avatar?: string;
@@ -140,9 +140,16 @@ export default function ChatScreen() {
     const [isLoadingMore, setIsLoadingMore] = useState(false);
     const [selectedImage, setSelectedImage] = useState<string | null>(null);
     const [isImageViewerVisible, setIsImageViewerVisible] = useState(false);
-    const [imageZoomScale, setImageZoomScale] = useState(1);
     const [lastImageTap, setLastImageTap] = useState(0);
-    const imageScrollViewRef = useRef<ScrollView>(null);
+
+    // Анимационные значения для масштабирования (как в альбоме)
+    const scale = useSharedValue(1);
+    const translateX = useSharedValue(0);
+    const translateY = useSharedValue(0);
+    const lastScale = useSharedValue(1);
+    const lastTranslateX = useSharedValue(0);
+    const lastTranslateY = useSharedValue(0);
+    const [zoomLevel, setZoomLevel] = useState(0); // 0 - обычный, 1 - 1.5x, 2 - 2.5x
     const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
     const [isVideoViewerVisible, setIsVideoViewerVisible] = useState(false);
     const [isVideoPlaying, setIsVideoPlaying] = useState(false);
@@ -173,36 +180,23 @@ export default function ChatScreen() {
     const prevPendingCount = useRef(0);
     const router = useRouter();
 
-    // Функция для безопасного обновления сообщения
     const updateMessageSafely = (messageId: number | string, updates: Partial<Message>) => {
-        console.log('🔒 [SAFE-UPDATE] Updating message safely:', { messageId, updates: Object.keys(updates) });
-
         setMessages(prev =>
-            prev.map(msg => {
-                if (msg.id === messageId) {
-                    return { ...msg, ...updates };
-                }
-                return msg;
-            })
+            prev.map(msg => msg.id === messageId ? { ...msg, ...updates } : msg)
         );
     };
 
     // Создаем стили с темой
     const styles = createStyles(theme);
 
-    // Автовосстановление только состояния, без переподключений
     useEffect(() => {
         if (!isConnected && wsIsConnected() && isDataLoaded && recipient && currentUserId) {
-            console.log('🔄 [AUTO-RESTORE] Fixing connection state');
             setIsConnected(true);
-
-            // Сбрасываем счетчик при восстановлении состояния
             setReconnectAttempts(0);
             setLastReconnectTime(0);
         }
     }, [isConnected, isDataLoaded, recipient, currentUserId]);
 
-    // WebSocket хук
     const {connect, disconnect, sendMessage, isConnected: wsIsConnected, reconnect} = useWebSocket(
         `/${API_CONFIG.WS_PROTOCOL}/private/${roomId}/`,
         {
@@ -215,16 +209,28 @@ export default function ChatScreen() {
                 try {
                     const data = JSON.parse(event.data);
 
-                    // Игнорируем системные сообщения
                     if (data.type === 'messages_by_sender_update') {
-                        console.log('💬 [CHAT] Ignoring system message: messages_by_sender_update');
                         return;
                     }
 
-                    // Обработка ошибок от consumer
                     if (data.error) {
-                        console.error('💬 [CHAT] Server error received:', data.error);
                         Alert.alert('Ошибка', data.error);
+                        return;
+                    }
+
+                    if (data.type === 'media_url_response') {
+                        if (data.success && data.file_url && data.message_id) {
+                            updateMessageSafely(data.message_id, {
+                                serverFileUrl: data.file_url,
+                                isLoadingServerUrl: false,
+                                needsReload: false
+                            });
+                        } else {
+                            updateMessageSafely(data.message_id, {
+                                isLoadingServerUrl: false,
+                                needsReload: true
+                            });
+                        }
                         return;
                     }
 
@@ -480,235 +486,132 @@ export default function ChatScreen() {
         }
     };
 
-    // Получение URL медиафайла с сервера по ID сообщения (упрощенная версия)
-    const getMediaServerUrl = async (messageId: number): Promise<string | null> => {
+    // ЕДИНАЯ точка получения URL медиа через Redis API
+    const getMediaServerUrl = async (messageId: number, retryCount: number = 0): Promise<string | null> => {
         try {
             const token = await getToken();
-            if (!token) return null;
+            if (!token) {
+                console.log('📄 [API] ❌ No token available');
+                return null;
+            }
+
+            console.log('📄 [API] Requesting media URL for message:', messageId);
 
             const response = await axios.get(
                 `${API_CONFIG.BASE_URL}/media-api/message/${messageId}/url/`,
                 {
-                    headers: { 'Authorization': `Token ${token}` },
+                    headers: {
+                        'Authorization': `Token ${token}`,
+                        'Content-Type': 'application/json'
+                    },
                     timeout: 10000
                 }
             );
 
-            return response.data?.file_url || response.data?.url || null;
-        } catch (error) {
-            console.error('🔗 [SERVER-URL] Error getting media URL:', error);
-            return null;
-        }
-    };
-
-    // Запрос разрешений для MediaLibrary
-    const requestMediaLibraryPermissions = async (): Promise<boolean> => {
-        try {
-            const { status } = await MediaLibrary.requestPermissionsAsync();
-            if (status !== 'granted') {
-                console.log('🎥 [GALLERY] Permission denied');
-                return false;
-            }
-            return true;
-        } catch (error) {
-            console.error('🎥 [GALLERY] Error requesting permissions:', error);
-            return false;
-        }
-    };
-
-    // Поиск медиафайла в галерее по уникальному имени
-    const findMediaInGallery = async (messageId: number, mediaType: 'image' | 'video', mediaHash?: string): Promise<string | null> => {
-        try {
-            const hasPermission = await requestMediaLibraryPermissions();
-            if (!hasPermission) return null;
-
-            const media = await MediaLibrary.getAssetsAsync({
-                mediaType: mediaType === 'image' ? MediaLibrary.MediaType.photo : MediaLibrary.MediaType.video,
-                first: 1000,
-                sortBy: MediaLibrary.SortBy.creationTime
+            console.log('📄 [API] Response data:', {
+                success: response.data?.success,
+                hasUrl: !!response.data?.url,
+                hasFileUrl: !!response.data?.file_url,
+                fileType: response.data?.file_type,
+                fileName: response.data?.original_name,
+                fullResponse: response.data
             });
 
-            // Ищем по имени файла, содержащему ID сообщения
-            for (const asset of media.assets) {
-                if (asset.filename.includes(`ChatMedia_${messageId}`) || 
-                    (mediaHash && asset.filename.includes(mediaHash.substring(0, 16)))) {
+            const url = response.data?.url || response.data?.file_url;
 
-                    // Проверяем, что файл существует
-                    const fileInfo = await FileSystem.getInfoAsync(asset.uri);
-                    if (fileInfo.exists && fileInfo.size > 0) {
-                        console.log('🎥 [GALLERY] ✅ Found media in gallery:', asset.filename);
-                        return asset.uri;
-                    }
-                }
-            }
-
-            return null;
-        } catch (error) {
-            console.error('🎥 [GALLERY] Error searching in gallery:', error);
-            return null;
-        }
-    };
-
-    // Сохранение медиафайла в галерею
-    const saveMediaToGallery = async (
-        serverUrl: string, 
-        messageId: number, 
-        mediaType: 'image' | 'video',
-        mediaHash?: string
-    ): Promise<string | null> => {
-        try {
-            const hasPermission = await requestMediaLibraryPermissions();
-            if (!hasPermission) return null;
-
-            const extension = mediaType === 'image' ? 'jpg' : 'mp4';
-            const fileName = `ChatMedia_${messageId}_${mediaHash || Date.now()}.${extension}`;
-            const tempPath = `${FileSystem.cacheDirectory}temp_${fileName}`;
-
-            console.log('🎥 [GALLERY] Downloading media to save in gallery...');
-
-            // Скачиваем файл
-            const downloadResult = await FileSystem.downloadAsync(serverUrl, tempPath);
-
-            if (downloadResult.status !== 200) {
-                throw new Error(`Download failed with status ${downloadResult.status}`);
-            }
-
-            // Проверяем файл
-            const fileInfo = await FileSystem.getInfoAsync(downloadResult.uri);
-            if (!fileInfo.exists || fileInfo.size === 0) {
-                throw new Error('Downloaded file is empty');
-            }
-
-            // Сохраняем в галерею
-            const asset = await MediaLibrary.createAssetAsync(downloadResult.uri);
-
-            // Пытаемся создать альбом для чат-медиа
-            try {
-                const albumName = mediaType === 'image' ? 'Chat Images' : 'Chat Videos';
-                let album = await MediaLibrary.getAlbumAsync(albumName);
-                if (!album) {
-                    album = await MediaLibrary.createAlbumAsync(albumName, asset, false);
-                } else {
-                    await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
-                }
-            } catch (albumError) {
-                console.log('🎥 [GALLERY] Could not organize in album (non-critical):', albumError);
-            }
-
-            // Удаляем временный файл
-            await FileSystem.deleteAsync(tempPath, { idempotent: true });
-
-            console.log('🎥 [GALLERY] ✅ Media saved to gallery successfully');
-            return asset.uri;
-
-        } catch (error) {
-            console.error('🎥 [GALLERY] ❌ Error saving to gallery:', error);
-            return null;
-        }
-    };
-
-    // Получение локального URI медиафайла (из галереи или загрузка)
-    const getLocalMediaUri = async (message: Message): Promise<string | null> => {
-        try {
-            // Сначала проверяем галерею
-            const galleryUri = await findMediaInGallery(message.id, message.mediaType!, message.mediaHash);
-            if (galleryUri) {
-                console.log('🎥 [MEDIA] Using from gallery:', message.id);
-                return galleryUri;
-            }
-
-            // Если нет в галерее, загружаем с сервера
-            let serverUrl = message.serverFileUrl;
-            if (!serverUrl) {
-                serverUrl = await getMediaServerUrl(message.id);
-            }
-
-            if (!serverUrl) {
-                console.log('🎥 [MEDIA] No server URL available');
-                return null;
-            }
-
-            // Сохраняем в галерею для будущего использования
-            const localUri = await saveMediaToGallery(
-                serverUrl,
-                message.id,
-                message.mediaType!,
-                message.mediaHash
-            );
-
-            if (localUri) {
-                // Обновляем сообщение с локальным URI
-                updateMessageSafely(message.id, {
-                    mediaUri: localUri,
-                    serverFileUrl: serverUrl
-                });
-            }
-
-            return localUri || serverUrl; // Возвращаем локальный URI или серверный URL как fallback
-        } catch (error) {
-            console.error('🎥 [MEDIA] Error getting local media URI:', error);
-            return null;
-        }
-    };
-
-    // Запрос загрузки видео по требованию (ленивая загрузка) - ТОЛЬКО при нажатии play
-    const requestVideoLoad = async (message: Message): Promise<void> => {
-        // Если уже загружается или загружено - ничего не делаем
-        if (message.videoIsLoading || message.mediaUri || message.serverFileUrl) {
-            console.log('🎥 [LAZY-LOAD] Video already loading or loaded, skipping:', {
-                messageId: message.id,
-                isLoading: message.videoIsLoading,
-                hasUri: !!message.mediaUri,
-                hasServerUrl: !!message.serverFileUrl
-            });
-            return;
-        }
-
-        console.log('🎥 [LAZY-LOAD] User requested video load (play button pressed):', message.id);
-
-        // Помечаем как загружающееся
-        updateMessageSafely(message.id, {
-            videoLoadRequested: true,
-            videoIsLoading: true
-        });
-
-        try {
-            const localUri = await getLocalMediaUri(message);
-            if (localUri) {
-                updateMessageSafely(message.id, {
-                    mediaUri: localUri.startsWith('file://') || localUri.startsWith('content://') ? localUri : null,
-                    serverFileUrl: localUri.startsWith('http') ? localUri : message.serverFileUrl,
-                    videoIsLoading: false,
-                    videoLoadRequested: true
-                });
-                console.log('🎥 [LAZY-LOAD] ✅ Video loaded successfully after user request:', message.id);
+            if (url) {
+                console.log('📄 [API] ✅ Got URL:', url.substring(0, 100) + '...');
             } else {
-                updateMessageSafely(message.id, {
-                    videoIsLoading: false,
-                    needsReload: true,
-                    videoLoadRequested: false // Сбрасываем запрос при ошибке
-                });
-                console.log('🎥 [LAZY-LOAD] ❌ Failed to load video after user request:', message.id);
+                console.log('📄 [API] ❌ No URL in response');
             }
+
+            return url || null;
         } catch (error) {
-            console.error('🎥 [LAZY-LOAD] Error loading video after user request:', error);
-            updateMessageSafely(message.id, {
-                videoIsLoading: false,
-                needsReload: true,
-                videoLoadRequested: false // Сбрасываем запрос при ошибке
-            });
+            if (axios.isAxiosError(error)) {
+                console.error('📄 [API] ❌ Axios error:', {
+                    status: error.response?.status,
+                    statusText: error.response?.statusText,
+                    data: error.response?.data,
+                    message: error.message
+                });
+
+                if (error.response?.status === 403 && retryCount === 0) {
+                    console.log('📄 [API] Retrying after 403...');
+                    return await getMediaServerUrl(messageId, 1);
+                }
+            } else {
+                console.error('📄 [API] ❌ Unknown error:', error);
+            }
+            return null;
         }
     };
+
+    // Убрали - теперь используется getMediaServerUrl для всех типов медиа
+
+    // Ленивая загрузка заменяет необходимость в предзагрузке
 
     // Запрос разрешений для доступа к медиабиблиотеке
-    const requestPermissions = async () => {
-        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (status !== 'granted') {
-            Alert.alert('Ошибка', 'Необходимо разрешение для доступа к медиафайлам');
+    const requestPermissions = async (): Promise<boolean> => {
+        try {
+            console.log('📱 [PERMISSIONS] Requesting media library permissions...');
+
+            // Проверяем текущий статус разрешений
+            const { status: currentStatus } = await ImagePicker.getMediaLibraryPermissionsAsync();
+            console.log('📱 [PERMISSIONS] Current status:', currentStatus);
+
+            if (currentStatus === 'granted') {
+                console.log('📱 [PERMISSIONS] ✅ Already granted');
+                return true;
+            }
+
+            // Запрашиваем разрешение
+            const { status, canAskAgain } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+            console.log('📱 [PERMISSIONS] Request result:', { status, canAskAgain });
+
+            if (status === 'granted') {
+                console.log('📱 [PERMISSIONS] ✅ Permission granted');
+                return true;
+            }
+
+            // Разрешение не получено
+            if (!canAskAgain) {
+                Alert.alert(
+                    'Разрешение требуется',
+                    'Разрешение на доступ к медиабиблиотеке было отклонено. Пожалуйста, включите его в настройках приложения.',
+                    [
+                        { text: 'Отмена', style: 'cancel' },
+                        {
+                            text: 'Открыть настройки',
+                            onPress: async () => {
+                                if (Platform.OS === 'ios') {
+                                    await Linking.openURL('app-settings:');
+                                } else {
+                                    await Linking.openSettings();
+                                }
+                            }
+                        }
+                    ]
+                );
+            } else {
+                Alert.alert(
+                    'Разрешение требуется',
+                    'Для выбора медиафайлов необходимо разрешение доступа к медиабиблиотеке.',
+                    [{ text: 'OK' }]
+                );
+            }
+
+            return false;
+        } catch (error: any) {
+            console.error('📱 [PERMISSIONS] ❌ Error requesting permissions:', error);
+            Alert.alert(
+                'Ошибка',
+                'Не удалось запросить разрешение: ' + (error.message || 'Неизвестная ошибка')
+            );
             return false;
         }
-        return true;
     };
+
+    // Сжатие медиа выполняется на сервере через Celery для оптимальной производительности
 
     // Конвертация URI в base64 с проверкой размера файла
     const convertToBase64 = async (uri: string): Promise<string> => {
@@ -775,16 +678,16 @@ export default function ChatScreen() {
             const fileSize = fileInfo.size;
             const fileSizeMB = fileSize / (1024 * 1024);
 
-            // ОПТИМИЗИРОВАННЫЙ РЕЖИМ: Баланс скорости и стабильности
-            let chunkSize = 512 * 1024; // 512KB для начала - более стабильно
-            if (fileSizeMB > 20) chunkSize = 1 * 1024 * 1024; // 1MB для средних файлов
-            if (fileSizeMB > 50) chunkSize = 2 * 1024 * 1024; // 2MB для больших файлов
-            if (fileSizeMB > 100) chunkSize = 4 * 1024 * 1024; // 4MB для очень больших файлов
+            // ТУРБО РЕЖИМ: Максимальная скорость загрузки
+            let chunkSize = 1 * 1024 * 1024; // 1MB базовый размер для скорости
+            if (fileSizeMB > 20) chunkSize = 2 * 1024 * 1024; // 2MB для средних файлов
+            if (fileSizeMB > 50) chunkSize = 5 * 1024 * 1024; // 5MB для больших файлов
+            if (fileSizeMB > 100) chunkSize = 10 * 1024 * 1024; // 10MB для очень больших файлов
 
             const totalChunks = Math.ceil(fileSize / chunkSize);
 
-            // СТАБИЛЬНЫЙ ПАРАЛЛЕЛИЗМ: Меньше подключений, но стабильнее
-            const maxParallel = Math.min(3, totalChunks, Math.ceil(fileSizeMB / 25)); // До 3 параллельных загрузок
+            // МАКСИМАЛЬНЫЙ ПАРАЛЛЕЛИЗМ: До 6 одновременных загрузок
+            const maxParallel = Math.min(6, totalChunks, Math.ceil(fileSizeMB / 15)); // До 6 параллельных загрузок
 
             console.log('🚀 [TURBO-UPLOAD] Turbo configuration:', {
                 chunkSize: (chunkSize / (1024 * 1024)).toFixed(1) + 'MB',
@@ -821,7 +724,7 @@ export default function ChatScreen() {
                             'Authorization': `Token ${token}`,
                             'Content-Type': 'multipart/form-data',
                         },
-                        timeout: 30000, // 30 секунд для более быстрого обнаружения проблем
+                        timeout: 60000, // 60 секунд - больше для крупных чанков
                     });
 
                     console.log(`🚀 [TURBO-UPLOAD] ⚡ Chunk ${chunkIndex + 1}/${totalChunks} uploaded (${(actualLength / (1024 * 1024)).toFixed(1)}MB)`);
@@ -1287,7 +1190,7 @@ export default function ChatScreen() {
 
             // Простая эвристика на основе размера и расширения
             const isLargeFile = fileSizeMB > 100;
-            const hasCompatibleExtension = videoUri.toLowerCase().includes('.mp4') || 
+            const hasCompatibleExtension = videoUri.toLowerCase().includes('.mp4') ||
                                          videoUri.toLowerCase().includes('.mov');
 
             const diagnostics = {
@@ -1301,9 +1204,9 @@ export default function ChatScreen() {
 
             console.log('🎥 [DIAGNOSE] Video diagnostics:', diagnostics);
 
-            return { 
-                compatible: diagnostics.likelyCompatible, 
-                info: diagnostics 
+            return {
+                compatible: diagnostics.likelyCompatible,
+                info: diagnostics
             };
         } catch (error) {
             console.error('🎥 [DIAGNOSE] Error diagnosing video:', error);
@@ -1315,18 +1218,31 @@ export default function ChatScreen() {
     const pickVideo = async () => {
         console.log('🎥 [PICKER] Starting video picker...');
         try {
+            // Проверяем разрешения с более подробной обработкой
             const hasPermission = await requestPermissions();
             if (!hasPermission) {
                 console.log('🎥 [PICKER] ❌ No permission for media library');
+                Alert.alert(
+                    'Разрешение требуется',
+                    'Для выбора видео необходимо разрешение доступа к медиабиблиотеке. Предоставьте разрешение в настройках приложения.',
+                    [{ text: 'OK' }]
+                );
                 return;
             }
 
+            console.log('🎥 [PICKER] Permissions granted, launching picker...');
+
             const result = await ImagePicker.launchImageLibraryAsync({
                 mediaTypes: ['videos'],
-                allowsEditing: true,
-                quality: 0.4, // Оптимизируем для баланса качества и скорости
-                videoMaxDuration: 60,
-                videoQuality: ImagePicker.VideoQuality.Medium, // Средне качество для ускорения
+                allowsEditing: false,
+                quality: 0.5, // Качество применяется к видео автоматически
+                videoMaxDuration: 180,
+                allowsMultipleSelection: false,
+            });
+
+            console.log('🎥 [PICKER] Picker result:', {
+                canceled: result.canceled,
+                hasAssets: !!result.assets
             });
 
             console.log('🎥 [PICKER] Video picker result:', {
@@ -1349,6 +1265,26 @@ export default function ChatScreen() {
                 // Диагностируем видео на совместимость
                 const diagnosis = await diagnoseVideo(asset.uri);
                 console.log('🎥 [PICKER] Video diagnosis result:', diagnosis);
+
+                // Предупреждение о кодеках для больших HD видео
+                if (asset.width && asset.height && (asset.width >= 1920 || asset.height >= 1080)) {
+                    console.log('🎥 [PICKER] HD video detected, may have codec issues');
+
+                    const shouldContinue = await new Promise<boolean>((resolve) => {
+                        Alert.alert(
+                            'HD видео',
+                            `Обнаружено видео высокого разрешения (${asset.width}x${asset.height}).\n\n` +
+                            `На некоторых устройствах такие видео могут не воспроизводиться встроенным плеером. ` +
+                            `В этом случае видео откроется в браузере.\n\nПродолжить?`,
+                            [
+                                { text: 'Отмена', style: 'cancel', onPress: () => resolve(false) },
+                                { text: 'Продолжить', style: 'default', onPress: () => resolve(true) }
+                            ]
+                        );
+                    });
+
+                    if (!shouldContinue) return;
+                }
 
                 // Проверяем размер файла
                 const maxVideoSize = 300 * 1024 * 1024; // 300MB
@@ -1392,31 +1328,16 @@ export default function ChatScreen() {
                 try {
                     const fileSizeMB = asset.fileSize ? asset.fileSize / (1024 * 1024) : 0;
 
-                    console.log('🎥 [PICKER] Processing compatible video:', {
+                    console.log('🚀 [PICKER] Processing video for direct upload:', {
                         sizeMB: fileSizeMB.toFixed(1),
                         compatible: diagnosis.compatible,
-                        strategy: fileSizeMB > 30 ? 'direct_upload' : 'base64_conversion'
+                        serverCompression: true
                     });
 
-                    // Для файлов больше 30MB используем прямую загрузку без base64
-                    if (fileSizeMB > 30) {
-                        console.log('🎥 [PICKER] Using direct file upload for large video');
-                        await sendMediaMessageDirect(asset.uri, 'video', asset.fileSize);
-                    } else {
-                        console.log('🎥 [PICKER] Converting smaller video to base64...');
-
-                        // Для небольших файлов используем base64
-                        const base64 = await convertToBase64(asset.uri);
-
-                        console.log('🎥 [PICKER] Video converted successfully:', {
-                            originalFileSize: asset.fileSize,
-                            base64Length: base64.length,
-                            compressionRatio: asset.fileSize ? (base64.length / asset.fileSize * 100).toFixed(1) + '%' : 'unknown',
-                            timestamp: Date.now()
-                        });
-
-                        await sendMediaMessage(base64, 'video');
-                    }
+                    // Прямая загрузка без клиентского сжатия
+                    // Сжатие выполняется на сервере через Celery для лучшей производительности
+                    console.log('🚀 [PICKER] Direct upload - server will handle compression');
+                    await sendMediaMessageDirect(asset.uri, 'video', asset.fileSize);
 
                 } catch (conversionError) {
                     console.error('🎥 [PICKER] ❌ Video processing failed:', conversionError);
@@ -1449,9 +1370,33 @@ export default function ChatScreen() {
                     }
                 }
             }
-        } catch (error) {
+        } catch (error: any) {
             console.error('🎥 [PICKER] ❌ Error picking video:', error);
-            Alert.alert('Ошибка', 'Не удалось выбрать видео');
+
+            // Детальная обработка ошибок для production
+            let errorMessage = 'Не удалось выбрать видео';
+
+            if (error.message) {
+                console.error('🎥 [PICKER] Error message:', error.message);
+
+                // Проверяем различные типы ошибок
+                if (error.message.includes('permission') || error.message.includes('Permission')) {
+                    errorMessage = 'Нет разрешения на доступ к медиабиблиотеке. Проверьте настройки приложения.';
+                } else if (error.message.includes('cancelled') || error.message.includes('canceled')) {
+                    console.log('🎥 [PICKER] User cancelled picker');
+                    return; // Не показываем ошибку при отмене пользователем
+                } else if (error.message.includes('not available')) {
+                    errorMessage = 'Медиабиблиотека недоступна на этом устройстве.';
+                } else {
+                    errorMessage = `Ошибка: ${error.message}`;
+                }
+            }
+
+            Alert.alert(
+                'Ошибка выбора видео',
+                errorMessage + '\n\nПопробуйте:\n• Перезапустить приложение\n• Проверить разрешения в настройках\n• Выбрать другое видео',
+                [{ text: 'OK' }]
+            );
         }
     };
 
@@ -1527,7 +1472,7 @@ export default function ChatScreen() {
                             ...msg,
                             isUploading: false,
                             uploadProgress: 100,
-                            message: `📄 ${fileName}`,
+                            message: fileName, // Только название файла без эмодзи
                             serverFileUrl: fileUrl
                         };
                     }
@@ -1538,7 +1483,7 @@ export default function ChatScreen() {
             // Отправляем уведомление через WebSocket
             const messageData = {
                 type: 'media_message',
-                message: `📄 ${fileName}`,
+                message: fileName, // Только название файла
                 mediaType: 'file',
                 mediaHash: mediaHash,
                 fileUrl: fileUrl,
@@ -1632,7 +1577,7 @@ export default function ChatScreen() {
                             ...msg,
                             isUploading: false,
                             uploadProgress: 100,
-                            message: `📄 ${fileName}`,
+                            message: fileName, // Только название файла
                             serverFileUrl: fileUrl
                         };
                     }
@@ -1643,7 +1588,7 @@ export default function ChatScreen() {
             // Отправляем уведомление через WebSocket
             const messageData = {
                 type: 'media_message',
-                message: `📄 ${fileName}`,
+                message: fileName, // Только название файла
                 mediaType: 'file',
                 mediaHash: mediaHash,
                 fileUrl: fileUrl,
@@ -1821,7 +1766,7 @@ export default function ChatScreen() {
             // Создаем оптимистичное сообщение
             const optimisticMessage: Message = {
                 id: messageId,
-                message: mediaType === 'image' ? '📷 Загрузка изображения...' : '🎥 Загрузка видео...',
+                message: mediaType === 'image' ? 'Загрузка изображения...' : 'Загрузка видео...',
                 timestamp: timestamp,
                 sender__username: currentUsername,
                 sender_id: currentUserId,
@@ -1999,7 +1944,7 @@ export default function ChatScreen() {
                                 ...msg,
                                 isUploading: false,
                                 uploadProgress: 100,
-                                message: mediaType === 'image' ? '📷 Изображение' : '🎥 Видео',
+                                message: '', // Убираем подпись
                                 serverFileUrl: serverFileUrl
                             };
                         }
@@ -2010,7 +1955,7 @@ export default function ChatScreen() {
                 // Отправляем уведомление через WebSocket
                 const messageData = {
                     type: 'media_message',
-                    message: mediaType === 'image' ? '📷 Изображение' : '🎥 Видео',
+                    message: '', // Убираем подпись
                     mediaType: mediaType,
                     mediaHash: mediaHash,
                     fileUrl: serverFileUrl,
@@ -2084,7 +2029,7 @@ export default function ChatScreen() {
             // Создаем оптимистичное сообщение
             const optimisticMessage: Message = {
                 id: messageId,
-                message: mediaType === 'image' ? '📷 Загрузка изображения...' : '🎥 Загрузка видео...',
+                message: mediaType === 'image' ? 'Загрузка изображения...' : 'Загрузка видео...',
                 timestamp: timestamp,
                 sender__username: currentUsername,
                 sender_id: currentUserId,
@@ -2153,7 +2098,7 @@ export default function ChatScreen() {
             // Отправляем уведомление через WebSocket
             const messageData = {
                 type: 'media_message',
-                message: mediaType === 'image' ? '📷 Изображение' : '🎥 Видео',
+                message: '', // Пустое сообщение - медиа говорит само за себя
                 mediaType: mediaType,
                 mediaHash: mediaHash,
                 fileUrl: fileUrl,
@@ -2294,69 +2239,19 @@ export default function ChatScreen() {
                 }
             }
 
-            if (response.data && response.data.messages) {
-                const processedMessages = await Promise.all(
-                    response.data.messages.map(async (msg: any, index: number) => {
-                        console.log(`📜 [HISTORY] Processing message ${index + 1}:`, {
-                            id: msg.id,
-                            sender: msg.sender__username,
-                            hasMediaType: !!(msg.mediaType || msg.media_type),
-                            hasMediaHash: !!(msg.mediaHash || msg.media_hash),
-                            hasMediaBase64: !!(msg.mediaBase64 || msg.media_base64),
-                            mediaSize: msg.mediaSize || msg.media_size,
-                            message: msg.message?.substring(0, 50)
-                        });
-
-                        const processedMsg = {
-                            ...msg,
-                            timestamp: msg.timestamp,
-                            // Правильный маппинг всех возможных полей с сервера
-                            mediaType: msg.mediaType || msg.media_type || null,
-                            mediaHash: msg.mediaHash || msg.media_hash || null,
-                            mediaFileName: msg.mediaFileName || msg.media_filename || null,
-                            mediaSize: msg.mediaSize || msg.media_size || null,
-                            mediaBase64: null, // В истории base64 не передается
-                            mediaUri: null // Будет установлен из кэша
-                        };
-
-                        // Обработка медиафайлов из истории
-                        if (processedMsg.mediaType && processedMsg.mediaHash) {
-                            console.log('📷 [HISTORY] Media from history:', {
-                                type: processedMsg.mediaType,
-                                messageId: processedMsg.id,
-                                hash: processedMsg.mediaHash.substring(0, 16) + '...'
-                            });
-
-                            if (processedMsg.mediaType === 'video') {
-                                // Для видео из истории НЕ загружаем автоматически - только по требованию пользователя
-                                processedMsg.serverFileUrl = null;
-                                processedMsg.mediaUri = null;
-                                processedMsg.videoLoadRequested = false;
-                                processedMsg.videoIsLoading = false;
-                                processedMsg.isLoadingServerUrl = false;
-                                processedMsg.needsReload = false; // Сбрасываем флаг перезагрузки
-                                console.log('🎥 [LAZY-LOAD] Video from history will load only on play button press');
-                            } else {
-                                // Для изображений загружаем как раньше
-                                processedMsg.serverFileUrl = null;
-                                processedMsg.mediaUri = null;
-                                processedMsg.isLoadingServerUrl = true;
-                            }
-                        }
-
-                        console.log('📜 [HISTORY] Final processed message:', {
-                            id: processedMsg.id,
-                            mediaHash: processedMsg.mediaHash,
-                            hasMediaUri: !!processedMsg.mediaUri,
-                            hasMediaBase64: !!processedMsg.mediaBase64,
-                            mediaSize: processedMsg.mediaSize,
-                            needsReload: processedMsg.needsReload,
-                            mediaUri: processedMsg.mediaUri ? processedMsg.mediaUri.substring(processedMsg.mediaUri.lastIndexOf('/') + 1) : 'none'
-                        });
-
-                        return processedMsg;
-                    })
-                );
+            if (response.data?.messages) {
+                const processedMessages = response.data.messages.map((msg: any) => ({
+                    ...msg,
+                    mediaType: msg.mediaType || msg.media_type || null,
+                    mediaHash: msg.mediaHash || msg.media_hash || null,
+                    mediaFileName: msg.mediaFileName || msg.media_filename || null,
+                    mediaSize: msg.mediaSize || msg.media_size || null,
+                    mediaBase64: null,
+                    // Redis кэширует URL - загрузится через API при просмотре
+                    serverFileUrl: null,
+                    isLoadingServerUrl: false,
+                    needsReload: false
+                }));
 
                 if (pageNum === 1) {
                     // Первая загрузка - НЕ заменяем все сообщения, а мержим с существующими
@@ -2387,59 +2282,19 @@ export default function ChatScreen() {
                     });
                     setPage(1);
 
-                    // Асинхронно загружаем URL только для изображений из истории
-                    const imageMessagesFromHistory = processedMessages.filter(msg => 
-                        msg.mediaType === 'image' && msg.mediaHash && msg.isLoadingServerUrl
-                    );
+                    // Ленивая загрузка: URL загружаются только при прокрутке к медиа
+                    console.log('📜 [HISTORY] Loaded', processedMessages.length, 'messages');
+                    console.log('📜 [HISTORY] Media will be loaded lazily when visible');
 
-                    if (imageMessagesFromHistory.length > 0) {
-                        console.log('📜 [HISTORY] Loading server URLs for images only:', imageMessagesFromHistory.length);
+                    // Подсчитываем медиа для статистики
+                    const imageCount = processedMessages.filter(msg => msg.mediaType === 'image').length;
+                    const videoCount = processedMessages.filter(msg => msg.mediaType === 'video').length;
 
-                        // Загружаем URL только для изображений
-                        imageMessagesFromHistory.forEach(async (msg, index) => {
-                            setTimeout(async () => {
-                                try {
-                                    const serverUrl = await getMediaServerUrl(msg.id);
-
-                                    if (serverUrl) {
-                                        updateMessageSafely(msg.id, {
-                                            serverFileUrl: serverUrl,
-                                            isLoadingServerUrl: false
-                                        });
-                                    } else {
-                                        updateMessageSafely(msg.id, {
-                                            isLoadingServerUrl: false,
-                                            needsReload: true
-                                        });
-                                    }
-                                } catch (error) {
-                                    console.error('📜 [HISTORY] Error loading server URL for image:', error);
-                                    updateMessageSafely(msg.id, {
-                                        isLoadingServerUrl: false,
-                                        needsReload: true
-                                    });
-                                }
-                            }, index * 300);
-                        });
-                    }
-
-                    // Видео из истории остаются в режиме превью (НЕ загружаются автоматически)
-                    const videoMessagesFromHistory = processedMessages.filter(msg => 
-                        msg.mediaType === 'video' && msg.mediaHash
-                    );
-
-                    if (videoMessagesFromHistory.length > 0) {
-                        console.log('📜 [HISTORY] Found', videoMessagesFromHistory.length, 'videos in history - will load ONLY on user request (play button)');
-
-                        // Обновляем видео сообщения - убираем автозагрузку
-                        videoMessagesFromHistory.forEach(msg => {
-                            updateMessageSafely(msg.id, {
-                                videoLoadRequested: false,
-                                videoIsLoading: false,
-                                isLoadingServerUrl: false,
-                                serverFileUrl: null,
-                                mediaUri: null
-                            });
+                    if (imageCount > 0 || videoCount > 0) {
+                        console.log('📜 [HISTORY] Media summary:', {
+                            images: imageCount,
+                            videos: videoCount,
+                            lazyLoad: true
                         });
                     }
                 } else {
@@ -2720,52 +2575,157 @@ export default function ChatScreen() {
     // Открытие просмотрщика изображений
     const openImageViewer = (imageUri: string) => {
         setSelectedImage(imageUri);
-        setImageZoomScale(1);
+        resetZoom();
         setIsImageViewerVisible(true);
 
-        // Скрываем подсказку через 4 секунды
-        setTimeout(() => {
-            // Подсказка скроется автоматически через CSS анимацию или может быть скрыта через состояние
-        }, 4000);
+        console.log('🖼️ [IMAGE-VIEWER] Opening image viewer');
     };
 
-    // Обработка двойного нажатия для масштабирования изображения
-    const handleImageDoubleTap = () => {
-        const now = Date.now();
-        const timeDiff = now - lastImageTap;
+    // Функция для сброса масштабирования
+    const resetZoom = useCallback(() => {
+        scale.value = withSpring(1);
+        translateX.value = withSpring(0);
+        translateY.value = withSpring(0);
+        lastScale.value = 1;
+        lastTranslateX.value = 0;
+        lastTranslateY.value = 0;
+        setZoomLevel(0);
+    }, [scale, translateX, translateY, lastScale, lastTranslateX, lastTranslateY]);
 
-        if (timeDiff < 300) {
-            // Двойное нажатие обнаружено
-            const newScale = imageZoomScale === 1 ? 2.5 : 1;
-            setImageZoomScale(newScale);
-
-            if (imageScrollViewRef.current) {
-                imageScrollViewRef.current.scrollTo({
-                    x: 0,
-                    y: 0,
-                    animated: true
-                });
-            }
-
-            console.log('🖼️ [IMAGE-ZOOM] Double tap zoom:', newScale);
+    // Функция для установки конкретного уровня масштабирования
+    const setZoom = useCallback((level: number) => {
+        let targetScale = 1;
+        switch (level) {
+            case 1:
+                targetScale = 1.5;
+                break;
+            case 2:
+                targetScale = 2.5;
+                break;
+            default:
+                targetScale = 1;
         }
 
-        setLastImageTap(now);
-    };
+        scale.value = withSpring(targetScale);
+        translateX.value = withSpring(0);
+        translateY.value = withSpring(0);
+        lastScale.value = targetScale;
+        lastTranslateX.value = 0;
+        lastTranslateY.value = 0;
+        setZoomLevel(level);
+
+        console.log('🖼️ [IMAGE-ZOOM] Zoom level changed:', {
+            level,
+            targetScale,
+            cycle: level === 0 ? '1x' : level === 1 ? '1.5x' : '2.5x'
+        });
+    }, [scale, translateX, translateY, lastScale, lastTranslateX, lastTranslateY]);
+
+    // Функция для изменения уровня масштабирования при двойном тапе
+    const handleDoubleTap = useCallback(() => {
+        const nextLevel = (zoomLevel + 1) % 3;
+        setZoom(nextLevel);
+    }, [zoomLevel, setZoom]);
+
+    // Обработчик двойного нажатия
+    const doubleTapGesture = Gesture.Tap()
+        .numberOfTaps(2)
+        .onEnd(() => {
+            runOnJS(handleDoubleTap)();
+        });
+
+    // Обработчик жестов масштабирования (pinch)
+    const pinchGesture = Gesture.Pinch()
+        .onUpdate((event) => {
+            scale.value = Math.max(0.5, Math.min(event.scale * lastScale.value, 5));
+        })
+        .onEnd(() => {
+            lastScale.value = scale.value;
+            // Обновляем уровень масштабирования на основе текущего масштаба
+            if (scale.value <= 1.2) {
+                runOnJS(setZoomLevel)(0);
+            } else if (scale.value <= 2) {
+                runOnJS(setZoomLevel)(1);
+            } else {
+                runOnJS(setZoomLevel)(2);
+            }
+        });
+
+    // Обработчик жестов перетаскивания
+    const panGesture = Gesture.Pan()
+        .onUpdate((event) => {
+            if (scale.value > 1) {
+                translateX.value = event.translationX + lastTranslateX.value;
+                translateY.value = event.translationY + lastTranslateY.value;
+            }
+        })
+        .onEnd(() => {
+            lastTranslateX.value = translateX.value;
+            lastTranslateY.value = translateY.value;
+        });
+
+    // Комбинированный жест
+    const combinedGesture = Gesture.Race(
+        doubleTapGesture,
+        Gesture.Simultaneous(pinchGesture, panGesture)
+    );
+
+    // Анимированный стиль для изображения
+    const animatedImageStyle = useAnimatedStyle(() => {
+        return {
+            transform: [
+                {scale: scale.value},
+                {translateX: translateX.value},
+                {translateY: translateY.value},
+            ],
+        };
+    });
 
     // Закрытие просмотрщика изображений с сбросом масштаба
     const closeImageViewer = () => {
-        setImageZoomScale(1);
+        resetZoom();
         setSelectedImage(null);
         setIsImageViewerVisible(false);
         setLastImageTap(0);
+
+        console.log('🖼️ [IMAGE-VIEWER] Closing image viewer');
     };
 
     // Загрузка и открытие документа
     const downloadAndOpenDocument = async (message: Message) => {
+        console.log('📄 [DOC-DOWNLOAD] ========== OPENING DOCUMENT ==========');
+        console.log('📄 [DOC-DOWNLOAD] Message data:', {
+            id: message.id,
+            fileName: message.mediaFileName,
+            fileSize: message.mediaSize,
+            mediaType: message.mediaType,
+            hasServerUrl: !!message.serverFileUrl,
+            hasMediaUri: !!message.mediaUri,
+            serverUrl: message.serverFileUrl?.substring(0, 100),
+            mediaUri: message.mediaUri?.substring(0, 100)
+        });
+
         if (!message.serverFileUrl && !message.mediaUri) {
-            Alert.alert('Ошибка', 'Файл недоступен для загрузки');
-            return;
+            console.log('📄 [DOC-DOWNLOAD] ❌ No URL available, requesting from API...');
+
+            // Попытка загрузить URL через API если его нет
+            const serverUrl = await getMediaServerUrl(message.id);
+            if (serverUrl) {
+                console.log('📄 [DOC-DOWNLOAD] ✅ Got URL from API, updating message...');
+                updateMessageSafely(message.id, { serverFileUrl: serverUrl, mediaUri: serverUrl });
+                // Рекурсивно вызываем функцию с обновленным сообщением
+                setTimeout(() => {
+                    const updatedMessage = messages.find(m => m.id === message.id);
+                    if (updatedMessage) {
+                        downloadAndOpenDocument(updatedMessage);
+                    }
+                }, 100);
+                return;
+            } else {
+                console.log('📄 [DOC-DOWNLOAD] ❌ Failed to get URL from API');
+                Alert.alert('Ошибка', 'Файл недоступен для загрузки. Не удалось получить URL с сервера.');
+                return;
+            }
         }
 
         const messageId = message.id;
@@ -2854,6 +2814,138 @@ export default function ChatScreen() {
         } finally {
             setDownloadingDocuments(prev => ({ ...prev, [messageId]: false }));
             setDocumentDownloadProgress(prev => ({ ...prev, [messageId]: 0 }));
+        }
+    };
+
+    // Скачивание видео
+    const downloadVideo = async (videoUri: string, messageId: number) => {
+        console.log('📥 [VIDEO-DOWNLOAD] Starting video download:', {
+            messageId,
+            videoUri: videoUri?.substring(videoUri.lastIndexOf('/') + 1)
+        });
+
+        if (!videoUri) {
+            Alert.alert('Ошибка', 'Видео недоступно для скачивания');
+            return;
+        }
+
+        try {
+            // Для HTTP URL - скачиваем с сервера
+            if (videoUri.startsWith('http')) {
+                const fileName = `video_${messageId}_${Date.now()}.mp4`;
+                const localFilePath = `${FileSystem.documentDirectory}${fileName}`;
+
+                Alert.alert(
+                    'Скачивание видео',
+                    'Начинаем загрузку видео...',
+                    [{ text: 'OK' }]
+                );
+
+                const downloadResult = await FileSystem.downloadAsync(
+                    videoUri,
+                    localFilePath
+                );
+
+                if (downloadResult.status === 200) {
+                    console.log('📥 [VIDEO-DOWNLOAD] ✅ Downloaded successfully');
+
+                    // Сохраняем в галерею
+                    if (await Sharing.isAvailableAsync()) {
+                        await Sharing.shareAsync(downloadResult.uri, {
+                            mimeType: 'video/mp4',
+                            dialogTitle: 'Сохранить видео',
+                            UTI: 'public.movie'
+                        });
+                        Alert.alert('Успешно', 'Видео скачано');
+                    } else {
+                        Alert.alert('Успешно', `Видео сохранено: ${localFilePath}`);
+                    }
+                } else {
+                    throw new Error(`Download failed with status ${downloadResult.status}`);
+                }
+            } else if (videoUri.startsWith('file://')) {
+                // Для локальных файлов - просто делимся
+                if (await Sharing.isAvailableAsync()) {
+                    await Sharing.shareAsync(videoUri, {
+                        mimeType: 'video/mp4',
+                        dialogTitle: 'Сохранить видео',
+                        UTI: 'public.movie'
+                    });
+                } else {
+                    Alert.alert('Ошибка', 'Функция сохранения недоступна');
+                }
+            } else {
+                Alert.alert('Ошибка', 'Неподдерживаемый формат видео для скачивания');
+            }
+        } catch (error) {
+            console.error('📥 [VIDEO-DOWNLOAD] ❌ Error:', error);
+            Alert.alert('Ошибка', 'Не удалось скачать видео');
+        }
+    };
+
+    // Скачивание изображения
+    const downloadImage = async (imageUri: string, messageId: number) => {
+        console.log('📥 [IMAGE-DOWNLOAD] Starting image download:', {
+            messageId,
+            imageUri: imageUri?.substring(imageUri.lastIndexOf('/') + 1)
+        });
+
+        if (!imageUri) {
+            Alert.alert('Ошибка', 'Изображение недоступно для скачивания');
+            return;
+        }
+
+        try {
+            // Для HTTP URL - скачиваем с сервера
+            if (imageUri.startsWith('http')) {
+                const fileName = `image_${messageId}_${Date.now()}.jpg`;
+                const localFilePath = `${FileSystem.documentDirectory}${fileName}`;
+
+                Alert.alert(
+                    'Скачивание изображения',
+                    'Начинаем загрузку...',
+                    [{ text: 'OK' }]
+                );
+
+                const downloadResult = await FileSystem.downloadAsync(
+                    imageUri,
+                    localFilePath
+                );
+
+                if (downloadResult.status === 200) {
+                    console.log('📥 [IMAGE-DOWNLOAD] ✅ Downloaded successfully');
+
+                    // Сохраняем в галерею
+                    if (await Sharing.isAvailableAsync()) {
+                        await Sharing.shareAsync(downloadResult.uri, {
+                            mimeType: 'image/jpeg',
+                            dialogTitle: 'Сохранить изображение',
+                            UTI: 'public.image'
+                        });
+                        Alert.alert('Успешно', 'Изображение скачано');
+                    } else {
+                        Alert.alert('Успешно', `Изображение сохранено: ${localFilePath}`);
+                    }
+                } else {
+                    throw new Error(`Download failed with status ${downloadResult.status}`);
+                }
+            } else if (imageUri.startsWith('file://')) {
+                // Для локальных файлов - просто делимся
+                if (await Sharing.isAvailableAsync()) {
+                    await Sharing.shareAsync(imageUri, {
+                        mimeType: 'image/jpeg',
+                        dialogTitle: 'Сохранить изображение',
+                        UTI: 'public.image'
+                    });
+                } else {
+                    Alert.alert('Ошибка', 'Функция сохранения недоступна');
+                }
+            } else {
+                Alert.alert('Ошибка', 'Неподдерживаемый формат изображения для скачивания');
+            }
+        } catch (error) {
+            console.error('📥 [IMAGE-DOWNLOAD] ❌ Error:', error);
+            Alert.alert('Ошибка', 'Не удалось скачать изображение');
         }
     };
 
@@ -3068,6 +3160,32 @@ export default function ChatScreen() {
         };
         const newPlayingState = !currentState.isPlaying;
 
+        // Проверяем доступность видео если это не HTTP URL
+        if (!videoUri.startsWith('http')) {
+            try {
+                const fileInfo = await FileSystem.getInfoAsync(videoUri);
+                if (!fileInfo.exists) {
+                    console.log('🎥 [INLINE] Video file not in cache, reloading from server');
+
+                    // Находим сообщение и загружаем с сервера
+                    const message = messages.find(msg => String(msg.id) === String(messageId));
+                    if (message && message.serverFileUrl) {
+                        // Обновляем URI на серверный
+                        updateMessageSafely(message.id, {
+                            mediaUri: message.serverFileUrl
+                        });
+                        return;
+                    } else if (message) {
+                        // Запрашиваем URL с сервера
+                        await requestVideoLoad(message);
+                        return;
+                    }
+                }
+            } catch (checkError) {
+                console.log('🎥 [INLINE] Error checking video file, will try server URL:', checkError);
+            }
+        }
+
         try {
             const videoRef = inlineVideoRefs.current[messageId];
             if (videoRef) {
@@ -3101,7 +3219,7 @@ export default function ChatScreen() {
         } catch (error: any) {
             console.error('🎥 [INLINE] Error toggling video:', error);
 
-            if (error.message?.includes('AudioFocusNotAcquiredException') || 
+            if (error.message?.includes('AudioFocusNotAcquiredException') ||
                 error.message?.includes('background')) {
                 console.warn('🎥 [INLINE] Video control error - app in background');
                 Alert.alert(
@@ -3119,7 +3237,7 @@ export default function ChatScreen() {
         if (appState !== 'active') {
             console.warn('🎥 [INLINE] Cannot toggle sound - app not active:', appState);
             Alert.alert(
-                'Звук недоступен', 
+                'Звук недоступен',
                 'Управление звуком доступно только когда приложение активно'
             );
             return;
@@ -3152,7 +3270,7 @@ export default function ChatScreen() {
             console.error('🎥 [INLINE] Error toggling sound:', error);
 
             // Обрабатываем специфичные ошибки
-            if (error.message?.includes('AudioFocusNotAcquiredException') || 
+            if (error.message?.includes('AudioFocusNotAcquiredException') ||
                 error.message?.includes('background')) {
                 console.warn('🎥 [INLINE] Audio focus error - app in background');
                 Alert.alert(
@@ -3189,13 +3307,13 @@ export default function ChatScreen() {
     // Улучшенная функция переключения полноэкранного режима
     // ВАЖНО: Полноэкранный режим использует тот же videoUri что и инлайн плеер
     // Приоритет загрузки: 1) Галерея (file://) 2) Сервер (http://) 3) Base64 (data:)
-    const toggleVideoFullscreen = (messageId: string | number, videoUri: string) => {
+    const toggleVideoFullscreen = async (messageId: string | number, videoUri: string) => {
         const currentState = inlineVideoStates[messageId] || {
             isPlaying: false, isMuted: false, isExpanded: false, duration: 0, position: 0, isLoaded: false, isFullscreen: false
         };
 
-        const videoSource = videoUri?.startsWith('file://') ? 'local-gallery' : 
-                          videoUri?.startsWith('http') ? 'server-url' : 
+        const videoSource = videoUri?.startsWith('file://') ? 'local-gallery' :
+                          videoUri?.startsWith('http') ? 'server-url' :
                           videoUri?.startsWith('data:') ? 'base64-data' : 'unknown';
 
         console.log('🎥 [FULLSCREEN] Toggling modal fullscreen mode:', {
@@ -3206,6 +3324,17 @@ export default function ChatScreen() {
         });
 
         if (!currentState.isFullscreen) {
+            // ОСТАНАВЛИВАЕМ поток видео в миниатюре перед открытием полноэкранного режима
+            const videoRef = inlineVideoRefs.current[messageId];
+            if (videoRef && currentState.isPlaying) {
+                try {
+                    await videoRef.pauseAsync();
+                    console.log('🎥 [FULLSCREEN] ✅ Stopped inline video stream before fullscreen');
+                } catch (error) {
+                    console.warn('🎥 [FULLSCREEN] Failed to stop inline video:', error);
+                }
+            }
+
             // Включаем полноэкранный режим через модальное окно
             // Используем тот же URI что и для инлайн плеера (приоритет: галерея -> сервер -> base64)
             setFullscreenModalVideoUri(videoUri);
@@ -3214,7 +3343,8 @@ export default function ChatScreen() {
                 ...prev,
                 [messageId]: {
                     ...currentState,
-                    isFullscreen: true
+                    isFullscreen: true,
+                    isPlaying: false // Помечаем как остановленное
                 }
             }));
             setIsAnyVideoFullscreen(true);
@@ -3223,7 +3353,8 @@ export default function ChatScreen() {
             console.log('🎥 [FULLSCREEN] Modal fullscreen mode activated:', {
                 videoSource: videoSource,
                 willAutoSave: videoSource === 'server-url',
-                messageId: messageId
+                messageId: messageId,
+                inlineStreamStopped: true
             });
         } else {
             // Выключаем полноэкранный режим
@@ -3431,107 +3562,148 @@ export default function ChatScreen() {
             }
 
             if (item.mediaType === 'image') {
-                // Приоритет: локальный URI из галереи -> серверный URL -> base64
-                const imageUri = item.mediaUri ||
-                                 item.serverFileUrl || 
-                                 (item.mediaBase64 ? `data:image/jpeg;base64,${item.mediaBase64}` : null);
+                    // УНИФИЦИРОВАННАЯ ЛОГИКА: точно так же как для видео
+                    const imageUri = item.serverFileUrl ||
+                                     (item.mediaBase64 ? `data:image/jpeg;base64,${item.mediaBase64}` : null);
 
-                if (!imageUri) {
-                    return (
-                        <TouchableOpacity
-                            style={styles.missingMediaContainer}
-                            onPress={async () => {
-                                updateMessageSafely(item.id, { isLoadingServerUrl: true });
+                    if (!imageUri) {
+                        // Изображение не загружено - используем API endpoint как для видео
+                        return (
+                            <LazyMedia
+                                onVisible={async () => {
+                                    console.log('🎨 [LAZY-LOAD] Image became visible, loading via API:', item.id);
 
-                                const localUri = await getLocalMediaUri(item);
-                                if (localUri) {
-                                    updateMessageSafely(item.id, {
-                                        mediaUri: localUri.startsWith('file://') || localUri.startsWith('content://') ? localUri : null,
-                                        serverFileUrl: localUri.startsWith('http') ? localUri : item.serverFileUrl,
-                                        isLoadingServerUrl: false
-                                    });
-                                } else {
-                                    updateMessageSafely(item.id, { isLoadingServerUrl: false });
-                                    Alert.alert('Ошибка', 'Не удалось загрузить изображение');
-                                }
-                            }}
-                        >
-                            <MaterialIcons name="image" size={48} color={theme.textSecondary} />
-                            <Text style={[styles.missingMediaText, { color: theme.textSecondary }]}>
-                                Изображение {item.mediaSize ? Math.round(item.mediaSize / (1024 * 1024)) + 'MB' : ''}
-                            </Text>
-                            <Text style={[styles.missingMediaSubtext, { color: theme.placeholder }]}>
-                                Нажмите для загрузки в галерею
-                            </Text>
-                        </TouchableOpacity>
-                    );
-                }
+                                    if (!item.isLoadingServerUrl && !item.serverFileUrl) {
+                                        updateMessageSafely(item.id, { isLoadingServerUrl: true });
 
-                return (
-                    <TouchableOpacity
-                        onPress={async () => {
-                            // Если изображение с сервера, сохраняем в галерею при открытии
-                            if (imageUri.startsWith('http') && !item.mediaUri) {
-                                try {
-                                    const localUri = await saveMediaToGallery(
-                                        imageUri,
-                                        item.id,
-                                        'image',
-                                        item.mediaHash
-                                    );
-                                    if (localUri) {
-                                        updateMessageSafely(item.id, { mediaUri: localUri });
+                                        // ТОТ ЖЕ API ЧТО И ДЛЯ ВИДЕО
+                                        const serverUrl = await getMediaServerUrl(item.id);
+                                        if (serverUrl) {
+                                            updateMessageSafely(item.id, {
+                                                serverFileUrl: serverUrl,
+                                                isLoadingServerUrl: false
+                                            });
+                                            console.log('🎨 [LAZY-LOAD] ✅ Image URL loaded via API');
+                                        } else {
+                                            updateMessageSafely(item.id, {
+                                                isLoadingServerUrl: false,
+                                                needsReload: true
+                                            });
+                                        }
                                     }
-                                } catch (saveError) {
-                                    console.log('🎥 [AUTO-SAVE] Could not save image to gallery:', saveError);
-                                }
-                            }
-                            openImageViewer(imageUri);
-                        }}
-                        style={styles.mediaContainer}
-                    >
-                        <Image
-                            source={{ uri: imageUri }}
-                            style={styles.messageImage}
-                            resizeMode="cover"
-                            onError={(error) => {
-                                console.error('❌ Image load error:', error);
-                            }}
-                        />
-                    </TouchableOpacity>
+                                }}
+                                style={styles.missingMediaContainer}
+                            >
+                                <MaterialIcons name="image" size={48} color={theme.textSecondary} />
+                                <Text style={[styles.missingMediaText, { color: theme.textSecondary }]}>
+                                    Изображение {item.mediaSize ? Math.round(item.mediaSize / (1024 * 1024)) + 'MB' : ''}
+                                </Text>
+                                <Text style={[styles.missingMediaSubtext, { color: theme.placeholder }]}>
+                                    Загружается через API...
+                                </Text>
+                            </LazyMedia>
+                        );
+                    }
+
+                    return (
+                        <LazyMedia style={styles.mediaContainer}>
+                            <View style={styles.imageContainerWithButton}>
+                                <TouchableOpacity
+                                    onPress={() => openImageViewer(imageUri)}
+                                    style={styles.mediaContainer}
+                                >
+                                    <DirectImage
+                                        uri={imageUri}
+                                        style={styles.messageImage}
+                                        resizeMode="cover"
+                                        onError={async () => {
+                                            console.error('🎨 [IMAGE-ERROR] Image load failed, reloading via API:', item.id);
+
+                                            // УНИФИЦИРОВАННАЯ ОБРАБОТКА ОШИБОК: как для видео
+                                            updateMessageSafely(item.id, { isLoadingServerUrl: true });
+
+                                            const serverUrl = await getMediaServerUrl(item.id);
+                                            if (serverUrl) {
+                                                updateMessageSafely(item.id, {
+                                                    serverFileUrl: serverUrl,
+                                                    isLoadingServerUrl: false
+                                                });
+                                                console.log('🎨 [AUTO-RELOAD] ✅ Image reloaded via API');
+                                            } else {
+                                                updateMessageSafely(item.id, {
+                                                    isLoadingServerUrl: false,
+                                                    needsReload: true
+                                                });
+                                            }
+                                        }}
+                                    />
+                                </TouchableOpacity>
+
+                                {/* Кнопка скачивания изображения */}
+                                <TouchableOpacity
+                                    style={styles.imageDownloadButton}
+                                    onPress={() => downloadImage(imageUri, Number(item.id))}
+                                >
+                                    <MaterialIcons name="download" size={20} color="white" />
+                                </TouchableOpacity>
+                            </View>
+                        </LazyMedia>
                 );
             } else if (item.mediaType === 'video') {
-                // Проверяем, загружено ли видео или загружается
-                const hasVideoUri = item.mediaUri || item.serverFileUrl || (item.mediaBase64 ? `data:video/mp4;base64,${item.mediaBase64}` : null);
+                // Прямая загрузка с сервера: только serverFileUrl или base64
+                const hasVideoUri = item.serverFileUrl || (item.mediaBase64 ? `data:video/mp4;base64,${item.mediaBase64}` : null);
                 const isVideoRequested = item.videoLoadRequested;
                 const isVideoLoading = item.videoIsLoading;
 
-                // Если видео не запрошено к загрузке - показываем превью (ленивая загрузка)
+                // Ленивая загрузка видео: URL загружается при появлении в viewport
                 if (!isVideoRequested && !hasVideoUri) {
                     return (
-                        <TouchableOpacity
-                            style={styles.videoPreviewContainer}
-                            onPress={async () => {
-                                console.log('🎥 [LAZY-LOAD] User pressed play - starting video load:', item.id);
-                                await requestVideoLoad(item);
+                        <LazyMedia
+                            onVisible={async () => {
+                                // Предзагружаем URL видео когда превью становится видимым
+                                console.log('🎥 [LAZY-PREFETCH] Video preview visible, prefetching URL:', item.id);
+
+                                if (!item.videoIsLoading && !item.serverFileUrl) {
+                                    // Загружаем только URL, не сам файл
+                                    try {
+                                        const serverUrl = await getMediaServerUrl(item.id);
+                                        if (serverUrl) {
+                                            updateMessageSafely(item.id, {
+                                                serverFileUrl: serverUrl
+                                            });
+                                            console.log('🎥 [LAZY-PREFETCH] ✅ Video URL prefetched');
+                                        }
+                                    } catch (error) {
+                                        console.log('🎥 [LAZY-PREFETCH] Error prefetching URL:', error);
+                                    }
+                                }
                             }}
+                            style={styles.videoPreviewContainer}
                         >
-                            <View style={styles.videoPreviewContent}>
-                                <MaterialIcons name="play-circle-filled" size={64} color={theme.primary} />
-                                <Text style={[styles.videoPreviewTitle, { color: theme.text }]}>
-                                    🎥 Видео
-                                </Text>
-                                <Text style={[styles.videoPreviewSize, { color: theme.textSecondary }]}>
-                                    {item.mediaSize ? Math.round(item.mediaSize / (1024 * 1024)) + ' MB' : 'Размер неизвестен'}
-                                </Text>
-                                <Text style={[styles.videoPreviewHint, { color: theme.primary }]}>
-                                    Нажмите ▶ для загрузки и воспроизведения
-                                </Text>
-                                <Text style={[styles.videoPreviewNote, { color: theme.placeholder }]}>
-                                    Видео загружается только при нажатии
-                                </Text>
-                            </View>
-                        </TouchableOpacity>
+                            <TouchableOpacity
+                                style={styles.videoPreviewContainer}
+                                onPress={async () => {
+                                    console.log('🎥 [LAZY-LOAD] User pressed play - starting video load:', item.id);
+                                    await requestVideoLoad(item);
+                                }}
+                            >
+                                <View style={styles.videoPreviewContent}>
+                                    <MaterialIcons name="play-circle-filled" size={64} color={theme.primary} />
+                                    <Text style={[styles.videoPreviewTitle, { color: theme.text }]}>
+                                        🎥 Видео
+                                    </Text>
+                                    <Text style={[styles.videoPreviewSize, { color: theme.textSecondary }]}>
+                                        {item.mediaSize ? Math.round(item.mediaSize / (1024 * 1024)) + ' MB' : 'Размер неизвестен'}
+                                    </Text>
+                                    <Text style={[styles.videoPreviewHint, { color: theme.primary }]}>
+                                        Нажмите ▶ для воспроизведения
+                                    </Text>
+                                    <Text style={[styles.videoPreviewNote, { color: theme.placeholder }]}>
+                                        Загружается при прокрутке
+                                    </Text>
+                                </View>
+                            </TouchableOpacity>
+                        </LazyMedia>
                     );
                 }
 
@@ -3572,7 +3744,8 @@ export default function ChatScreen() {
                 }
 
                 // Видео загружено - показываем плеер
-                const videoUri = hasVideoUri;
+                // Приоритет: serverFileUrl (всегда доступен) -> локальный mediaUri -> base64
+                const videoUri = item.serverFileUrl || hasVideoUri;
                 if (!videoUri) {
                     return null;
                 }
@@ -3602,42 +3775,25 @@ export default function ChatScreen() {
                                     inlineVideoRefs.current[messageId] = ref;
                                 }
                             }}
-                            source={{ uri: videoUri }}
+                            source={{
+                                uri: videoUri,
+                                overrideFileExtensionAndroid: 'mp4' // Оптимизация для Android
+                            }}
                             style={videoStyle}
                             resizeMode={videoState.isExpanded ? ResizeMode.CONTAIN : ResizeMode.COVER}
                             useNativeControls={false}
                             shouldPlay={videoState.isPlaying}
                             isMuted={videoState.isMuted}
                             isLooping={false}
-                            onLoad={async (data) => {
+                            progressUpdateIntervalMillis={500} // Обновление прогресса каждые 500мс
+                            videoStyle={{ backgroundColor: 'black' }} // Оптимизация рендеринга
+                            onLoad={(data) => {
                                 console.log('🎥 [INLINE-VIDEO] Video loaded successfully:', {
                                     messageId: item.id,
                                     duration: data.durationMillis,
-                                    naturalSize: data.naturalSize,
-                                    uri: videoUri?.substring(Math.max(0, videoUri.length - 30))
+                                    naturalSize: data.naturalSize
                                 });
 
-                                // Если воспроизводится с сервера и нет локального URI, сохраняем в галерею
-                                if (videoUri?.startsWith('http') && !item.mediaUri) {
-                                    console.log('🎥 [AUTO-SAVE] Auto-saving video to gallery...');
-                                    try {
-                                        const localUri = await saveMediaToGallery(
-                                            videoUri,
-                                            item.id,
-                                            'video',
-                                            item.mediaHash
-                                        );
-
-                                        if (localUri) {
-                                            console.log('🎥 [AUTO-SAVE] ✅ Video saved to gallery');
-                                            updateMessageSafely(item.id, { mediaUri: localUri });
-                                        }
-                                    } catch (saveError) {
-                                        console.log('🎥 [AUTO-SAVE] Could not save to gallery (non-critical):', saveError);
-                                    }
-                                }
-
-                                // Обновляем состояние с длительностью видео
                                 setInlineVideoStates(prev => ({
                                     ...prev,
                                     [messageId]: {
@@ -3647,46 +3803,129 @@ export default function ChatScreen() {
                                     }
                                 }));
                             }}
-                            onError={(error) => {
-                                console.error('🎥 [INLINE-VIDEO] ❌ Video decoder error:', {
+                            onError={async (error) => {
+                                console.error('🎥 [INLINE-VIDEO] ❌ Video error:', {
                                     messageId: item.id,
                                     error: error,
                                     uri: videoUri?.substring(videoUri.lastIndexOf('/') + 1),
                                     fullUri: videoUri,
-                                    errorType: error?.error?.includes('MediaCodecRenderer') ? 'codec' : 
-                                              error?.error?.includes('Decoder') ? 'decoder' : 'unknown'
+                                    errorType: error?.error?.includes('MediaCodecRenderer') ? 'codec' :
+                                              error?.error?.includes('Decoder') ? 'decoder' :
+                                              error?.error?.includes('FileNotFound') || error?.error?.includes('failed to load') ? 'cache' : 'unknown'
                                 });
 
+                                // Проверяем, является ли это ошибкой кэша
+                                const isCacheError = error?.error?.includes('FileNotFound') ||
+                                                    error?.error?.includes('failed to load') ||
+                                                    error?.error?.includes('unable to read file') ||
+                                                    (!videoUri?.startsWith('http') && error?.error);
+
+                                if (isCacheError && item.serverFileUrl) {
+                                    // Кэш очищен - автоматически загружаем с сервера
+                                    console.log('🎥 [AUTO-RELOAD] Cache cleared, reloading from server:', item.id);
+
+                                    updateMessageSafely(item.id, {
+                                        mediaUri: item.serverFileUrl,
+                                        videoLoadRequested: true,
+                                        videoIsLoading: false
+                                    });
+
+                                    return;
+                                } else if (isCacheError && !item.serverFileUrl) {
+                                    // Нет serverFileUrl - запрашиваем с сервера
+                                    console.log('🎥 [AUTO-RELOAD] Cache cleared, requesting URL from server:', item.id);
+
+                                    updateMessageSafely(item.id, {
+                                        videoIsLoading: true
+                                    });
+
+                                    try {
+                                        const serverUrl = await getMediaServerUrl(item.id);
+                                        if (serverUrl) {
+                                            updateMessageSafely(item.id, {
+                                                serverFileUrl: serverUrl,
+                                                mediaUri: serverUrl,
+                                                videoIsLoading: false,
+                                                videoLoadRequested: true
+                                            });
+                                            console.log('🎥 [AUTO-RELOAD] ✅ Server URL loaded after cache miss');
+                                        } else {
+                                            updateMessageSafely(item.id, {
+                                                videoIsLoading: false,
+                                                needsReload: true
+                                            });
+                                        }
+                                    } catch (serverError) {
+                                        console.error('🎥 [AUTO-RELOAD] Failed to get server URL:', serverError);
+                                        updateMessageSafely(item.id, {
+                                            videoIsLoading: false,
+                                            needsReload: true
+                                        });
+                                    }
+
+                                    return;
+                                }
+
                                 // Определяем тип ошибки и показываем соответствующее решение
-                                const isCodecError = error?.error?.includes('MediaCodecRenderer') || 
+                                const isCodecError = error?.error?.includes('MediaCodecRenderer') ||
                                                    error?.error?.includes('Decoder init failed');
 
                                 if (isCodecError) {
-                                    // Ошибка кодека - предлагаем системный плеер
-                                    Alert.alert(
-                                        'Проблема с воспроизведением',
-                                        'Встроенный плеер не может воспроизвести это видео из-за несовместимых кодеков.\n\nОткрыть в системном видеоплеере?',
-                                        [
-                                            { text: 'Отмена', style: 'cancel' },
-                                            {
-                                                text: 'Системный плеер',
-                                                onPress: async () => {
-                                                    try {
-                                                        if (videoUri?.startsWith('http')) {
-                                                            await Linking.openURL(videoUri);
-                                                        } else if (videoUri?.startsWith('file://')) {
-                                                            // Для локальных файлов пытаемся поделиться
-                                                            const { Sharing } = await import('expo-sharing');
-                                                            await Sharing.shareAsync(videoUri);
+                                    // Ошибка кодека - автоматически открываем в браузере
+                                    console.log('🎥 [AUTO-FALLBACK] Codec error detected, opening in browser');
+
+                                    if (videoUri?.startsWith('http')) {
+                                        // Для HTTP видео - сразу открываем в браузере
+                                        Alert.alert(
+                                            'Несовместимый кодек',
+                                            'Видео использует кодек, который не поддерживается устройством. Открываем в браузере...',
+                                            [
+                                                {
+                                                    text: 'OK',
+                                                    onPress: async () => {
+                                                        try {
+                                                            await WebBrowser.openBrowserAsync(videoUri, {
+                                                                presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
+                                                                controlsColor: '#007AFF',
+                                                                toolbarColor: '#000000',
+                                                                enableDefaultShare: true,
+                                                                showInRecents: true,
+                                                            });
+                                                        } catch (browserError) {
+                                                            console.error('Browser open failed:', browserError);
+                                                            Alert.alert('Ошибка', 'Не удалось открыть видео в браузере');
                                                         }
-                                                    } catch (shareError) {
-                                                        console.error('Failed to open in system player:', shareError);
-                                                        Alert.alert('Ошибка', 'Не удалось открыть видео в системном плеере');
                                                     }
                                                 }
-                                            }
-                                        ]
-                                    );
+                                            ]
+                                        );
+                                    } else {
+                                        // Для локальных файлов - пробуем системный плеер
+                                        Alert.alert(
+                                            'Проблема с воспроизведением',
+                                            'Встроенный плеер не может воспроизвести это видео.\n\nОткрыть в системном плеере?',
+                                            [
+                                                { text: 'Отмена', style: 'cancel' },
+                                                {
+                                                    text: 'Системный плеер',
+                                                    onPress: async () => {
+                                                        try {
+                                                            if (videoUri?.startsWith('file://')) {
+                                                                await Sharing.shareAsync(videoUri, {
+                                                                    mimeType: 'video/mp4',
+                                                                    dialogTitle: 'Открыть видео',
+                                                                    UTI: 'public.movie'
+                                                                });
+                                                            }
+                                                        } catch (shareError) {
+                                                            console.error('Failed to open in system player:', shareError);
+                                                            Alert.alert('Ошибка', 'Не удалось открыть видео');
+                                                        }
+                                                    }
+                                                }
+                                            ]
+                                        );
+                                    }
                                 } else {
                                     // Обычная ошибка загрузки
                                     updateMessageSafely(item.id, { needsReload: true });
@@ -3780,18 +4019,6 @@ export default function ChatScreen() {
                                 />
                             </TouchableOpacity>
 
-                            {/* Кнопка звука */}
-                            <TouchableOpacity
-                                style={styles.inlineVideoButton}
-                                onPress={() => toggleInlineVideoSound(messageId)}
-                            >
-                                <MaterialIcons
-                                    name={videoState.isMuted ? "volume-off" : "volume-up"}
-                                    size={videoState.isExpanded ? 28 : 20}
-                                    color={audioSessionReady ? "white" : "rgba(255, 255, 255, 0.5)"}
-                                />
-                            </TouchableOpacity>
-
                             {/* Кнопка полноэкранного режима */}
                             <TouchableOpacity
                                 style={styles.inlineVideoButton}
@@ -3804,32 +4031,75 @@ export default function ChatScreen() {
                                 />
                             </TouchableOpacity>
 
-                            {/* Кнопка открытия в браузере */}
-                            {videoUri?.startsWith('http') && (
+                            {/* Кнопка скачивания - только для миниатюры */}
+                            {!videoState.isExpanded && (
                                 <TouchableOpacity
                                     style={styles.inlineVideoButton}
-                                    onPress={() => openVideoInBrowser(videoUri)}
+                                    onPress={() => downloadVideo(videoUri, Number(messageId))}
                                 >
                                     <MaterialIcons
-                                        name="open-in-browser"
-                                        size={videoState.isExpanded ? 28 : 20}
-                                        color="rgba(255, 255, 255, 0.9)"
+                                        name="download"
+                                        size={20}
+                                        color="white"
                                     />
                                 </TouchableOpacity>
                             )}
 
-                            {/* Кнопка расширения в модальное окно (для больших видео) */}
-                            {!videoState.isFullscreen && (
-                                <TouchableOpacity
-                                    style={styles.inlineVideoButton}
-                                    onPress={() => openVideoViewer(videoUri)}
-                                >
-                                    <MaterialIcons
-                                        name="open-in-new"
-                                        size={videoState.isExpanded ? 28 : 20}
-                                        color="rgba(255, 255, 255, 0.8)"
-                                    />
-                                </TouchableOpacity>
+                            {/* Дополнительные кнопки только в развернутом режиме */}
+                            {videoState.isExpanded && (
+                                <>
+                                    {/* Кнопка звука */}
+                                    <TouchableOpacity
+                                        style={styles.inlineVideoButton}
+                                        onPress={() => toggleInlineVideoSound(messageId)}
+                                    >
+                                        <MaterialIcons
+                                            name={videoState.isMuted ? "volume-off" : "volume-up"}
+                                            size={28}
+                                            color={audioSessionReady ? "white" : "rgba(255, 255, 255, 0.5)"}
+                                        />
+                                    </TouchableOpacity>
+
+                                    {/* Кнопка скачивания */}
+                                    <TouchableOpacity
+                                        style={styles.inlineVideoButton}
+                                        onPress={() => downloadVideo(videoUri, Number(messageId))}
+                                    >
+                                        <MaterialIcons
+                                            name="download"
+                                            size={28}
+                                            color="white"
+                                        />
+                                    </TouchableOpacity>
+
+                                    {/* Кнопка открытия в браузере */}
+                                    {videoUri?.startsWith('http') && (
+                                        <TouchableOpacity
+                                            style={styles.inlineVideoButton}
+                                            onPress={() => openVideoInBrowser(videoUri)}
+                                        >
+                                            <MaterialIcons
+                                                name="open-in-browser"
+                                                size={28}
+                                                color="rgba(255, 255, 255, 0.9)"
+                                            />
+                                        </TouchableOpacity>
+                                    )}
+
+                                    {/* Кнопка расширения в модальное окно */}
+                                    {!videoState.isFullscreen && (
+                                        <TouchableOpacity
+                                            style={styles.inlineVideoButton}
+                                            onPress={() => openVideoViewer(videoUri)}
+                                        >
+                                            <MaterialIcons
+                                                name="open-in-new"
+                                                size={28}
+                                                color="rgba(255, 255, 255, 0.8)"
+                                            />
+                                        </TouchableOpacity>
+                                    )}
+                                </>
                             )}
                         </View>
 
@@ -3877,20 +4147,58 @@ export default function ChatScreen() {
                     </View>
                 );
             } else if (item.mediaType === 'file') {
-                // Используем любой доступный источник файла
+                // ЛЕНИВАЯ ЗАГРУЗКА URL для документов (как для изображений и видео)
                 const fileUrl = item.serverFileUrl || item.mediaUri;
 
                 if (!fileUrl) {
+                    // Документ не загружен - используем LazyMedia для загрузки через API
                     return (
-                        <View style={styles.missingMediaContainer}>
-                            <MaterialIcons name="description" size={48} color={theme.textSecondary} />
-                            <Text style={[styles.missingMediaText, { color: theme.textSecondary }]}>
-                                {item.mediaFileName || 'Документ'} {item.mediaSize ? Math.round(item.mediaSize / (1024 * 1024)) + 'MB' : ''}
-                            </Text>
-                            <Text style={[styles.missingMediaSubtext, { color: theme.placeholder }]}>
-                                Файл недоступен
-                            </Text>
-                        </View>
+                        <LazyMedia
+                            onVisible={async () => {
+                                console.log('📄 [LAZY-LOAD] Document became visible, loading via API:', item.id);
+
+                                if (!item.isLoadingServerUrl && !item.serverFileUrl) {
+                                    updateMessageSafely(item.id, { isLoadingServerUrl: true });
+
+                                    // ЗАГРУЖАЕМ URL ЧЕРЕЗ API (как для изображений и видео)
+                                    const serverUrl = await getMediaServerUrl(item.id);
+                                    if (serverUrl) {
+                                        updateMessageSafely(item.id, {
+                                            serverFileUrl: serverUrl,
+                                            mediaUri: serverUrl,
+                                            isLoadingServerUrl: false
+                                        });
+                                        console.log('📄 [LAZY-LOAD] ✅ Document URL loaded via API');
+                                    } else {
+                                        updateMessageSafely(item.id, {
+                                            isLoadingServerUrl: false,
+                                            needsReload: true
+                                        });
+                                        console.log('📄 [LAZY-LOAD] ❌ Failed to load document URL');
+                                    }
+                                }
+                            }}
+                            style={styles.missingMediaContainer}
+                        >
+                            {item.isLoadingServerUrl ? (
+                                <>
+                                    <ActivityIndicator size="small" color={theme.primary} />
+                                    <Text style={[styles.missingMediaText, { color: theme.textSecondary, marginTop: 8 }]}>
+                                        Загрузка документа...
+                                    </Text>
+                                </>
+                            ) : (
+                                <>
+                                    <MaterialIcons name="description" size={48} color={theme.textSecondary} />
+                                    <Text style={[styles.missingMediaText, { color: theme.textSecondary }]}>
+                                        {item.mediaFileName || 'Документ'} {item.mediaSize ? Math.round(item.mediaSize / (1024 * 1024)) + 'MB' : ''}
+                                    </Text>
+                                    <Text style={[styles.missingMediaSubtext, { color: theme.placeholder }]}>
+                                        Загружается через API...
+                                    </Text>
+                                </>
+                            )}
+                        </LazyMedia>
                     );
                 }
 
@@ -3943,7 +4251,7 @@ export default function ChatScreen() {
                             )}
                         </View>
                         <View style={styles.fileInfo}>
-                            <Text style={[styles.fileName, { color: theme.text }]} numberOfLines={2}>
+                            <Text style={[styles.fileName, { color: theme.text }]} numberOfLines={5}>
                                 {item.mediaFileName || 'Документ'}
                             </Text>
                             <Text style={[styles.fileSize, { color: theme.textSecondary }]}>
@@ -3997,13 +4305,16 @@ export default function ChatScreen() {
 
                 {renderMediaContent()}
 
-                <Text style={[
-                    styles.messageText,
-                    isMyMessage ? styles.myMessageText : styles.otherMessageText,
-                    item.mediaType ? styles.mediaMessageText : null
-                ]}>
-                    {item.message}
-                </Text>
+                {/* Показываем текст только если это не медиа (фото/видео) или если есть реальное текстовое сообщение */}
+                {item.message && !item.message.match(/^(📷 Изображение|🎥 Видео)$/) && (
+                    <Text style={[
+                        styles.messageText,
+                        isMyMessage ? styles.myMessageText : styles.otherMessageText,
+                        item.mediaType ? styles.mediaMessageText : null
+                    ]}>
+                        {item.message}
+                    </Text>
+                )}
 
                 <Text style={[
                     styles.timestamp,
@@ -4042,7 +4353,7 @@ export default function ChatScreen() {
 
                     {/* Мини аватарка */}
                     <View style={styles.miniAvatarContainer}>
-                        <CachedImage
+                        <DirectImage
                             uri={
                                 recipient?.avatar
                                     ? recipient.avatar.startsWith('http')
@@ -4062,7 +4373,7 @@ export default function ChatScreen() {
                     data={messages}
                     style={styles.chatbox}
                     contentContainerStyle={styles.chatboxContent}
-                    keyExtractor={(item, index) => `message-${item.id}-${index}`}
+                    keyExtractor={(item, index) => `msg-${item.id}-${item.mediaType || 'text'}-${index}`}
                     renderItem={renderMessage}
                     inverted
                     onEndReached={loadMoreMessages}
@@ -4087,6 +4398,13 @@ export default function ChatScreen() {
                         minIndexForVisible: 0,
                         autoscrollToTopThreshold: 10
                     }}
+                    // Оптимизации для ленивой загрузки - БЕЗ getItemLayout для динамической высоты
+                    removeClippedSubviews={Platform.OS === 'android'} // Только для Android
+                    maxToRenderPerBatch={8}
+                    updateCellsBatchingPeriod={100}
+                    initialNumToRender={12}
+                    windowSize={7}
+                    // Убираем getItemLayout - он вызывает мерцание с динамической высотой видео
                 />
 
                 <View style={styles.inputContainer}>
@@ -4177,77 +4495,55 @@ export default function ChatScreen() {
                     transparent={true}
                     animationType="fade"
                     onRequestClose={closeImageViewer}
+                    statusBarTranslucent={true}
                 >
-                    <View style={styles.imageViewerContainer}>
-                        <TouchableOpacity
-                            style={styles.imageViewerCloseButton}
-                            onPress={closeImageViewer}
-                        >
-                            <MaterialIcons name="close" size={32} color="white" />
-                        </TouchableOpacity>
+                    <GestureHandlerRootView style={{flex: 1}}>
+                        <View style={styles.imageViewerContainer}>
+                            <TouchableOpacity
+                                style={styles.imageViewerCloseButton}
+                                onPress={closeImageViewer}
+                            >
+                                <MaterialIcons name="close" size={32} color="white" />
+                            </TouchableOpacity>
 
-                        {/* Индикатор масштаба */}
-                        {imageZoomScale > 1 && (
-                            <View style={styles.imageZoomIndicator}>
-                                <Text style={styles.imageZoomText}>
-                                    {imageZoomScale.toFixed(1)}x
+                            {/* Индикатор масштаба */}
+                            {zoomLevel > 0 && (
+                                <View style={styles.imageZoomIndicator}>
+                                    <Text style={styles.imageZoomText}>
+                                        {zoomLevel === 1 ? '1.5x' : '2.5x'}
+                                    </Text>
+                                </View>
+                            )}
+
+                            {/* Подсказка для пользователя */}
+                            <View style={styles.imageHintContainer}>
+                                <Text style={styles.imageHintText}>
+                                    Двойной тап: 1x → 1.5x → 2.5x → 1x • Pinch для масштаба • Свайп для перемещения
                                 </Text>
                             </View>
-                        )}
 
-                        {/* Подсказка для пользователя */}
-                        <View style={styles.imageHintContainer}>
-                            <Text style={styles.imageHintText}>
-                                Двойное нажатие для увеличения • Жесты для навигации
-                            </Text>
+                            {/* Контент с жестами */}
+                            <View style={styles.imageModalContent}>
+                                {selectedImage && (
+                                    <GestureDetector gesture={combinedGesture}>
+                                        <View style={styles.imageContainer}>
+                                            <Animated.Image
+                                                source={{uri: selectedImage}}
+                                                style={[styles.fullScreenImage, animatedImageStyle]}
+                                                resizeMode="contain"
+                                                onLoad={() => {
+                                                    console.log('🖼️ [IMAGE-VIEWER] Image loaded for fullscreen view');
+                                                }}
+                                                onError={(error) => {
+                                                    console.error('🖼️ [IMAGE-VIEWER] Image load error:', error);
+                                                }}
+                                            />
+                                        </View>
+                                    </GestureDetector>
+                                )}
+                            </View>
                         </View>
-
-                        {selectedImage && (
-                            <ScrollView
-                                ref={imageScrollViewRef}
-                                style={styles.imageScrollView}
-                                contentContainerStyle={styles.imageScrollContent}
-                                minimumZoomScale={1}
-                                maximumZoomScale={5}
-                                zoomScale={imageZoomScale}
-                                showsHorizontalScrollIndicator={false}
-                                showsVerticalScrollIndicator={false}
-                                centerContent={true}
-                                pinchGestureEnabled={true}
-                                scrollEnabled={true}
-                                bounces={true}
-                                bouncesZoom={true}
-                                onScrollBeginDrag={() => {
-                                    // Предотвращаем закрытие при прокрутке увеличенного изображения
-                                }}
-                            >
-                                <TouchableOpacity 
-                                    activeOpacity={1}
-                                    onPress={handleImageDoubleTap}
-                                    style={styles.imageTouchContainer}
-                                >
-                                    <Image
-                                        source={{ uri: selectedImage }}
-                                        style={[
-                                            styles.fullScreenImage,
-                                            { 
-                                                transform: [{ scale: imageZoomScale }],
-                                                width: Dimensions.get('window').width,
-                                                height: Dimensions.get('window').height,
-                                            }
-                                        ]}
-                                        resizeMode="contain"
-                                        onLoad={() => {
-                                            console.log('🖼️ [IMAGE-VIEWER] Image loaded for fullscreen view');
-                                        }}
-                                        onError={(error) => {
-                                            console.error('🖼️ [IMAGE-VIEWER] Image load error:', error);
-                                        }}
-                                    />
-                                </TouchableOpacity>
-                            </ScrollView>
-                        )}
-                    </View>
+                    </GestureHandlerRootView>
                 </Modal>
 
                 {/* Полноэкранный видеоплеер */}
@@ -4566,42 +4862,85 @@ export default function ChatScreen() {
                                 useNativeControls={true}
                                 shouldPlay={true}
                                 isLooping={false}
-                                onLoad={async (data) => {
+                                onLoad={(data) => {
                                     console.log('🎥 [FULLSCREEN-MODAL] Video loaded:', {
                                         duration: data.durationMillis,
-                                        naturalSize: data.naturalSize,
-                                        source: fullscreenModalVideoUri?.startsWith('http') ? 'server' : 
-                                               fullscreenModalVideoUri?.startsWith('file://') ? 'gallery' : 'other'
+                                        naturalSize: data.naturalSize
                                     });
-
-                                    // Если воспроизводится с сервера в полноэкранном режиме, автоматически сохраняем в галерею
-                                    if (fullscreenModalVideoUri?.startsWith('http') && fullscreenVideoId) {
-                                        console.log('🎥 [FULLSCREEN-MODAL] Auto-saving video to gallery from fullscreen...');
-                                        try {
-                                            // Находим соответствующее сообщение для получения метаданных
-                                            const message = messages.find(msg => String(msg.id) === fullscreenVideoId);
-                                            if (message) {
-                                                const localUri = await saveMediaToGallery(
-                                                    fullscreenModalVideoUri,
-                                                    message.id,
-                                                    'video',
-                                                    message.mediaHash
-                                                );
-
-                                                if (localUri) {
-                                                    console.log('🎥 [FULLSCREEN-MODAL] ✅ Video saved to gallery from fullscreen');
-                                                    // Обновляем сообщение с локальным URI для будущего использования
-                                                    updateMessageSafely(message.id, { mediaUri: localUri });
-                                                }
-                                            }
-                                        } catch (saveError) {
-                                            console.log('🎥 [FULLSCREEN-MODAL] Could not save to gallery from fullscreen (non-critical):', saveError);
-                                        }
-                                    }
                                 }}
                                 onError={(error) => {
                                     console.error('🎥 [FULLSCREEN-MODAL] Video error:', error);
-                                    Alert.alert('Ошибка', 'Не удалось воспроизвести видео в полноэкранном режиме');
+
+                                    // Проверяем тип ошибки
+                                    const errorString = error?.error?.toString() || '';
+                                    const isDecoderError = errorString.includes('MediaCodecRenderer') || 
+                                                          errorString.includes('Decoder init failed') ||
+                                                          errorString.includes('DecoderInitializationException');
+
+                                    if (isDecoderError && fullscreenModalVideoUri?.startsWith('http')) {
+                                        // Автоматически открываем в браузере для видео с проблемными кодеками
+                                        console.log('🎥 [AUTO-FALLBACK] Opening video in browser due to decoder error');
+
+                                        Alert.alert(
+                                            'Несовместимый кодек',
+                                            'Видео использует кодек, который не поддерживается устройством. Открыть в браузере?',
+                                            [
+                                                { 
+                                                    text: 'Отмена', 
+                                                    style: 'cancel',
+                                                    onPress: () => {
+                                                        setIsFullscreenModalVisible(false);
+                                                        setFullscreenModalVideoUri(null);
+                                                        if (fullscreenVideoId) {
+                                                            setInlineVideoStates(prev => ({
+                                                                ...prev,
+                                                                [fullscreenVideoId]: {
+                                                                    ...prev[fullscreenVideoId],
+                                                                    isFullscreen: false,
+                                                                    isExpanded: false
+                                                                }
+                                                            }));
+                                                        }
+                                                        setIsAnyVideoFullscreen(false);
+                                                        setFullscreenVideoId(null);
+                                                    }
+                                                },
+                                                {
+                                                    text: 'Открыть в браузере',
+                                                    onPress: async () => {
+                                                        try {
+                                                            await WebBrowser.openBrowserAsync(fullscreenModalVideoUri, {
+                                                                presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
+                                                                controlsColor: '#007AFF',
+                                                                toolbarColor: '#000000',
+                                                                enableDefaultShare: true,
+                                                                showInRecents: true,
+                                                            });
+                                                        } catch (browserError) {
+                                                            console.error('Browser open failed:', browserError);
+                                                        } finally {
+                                                            setIsFullscreenModalVisible(false);
+                                                            setFullscreenModalVideoUri(null);
+                                                            if (fullscreenVideoId) {
+                                                                setInlineVideoStates(prev => ({
+                                                                    ...prev,
+                                                                    [fullscreenVideoId]: {
+                                                                        ...prev[fullscreenVideoId],
+                                                                        isFullscreen: false,
+                                                                        isExpanded: false
+                                                                    }
+                                                                }));
+                                                            }
+                                                            setIsAnyVideoFullscreen(false);
+                                                            setFullscreenVideoId(null);
+                                                        }
+                                                    }
+                                                }
+                                            ]
+                                        );
+                                    } else {
+                                        Alert.alert('Ошибка', 'Не удалось воспроизвести видео в полноэкранном режиме');
+                                    }
                                 }}
                             />
                         )}
@@ -4710,8 +5049,8 @@ const createStyles = (theme: any) => {
     },
     messageContainer: {
         maxWidth: '80%',
-        marginVertical: 4,
-        padding: 12,
+        marginVertical: 2,
+        padding: 6,
         borderRadius: 16,
         elevation: 1,
         shadowColor: theme.text,
@@ -4734,8 +5073,8 @@ const createStyles = (theme: any) => {
         borderColor: theme.border,
     },
     senderName: {
-        fontSize: 12,
-        marginBottom: 4,
+        fontSize: 10,
+        marginBottom: 2,
         fontWeight: '600',
     },
     messageText: {
@@ -4749,8 +5088,8 @@ const createStyles = (theme: any) => {
         color: theme.text,
     },
     timestamp: {
-        fontSize: 11,
-        marginTop: 4,
+        fontSize: 9,
+        marginTop: 2,
         alignSelf: 'flex-end',
     },
     myTimestamp: {
@@ -4822,26 +5161,27 @@ const createStyles = (theme: any) => {
     },
     mediaContainer: {
         marginBottom: 8,
-        borderRadius: 12,
+        borderRadius: 1,
         overflow: 'hidden',
     },
     messageImage: {
         width: 200,
         minHeight: 100,
         maxHeight: 300,
-        borderRadius: 12,
+        borderRadius: 1,
     },
     messageVideo: {
         width: 200,
         height: 150,
-        borderRadius: 12,
+        borderRadius: 8,
     },
     mediaMessage: {
         maxWidth: '85%',
     },
     mediaMessageText: {
-        fontSize: 14,
-        fontStyle: 'italic',
+        fontSize: 12,
+        fontStyle: 'normal',
+        marginTop: 4,
     },
     imageViewerContainer: {
         flex: 1,
@@ -4896,26 +5236,21 @@ const createStyles = (theme: any) => {
         textAlign: 'center',
         fontStyle: 'italic',
     },
-    imageScrollView: {
+    imageModalContent: {
         flex: 1,
         width: '100%',
-        height: '100%',
-    },
-    imageScrollContent: {
-        flexGrow: 1,
         justifyContent: 'center',
         alignItems: 'center',
     },
-    imageTouchContainer: {
+    imageContainer: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
         width: '100%',
-        height: '100%',
     },
     fullScreenImage: {
-        maxWidth: '100%',
-        maxHeight: '100%',
+        width: '100%',
+        height: '100%',
     },
     videoPlayOverlay: {
         position: 'absolute',
@@ -5042,34 +5377,53 @@ const createStyles = (theme: any) => {
         textAlign: 'center',
         fontStyle: 'italic',
     },
+    imageContainerWithButton: {
+        position: 'relative',
+    },
+    imageDownloadButton: {
+        position: 'absolute',
+        bottom: 8,
+        right: 8,
+        backgroundColor: 'rgba(0, 0, 0, 0.6)',
+        borderRadius: 20,
+        padding: 8,
+        elevation: 3,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.3,
+        shadowRadius: 3,
+    },
     fileContainer: {
         flexDirection: 'row',
-        alignItems: 'center',
+        alignItems: 'flex-start',
         marginBottom: 8,
-        padding: 12,
+        padding: 8,
         borderRadius: 12,
         backgroundColor: 'rgba(0, 0, 0, 0.05)',
         borderWidth: 1,
         borderColor: 'rgba(0, 0, 0, 0.1)',
         minHeight: 60,
+        width: 220,
     },
     fileIconContainer: {
-        marginRight: 12,
+        marginRight: 8,
+        marginTop: 2,
         alignItems: 'center',
         justifyContent: 'center',
-        width: 40,
-        height: 40,
+        width: 36,
+        height: 36,
         borderRadius: 8,
         backgroundColor: 'rgba(0, 0, 0, 0.05)',
     },
     fileInfo: {
         flex: 1,
-        marginRight: 8,
+        marginRight: 4,
     },
     fileName: {
-        fontSize: 14,
+        fontSize: 13,
         fontWeight: '500',
         marginBottom: 2,
+        flexWrap: 'wrap',
     },
     fileSize: {
         fontSize: 12,
@@ -5208,7 +5562,7 @@ const createStyles = (theme: any) => {
     inlineVideoContainer: {
         position: 'relative',
         marginBottom: 8,
-        borderRadius: 12,
+        borderRadius: 8,
         overflow: 'hidden',
         maxWidth: '100%', // Ограничиваем максимальную ширину
         width: 250, // Уменьшаем ширину для лучшего помещения в сообщение
@@ -5217,7 +5571,7 @@ const createStyles = (theme: any) => {
     inlineVideo: {
         width: '100%',
         height: '100%',
-        borderRadius: 12,
+        borderRadius: 8,
     },
     fullscreenVideoContainer: {
         position: 'absolute',
