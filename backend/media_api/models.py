@@ -14,7 +14,7 @@ def user_directory_path(instance, filename):
     """Генерирует путь для загрузки файла пользователя."""
     num = int(time() * 1000)
     suf = Path(filename).suffix
-    return f"{instance.user.username}/{PrivateChatRoom.room_name}/pic_{num}{suf}"
+    return f"{instance.user.username}/{PrivateChatRoom}/pic_{num}{suf}"
 
 
 class UploadedFile(models.Model):
