@@ -16,7 +16,7 @@ def users_avatars_path(instance, filename):
     #   MEDIA_ROOT / user_<username> / avatars / <filename>
     num = int(time() * 1000)
     suf = Path(filename).suffix
-    return f"user_{instance.username}/avatars/pic_{num}{suf}"
+    return f"{instance.username}/avatars/pic_{num}{suf}"
 
 
 class CustomUser(AbstractBaseUser, PermissionsMixin):
