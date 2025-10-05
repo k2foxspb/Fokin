@@ -7,7 +7,7 @@ from django.conf import settings
 from django.core.validators import FileExtensionValidator
 from django.utils import timezone
 
-from backend.chatapp.models import PrivateChatRoom
+from chatapp.models import PrivateChatRoom
 
 
 def user_directory_path(instance, filename):
