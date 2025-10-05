@@ -15,7 +15,7 @@ def save_photos(instance, filename):
 
     num = int(time() * 1000)
     suf = Path(filename).suffix
-    return f"user_{instance.user.username}/{instance.album}/pic_{num}{suf}"
+    return f"{instance.user.username}/{instance.album}/pic_{num}{suf}"
 
 
 class PhotoAlbum(models.Model):

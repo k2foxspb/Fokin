@@ -1,14 +1,20 @@
 import os
+from pathlib import Path
+from time import time
+
 from django.db import models
 from django.conf import settings
 from django.core.validators import FileExtensionValidator
 from django.utils import timezone
 
+from backend.chatapp.models import PrivateChatRoom
+
 
 def user_directory_path(instance, filename):
     """Генерирует путь для загрузки файла пользователя."""
-    # Создаем путь: uploads/user_<id>/year/month/filename
-    return f'uploads/user_{instance.user.id}/{timezone.now().year}/{timezone.now().month}/{filename}'
+    num = int(time() * 1000)
+    suf = Path(filename).suffix
+    return f"{instance.user.username}/{PrivateChatRoom.room_name}/pic_{num}{suf}"
 
 
 class UploadedFile(models.Model):
