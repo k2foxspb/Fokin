@@ -71,9 +71,7 @@ def compress_video_task(self, video_file_id):
         output_filename = f'compressed_{base_name}'
         output_path = os.path.join(base_dir, output_filename)
         vf = (
-            # 1) Приводим к максимуму 1280×720, сохраняем aspect‑ratio
-            "scale='if(gt(iw,1280),1280,iw)':'if(gt(ih,720),720,ih)',"
-            # 2) Делаем обе стороны чётными
+            "scale='if(gte(iw,ih), min(iw,1280), -2)':'if(gte(iw,ih), -2, min(ih,720))'," 
             "scale=trunc(iw/2)*2:trunc(ih/2)*2"
         )
         # ---- команда ffmpeg ----
