@@ -1,8 +1,14 @@
+import base64
+import json
+import mimetypes
+import os
+
+from django.core.files.base import ContentFile
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.shortcuts import get_object_or_404
 from django.http import Http404
 from django.db import models
@@ -586,3 +592,174 @@ class MessageMediaUrlView(APIView):
                 },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
+class MediaFinalizeUploadAPIView(APIView):
+    """
+    POST /media-api/upload/finalize/
+    Параметры (JSON):
+        {
+            "upload_id": "uuid",
+            "room_id": <int>,                    # обязательный – куда привязываем файл
+            "message_id": <int|null>,            # если уже есть сообщение (оптимистичный)
+            "is_public": true/false
+        }
+    """
+    permission_classes = [IsAuthenticated]
+    parser_classes = [JSONParser]
+
+    def post(self, request):
+        data = request.data
+        upload_id = data.get('upload_id')
+        room_id = data.get('room_id')
+        message_id = data.get('message_id')
+        is_public = data.get('is_public', False)
+
+        if not upload_id or not room_id:
+            return Response(
+                {'success': False, 'message': 'upload_id и room_id обязательны'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        tmp_dir = CHUNK_TMP_ROOT / upload_id
+        meta_path = tmp_dir / 'meta.json'
+        if not meta_path.exists():
+            return Response(
+                {'success': False, 'message': 'Upload not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        meta = json.loads(meta_path.read_text())
+        total = meta['total_chunks']
+        uploaded = meta['uploaded']
+
+        if len(uploaded) != total:
+            return Response(
+                {'success': False,
+                 'message': f'Не все чанки получены ({len(uploaded)}/{total})'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Собираем файл
+        final_path = CHUNK_TMP_ROOT / f'{upload_id}_{meta["file_name"]}'
+        with open(final_path, 'wb') as out_f:
+            for i in range(total):
+                chunk_path = tmp_dir / f'{i:06d}.chunk'
+                out_f.write(chunk_path.read_bytes())
+
+        # Очищаем временную папку
+        for p in tmp_dir.iterdir():
+            p.unlink()
+        tmp_dir.rmdir()
+
+        # Определяем MIME
+        mime, _ = mimetypes.guess_type(meta['file_name'])
+        mime = mime or 'application/octet-stream'
+
+        # Сохраняем в основную модель
+        user = request.user
+        if meta['media_type'] == 'image':
+            model = ImageFile
+        elif meta['media_type'] == 'video':
+            model = VideoFile
+        else:
+            model = UploadedFile
+
+        with open(final_path, 'rb') as f:
+            django_file = ContentFile(f.read(), name=meta['file_name'])
+            uploaded_obj = model.objects.create(
+                user=user,
+                file=django_file,
+                original_name=meta['file_name'],
+                file_size=os.path.getsize(final_path),
+                mime_type=mime,
+                file_type=meta['media_type'],
+                is_public=is_public
+            )
+
+        # Привязываем к сообщению (если он уже существует)
+        if message_id:
+            from chatapp.models import Message
+            try:
+                msg = Message.objects.get(id=message_id, room_id=room_id)
+                msg.media_file = uploaded_obj
+                msg.save(update_fields=['media_file'])
+            except Message.DoesNotExist:
+                pass
+
+        # Ссылка будет публичной, если is_public=True
+        file_url = request.build_absolute_uri(uploaded_obj.file.url)
+
+        # Очистка временного файла
+        os.remove(final_path)
+
+        return Response({
+            'success': True,
+            'file': {
+                'id': uploaded_obj.id,
+                'url': file_url,
+                'file_type': uploaded_obj.file_type,
+                'original_name': uploaded_obj.original_name,
+                'size': uploaded_obj.file_size,
+                'mime_type': uploaded_obj.mime_type,
+            }
+        })
+
+
+class MediaChunkUploadAPIView(APIView):
+    """
+    POST /media-api/upload/chunked/
+    Параметры (JSON):
+        {
+            "upload_id": "uuid",
+            "chunk_index": 0,
+            "total_chunks": 5,
+            "file_name": "big_video.mp4",
+            "media_type": "video",
+            "chunk_data": "<base64..."
+        }
+    """
+    permission_classes = [IsAuthenticated]
+    parser_classes = [JSONParser]
+
+    def post(self, request):
+        data = request.data
+        required = ['upload_id', 'chunk_index', 'total_chunks', 'file_name', 'media_type', 'chunk_data']
+        for k in required:
+            if k not in data:
+                return Response(
+                    {'success': False, 'message': f'Missing {k}'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        upload_id = data['upload_id']
+        idx = int(data['chunk_index'])
+        total = int(data['total_chunks'])
+        file_name = data['file_name']
+        media_type = data['media_type']
+        chunk_b64 = data['chunk_data']
+
+        # Папка для конкретного upload_id
+        tmp_dir = CHUNK_TMP_ROOT / upload_id
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+
+        # Сохраняем кусок
+        chunk_path = tmp_dir / f'{idx:06d}.chunk'
+        chunk_path.write_bytes(base64.b64decode(chunk_b64))
+
+        # Сохраняем/обновляем мета‑инфу
+        meta_path = tmp_dir / 'meta.json'
+        if not meta_path.exists():
+            meta_path.write_text(json.dumps({
+                'file_name': file_name,
+                'total_chunks': total,
+                'media_type': media_type,
+                'uploaded': []
+            }))
+
+        meta = json.loads(meta_path.read_text())
+        if idx not in meta['uploaded']:
+            meta['uploaded'].append(idx)
+            meta_path.write_text(json.dumps(meta))
+
+        return Response({'success': True, 'chunk_index': idx})

@@ -13,9 +13,10 @@ from chatapp.models import PrivateChatRoom
 def user_directory_path(instance, filename):
     """Генерирует путь для загрузки файла пользователя."""
     num = int(time() * 1000)
-    suf = Path(filename).suffix
-    return f"{instance.user.username}/{instance.user.recipient}/{num}{suf}"
-
+    suffix = Path(filename).suffix
+    # `recipient` – это атрибут из вашей модели `User` (можно хранить в профиле)
+    recipient = getattr(instance.user, "recipient", "unknown")
+    return f"{instance.user.username}/{recipient}/{num}{suffix}"
 
 class UploadedFile(models.Model):
     """Базовая модель для всех загруженных файлов."""
@@ -77,11 +78,11 @@ class UploadedFile(models.Model):
         return None
 
     def delete(self, *args, **kwargs):
-        """Удаляет файл при удалении записи."""
-        if self.file:
-            # Удаляем файл из storage
-            self.file.delete(save=False)
+        """Удаляем файл из storage перед удалением записи."""
+        storage, path = self.file.storage, self.file.path
         super().delete(*args, **kwargs)
+        if storage.exists(path):
+            storage.delete(path)
 
 
 class ImageFile(UploadedFile):

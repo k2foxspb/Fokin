@@ -418,4 +418,17 @@ FIREBASE_CREDENTIALS = {
 }
 
 
+CACHES = {
+    "default": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": "redis://127.0.0.1:6379/1",
+        "OPTIONS": {"CLIENT_CLASS": "django_redis.client.DefaultClient"},
+    }
+}
+
+# TTL для кэша URL‑ов (сек.)
+CACHE_TTL = {
+    "media_url": 86_400,      # 24ч
+}
+
 

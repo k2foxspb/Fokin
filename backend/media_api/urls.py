@@ -10,4 +10,8 @@ urlpatterns = [
     path('delete/<int:file_id>/', views.DeleteFileView.as_view(), name='delete-file'),
     path('files/', views.UserFilesListView.as_view(), name='user-files'),
     path('message/<int:message_id>/url/', views.MessageMediaUrlView.as_view(), name='message-media-url'),
+    path('upload/chunked/', views.MediaChunkUploadAPIView.as_view(),
+         name='upload-chunked'),
+    path('upload/finalize/', views.MediaFinalizeUploadAPIView.as_view(),
+         name='upload-finalize'),
 ]
