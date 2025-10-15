@@ -10,7 +10,7 @@ from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser, FileUploadParser
 from django.shortcuts import get_object_or_404
 from django.http import Http404
 from django.db import models
@@ -728,8 +728,14 @@ class MediaChunkUploadAPIView(APIView):
             "chunk_data": "<base64..."
         }
     """
+
     permission_classes = [IsAuthenticated]
-    parser_classes = [JSONParser]
+    parser_classes = (
+        MultiPartParser,   # для multipart/form-data
+        FileUploadParser,  # для application/octet-stream (файл в теле без формы)
+        JSONParser,        # если планируете получать JSON‑метаданные
+        FormParser,
+    )
 
     def post(self, request):
         data = request.data
