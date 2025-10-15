@@ -75,6 +75,9 @@ class PrivateChatRoom(models.Model):
     def __str__(self):
         return f"{self.user1.username} and {self.user2.username}"
 
+    def get_other_participant(self, user):
+        """Возвращает пользователя‑собеседника."""
+        return self.user2 if self.user1 == user else self.user1
     @property
     def room_name(self):
         # Generate a unique room name.  Order doesn't matter
@@ -135,3 +138,8 @@ class PrivateMessage(models.Model):
     @property
     def is_media_message(self):
         return self.media_type in ['image', 'video', 'document', 'other'] and bool(self.media_hash)
+
+    @property
+    def recipient(self):
+        """Удобный shortcut – получаем собеседника сообщения."""
+        return self.room.get_other_participant(self.sender)

@@ -15,7 +15,7 @@ def user_directory_path(instance, filename):
     num = int(time() * 1000)
     suffix = Path(filename).suffix
     # `recipient` – это атрибут из вашей модели `User` (можно хранить в профиле)
-    recipient = getattr(instance.user, "recipient", "unknown")
+    recipient = getattr(instance.user, "recipient", None) or "unknown"
     return f"{instance.user.username}/{recipient}/{num}{suffix}"
 
 class UploadedFile(models.Model):
