@@ -70,17 +70,23 @@ def compress_video_task(self, video_file_id):
         base_dir, base_name = os.path.split(input_path)
         output_filename = f'compressed_{base_name}'
         output_path = os.path.join(base_dir, output_filename)
-
+        vf = (
+            # 1) Приводим к максимуму 1280×720, сохраняем aspect‑ratio
+            "scale='if(gt(iw,1280),1280,iw)':'if(gt(ih,720),720,ih)',"
+            # 2) Делаем обе стороны чётными
+            "scale=trunc(iw/2)*2:trunc(ih/2)*2"
+        )
         # ---- команда ffmpeg ----
         compress_cmd = [
             'ffmpeg',
+            '-y',
             '-i', input_path,
             '-c:v', 'libx264',
             '-profile:v', 'baseline',
             '-level', '3.0',
             '-preset', 'veryfast',
             '-crf', '23',
-            '-vf', "scale='min(1280,iw)':'min(720,ih)':force_original_aspect_ratio=decrease",
+            '-vf', vf,
             '-c:a', 'aac',
             '-b:a', '128k',
             '-ar', '44100',
