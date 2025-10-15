@@ -2,7 +2,9 @@ import base64
 import json
 import mimetypes
 import os
+from pathlib import Path
 
+from django.conf import settings
 from django.core.files.base import ContentFile
 from rest_framework import status
 from rest_framework.views import APIView
@@ -594,6 +596,13 @@ class MessageMediaUrlView(APIView):
             )
 
 
+# Папка внутри MEDIA_ROOT, где будем складывать промежуточные файлы.
+# Если хотите хранить её в другом месте – просто поменяйте путь.
+CHUNK_TMP_ROOT = Path(settings.MEDIA_ROOT) / '_temp_uploads'
+
+# Убедимся, что директория существует при старте процесса.
+# (в production это делается один раз, но вызов не стоит дорого)
+CHUNK_TMP_ROOT.mkdir(parents=True, exist_ok=True)
 class MediaFinalizeUploadAPIView(APIView):
     """
     POST /media-api/upload/finalize/
