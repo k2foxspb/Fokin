@@ -37,7 +37,7 @@ class ChatRoomSerializer(serializers.ModelSerializer):
 
 
 class ChatPreviewSerializer(serializers.Serializer):
-    id = serializers.IntegerField(source='room')
+    id = serializers.IntegerField()
     other_user = UserSerializer(read_only=True)
     last_message = serializers.CharField()
     last_message_time = serializers.DateTimeField()
