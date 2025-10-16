@@ -19,7 +19,7 @@ class ChatViewSet(viewsets.GenericViewSet,
                   mixins.RetrieveModelMixin,
                   mixins.ListModelMixin):
     permission_classes = [IsAuthenticated]
-    serializer_class = ChatRoomSerializer
+    serializer_class = ChatPreviewSerializer
 
     def get_queryset(self):
         user = self.request.user
