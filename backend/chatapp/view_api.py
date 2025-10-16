@@ -27,7 +27,7 @@ class ChatViewSet(viewsets.GenericViewSet,
             Q(user1=user) | Q(user2=user)
         )
 
-    @action(detail=False, methods=['get'])
+    @action(detail=False, methods=['get'],url_path='list-preview')
     def list_preview(self, request):
         user = self.request.user
 
