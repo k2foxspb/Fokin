@@ -2,15 +2,14 @@ import logging
 
 from django.contrib.auth import get_user_model
 from django.db.models.functions import Coalesce
-from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import viewsets, status, mixins
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.db.models import Q, F, IntegerField, Case, When, Subquery, OuterRef, Count
-from .models import PrivateChatRoom, PrivateMessage, CustomUser
-from .serializers import ChatRoomSerializer, MessageSerializer, ChatPreviewSerializer
+from .models import PrivateChatRoom, PrivateMessage
+from .serializers import ChatRoomSerializer, ChatPreviewSerializer
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +75,7 @@ class ChatViewSet(viewsets.GenericViewSet,
         for chat in chats:
             if chat.last_message:  # Пропускаем чаты без сообщений
                 chat_preview = {
-                    'room': chat.id,
+                    'id': chat.id,
                     'other_user': chat.user2 if chat.user1 == user else chat.user1,
                     'last_message': chat.last_message,
                     'last_message_time': chat.last_message_time,
@@ -87,7 +86,7 @@ class ChatViewSet(viewsets.GenericViewSet,
         serializer = ChatPreviewSerializer(chat_previews, many=True)
         return Response(serializer.data)
 
-    # ... остальные методы остаются без изменений ...
+
 
 
 User = get_user_model()
