@@ -140,6 +140,10 @@ class PrivateMessage(models.Model):
         return self.media_type in ['image', 'video', 'document', 'other'] and bool(self.media_hash)
 
     @property
-    def recipient(self):
-        """Удобный shortcut – получаем собеседника сообщения."""
+    def other_participant(self):
+        """
+        Возвращает «противоположного» участника комнаты.
+        (Если пользователь‑отправитель не является текущим получателем,
+        то получателем считается второй пользователь комнаты.)
+        """
         return self.room.get_other_participant(self.sender)
