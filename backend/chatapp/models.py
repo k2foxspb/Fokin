@@ -95,6 +95,7 @@ class PrivateMessage(models.Model):
         ('text', 'Text'),
         ('image', 'Image'),
         ('video', 'Video'),
+        ('audio', 'Audio'),
         ('document', 'Document'),
         ('other', 'Other'),
     ]

@@ -530,7 +530,7 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
 
             # Ищем медиафайл по hash если это медиа-сообщение
             media_file = None
-            if media_type in ['image', 'video', 'document', 'other'] and media_hash:
+            if media_type in ['image', 'video', 'audio', 'document', 'other'] and media_hash:
                 try:
                     # ВАЖНО: для документов используем время загрузки (последний загруженный файл)
                     from datetime import timedelta

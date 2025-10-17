@@ -50,7 +50,7 @@ interface Message {
     timestamp: number | string;
     sender__username: string;
     sender_id?: number;
-    mediaType?: 'image' | 'video' | 'file';
+    mediaType?: 'image' | 'video' | 'audio' | 'file';
     mediaBase64?: string;
     mediaHash?: string;
     mediaFileName?: string;
@@ -176,7 +176,22 @@ export default function ChatScreen() {
     const [isFullscreenModalVisible, setIsFullscreenModalVisible] = useState(false);
     const [downloadingDocuments, setDownloadingDocuments] = useState<{[key: number]: boolean}>({});
     const [documentDownloadProgress, setDocumentDownloadProgress] = useState<{[key: number]: number}>({});
+
+    // Состояния для записи аудио
+    const [isRecordingAudio, setIsRecordingAudio] = useState(false);
+    const [audioRecording, setAudioRecording] = useState<Audio.Recording | null>(null);
+    const [recordingDuration, setRecordingDuration] = useState(0);
+    const [audioPermissionGranted, setAudioPermissionGranted] = useState(false);
+    const [playingAudioId, setPlayingAudioId] = useState<number | null>(null);
+    const [audioPlaybackStates, setAudioPlaybackStates] = useState<{[key: number]: {
+        isPlaying: boolean;
+        position: number;
+        duration: number;
+        sound: Audio.Sound | null;
+    }}>({});
+
     const flatListRef = useRef<FlatList>(null);
+    const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
     const videoRef = useRef<any>(null);
     const inlineVideoRefs = useRef<{[key: string]: any}>({});
     const prevPendingCount = useRef(0);
@@ -493,6 +508,53 @@ export default function ChatScreen() {
 
     // Ленивая загрузка заменяет необходимость в предзагрузке
 
+    // Запрос разрешения на использование микрофона
+    const requestAudioPermission = async (): Promise<boolean> => {
+        try {
+            console.log('🎤 [AUDIO-PERMISSION] Requesting audio recording permission...');
+
+            const { status: existingStatus } = await Audio.getPermissionsAsync();
+            console.log('🎤 [AUDIO-PERMISSION] Current status:', existingStatus);
+
+            if (existingStatus === 'granted') {
+                setAudioPermissionGranted(true);
+                return true;
+            }
+
+            const { status } = await Audio.requestPermissionsAsync();
+            console.log('🎤 [AUDIO-PERMISSION] Request result:', status);
+
+            if (status === 'granted') {
+                setAudioPermissionGranted(true);
+                return true;
+            }
+
+            Alert.alert(
+                'Разрешение требуется',
+                'Для записи голосовых сообщений необходим доступ к микрофону. Пожалуйста, включите его в настройках.',
+                [
+                    { text: 'Отмена', style: 'cancel' },
+                    {
+                        text: 'Открыть настройки',
+                        onPress: async () => {
+                            if (Platform.OS === 'ios') {
+                                await Linking.openURL('app-settings:');
+                            } else {
+                                await Linking.openSettings();
+                            }
+                        }
+                    }
+                ]
+            );
+
+            return false;
+        } catch (error: any) {
+            console.error('🎤 [AUDIO-PERMISSION] ❌ Error:', error);
+            Alert.alert('Ошибка', 'Не удалось запросить разрешение на микрофон: ' + (error.message || 'Неизвестная ошибка'));
+            return false;
+        }
+    };
+
     // Запрос разрешений для доступа к медиабиблиотеке
     const requestPermissions = async (): Promise<boolean> => {
         try {
@@ -801,6 +863,342 @@ export default function ChatScreen() {
         const uniqueHash = btoa(finalHash + randomSuffix + fileSize).replace(/[^a-zA-Z0-9]/g, '').substring(0, 32);
 
         return uniqueHash;
+    };
+
+    // Начало записи аудио
+    const startAudioRecording = async () => {
+        try {
+            console.log('🎤 [RECORD] Starting audio recording...');
+
+            // Проверяем разрешение
+            const hasPermission = await requestAudioPermission();
+            if (!hasPermission) {
+                console.log('🎤 [RECORD] ❌ No audio permission');
+                return;
+            }
+
+            // Настраиваем аудио режим для записи
+            await Audio.setAudioModeAsync({
+                allowsRecordingIOS: true,
+                playsInSilentModeIOS: true,
+                staysActiveInBackground: false,
+                shouldDuckAndroid: true,
+                playThroughEarpieceAndroid: false
+            });
+
+            console.log('🎤 [RECORD] Creating new recording...');
+            const { recording } = await Audio.Recording.createAsync(
+                Audio.RecordingOptionsPresets.HIGH_QUALITY
+            );
+
+            setAudioRecording(recording);
+            setIsRecordingAudio(true);
+            setRecordingDuration(0);
+
+            // Запускаем таймер
+            recordingTimerRef.current = setInterval(() => {
+                setRecordingDuration(prev => prev + 1);
+            }, 1000);
+
+            console.log('🎤 [RECORD] ✅ Recording started');
+
+        } catch (error: any) {
+            console.error('🎤 [RECORD] ❌ Failed to start recording:', error);
+            Alert.alert('Ошибка', 'Не удалось начать запись: ' + (error.message || 'Неизвестная ошибка'));
+        }
+    };
+
+    // Остановка и отправка аудио
+    const stopAndSendAudio = async () => {
+        try {
+            if (!audioRecording) {
+                console.log('🎤 [RECORD] No recording to stop');
+                return;
+            }
+
+            console.log('🎤 [RECORD] Stopping recording...');
+
+            // Останавливаем таймер
+            if (recordingTimerRef.current) {
+                clearInterval(recordingTimerRef.current);
+                recordingTimerRef.current = null;
+            }
+
+            await audioRecording.stopAndUnloadAsync();
+            const uri = audioRecording.getURI();
+
+            console.log('🎤 [RECORD] Recording stopped, URI:', uri);
+
+            if (uri) {
+                // Получаем информацию о файле
+                const fileInfo = await FileSystem.getInfoAsync(uri);
+                console.log('🎤 [RECORD] File info:', {
+                    size: fileInfo.exists ? fileInfo.size : 'unknown',
+                    duration: recordingDuration
+                });
+
+                // Отправляем аудио
+                await sendAudioMessage(uri, recordingDuration, fileInfo.exists ? fileInfo.size : undefined);
+            } else {
+                throw new Error('No recording URI available');
+            }
+
+            // Очищаем состояние
+            setAudioRecording(null);
+            setIsRecordingAudio(false);
+            setRecordingDuration(0);
+
+            // Восстанавливаем аудио режим
+            await Audio.setAudioModeAsync({
+                allowsRecordingIOS: false,
+                playsInSilentModeIOS: true,
+                staysActiveInBackground: false,
+                shouldDuckAndroid: true,
+                playThroughEarpieceAndroid: false
+            });
+
+        } catch (error: any) {
+            console.error('🎤 [RECORD] ❌ Error stopping recording:', error);
+            Alert.alert('Ошибка', 'Не удалось завершить запись');
+            cancelAudioRecording();
+        }
+    };
+
+    // Отмена записи аудио
+    const cancelAudioRecording = async () => {
+        try {
+            console.log('🎤 [RECORD] Canceling recording...');
+
+            if (recordingTimerRef.current) {
+                clearInterval(recordingTimerRef.current);
+                recordingTimerRef.current = null;
+            }
+
+            if (audioRecording) {
+                await audioRecording.stopAndUnloadAsync();
+            }
+
+            setAudioRecording(null);
+            setIsRecordingAudio(false);
+            setRecordingDuration(0);
+
+            // Восстанавливаем аудио режим
+            await Audio.setAudioModeAsync({
+                allowsRecordingIOS: false,
+                playsInSilentModeIOS: true,
+                staysActiveInBackground: false,
+                shouldDuckAndroid: true,
+                playThroughEarpieceAndroid: false
+            });
+
+            console.log('🎤 [RECORD] ✅ Recording cancelled');
+
+        } catch (error: any) {
+            console.error('🎤 [RECORD] ❌ Error canceling recording:', error);
+        }
+    };
+
+    // Отправка аудио сообщения
+    const sendAudioMessage = async (audioUri: string, duration: number, fileSize?: number) => {
+        if (!isConnected || !isDataLoaded || !recipient?.id || !currentUserId) {
+            Alert.alert('Ошибка', 'Не удается отправить аудио');
+            return;
+        }
+
+        try {
+            console.log('🎤 [SEND] Sending audio message...');
+
+            const timestamp = Math.floor(Date.now() / 1000);
+            const messageId = Date.now();
+
+            // Получаем информацию о файле
+            const fileInfo = await FileSystem.getInfoAsync(audioUri);
+            const actualFileSize = fileInfo.exists ? fileInfo.size : (fileSize || 0);
+            const fileSizeMB = actualFileSize / (1024 * 1024);
+
+            const mediaHash = `audio_${messageId}_${actualFileSize}_${timestamp}`;
+            const mediaFileName = `audio_${messageId}.m4a`;
+
+            console.log('🎤 [SEND] Audio details:', {
+                duration: `${duration}s`,
+                size: `${fileSizeMB.toFixed(2)}MB`,
+                hash: mediaHash
+            });
+
+            // Создаем оптимистичное сообщение
+            const optimisticMessage: Message = {
+                id: messageId,
+                message: `🎤 Голосовое сообщение (${duration}с)`,
+                timestamp: timestamp,
+                sender__username: currentUsername,
+                sender_id: currentUserId,
+                mediaType: 'audio',
+                mediaUri: audioUri,
+                mediaBase64: undefined,
+                mediaHash: mediaHash,
+                mediaFileName: mediaFileName,
+                mediaSize: actualFileSize,
+                mimeType: 'audio/m4a',
+                isUploading: true,
+                uploadProgress: 0
+            };
+
+            setMessages(prev => [optimisticMessage, ...prev]);
+
+            // Прокручиваем к новому сообщению
+            setTimeout(() => {
+                if (flatListRef.current) {
+                    flatListRef.current.scrollToIndex({ index: 0, animated: true });
+                }
+            }, 100);
+
+            // Загружаем аудио на сервер
+            const fileUrl = await uploadFileGeneric(
+                audioUri,
+                mediaFileName,
+                'audio/m4a',
+                messageId,
+                (progress) => {
+                    setMessages(prev =>
+                        prev.map(msg => {
+                            if (msg.id === messageId) {
+                                return {
+                                    ...msg,
+                                    uploadProgress: progress,
+                                    message: `🎤 Загрузка аудио... ${progress}%`
+                                };
+                            }
+                            return msg;
+                        })
+                    );
+                }
+            );
+
+            console.log('🎤 [SEND] ✅ Audio uploaded:', fileUrl);
+
+            // Обновляем сообщение после успешной загрузки
+            setMessages(prev =>
+                prev.map(msg => {
+                    if (msg.id === messageId) {
+                        return {
+                            ...msg,
+                            isUploading: false,
+                            uploadProgress: 100,
+                            message: `🎤 Голосовое сообщение (${duration}с)`,
+                            serverFileUrl: fileUrl
+                        };
+                    }
+                    return msg;
+                })
+            );
+
+            // Отправляем уведомление через WebSocket
+            const messageData = {
+                type: 'media_message',
+                message: `🎤 Голосовое сообщение (${duration}с)`,
+                mediaType: 'audio',
+                mediaHash: mediaHash,
+                fileUrl: fileUrl,
+                fileName: mediaFileName,
+                mimeType: 'audio/m4a',
+                timestamp: timestamp,
+                user1: currentUserId,
+                user2: recipient.id,
+                id: messageId
+            };
+
+            sendMessage(messageData);
+
+        } catch (error) {
+            console.error('🎤 [SEND] ❌ Error sending audio:', error);
+            Alert.alert('Ошибка', 'Не удалось отправить аудио сообщение');
+        }
+    };
+
+    // Воспроизведение аудио
+    const playAudio = async (message: Message) => {
+        try {
+            const messageId = Number(message.id);
+            console.log('🎤 [PLAY] Playing audio:', messageId);
+
+            // Если уже воспроизводится - останавливаем
+            if (playingAudioId === messageId) {
+                const currentState = audioPlaybackStates[messageId];
+                if (currentState?.sound) {
+                    await currentState.sound.pauseAsync();
+                    setPlayingAudioId(null);
+                    setAudioPlaybackStates(prev => ({
+                        ...prev,
+                        [messageId]: { ...currentState, isPlaying: false }
+                    }));
+                }
+                return;
+            }
+
+            // Останавливаем другое аудио если воспроизводится
+            if (playingAudioId !== null) {
+                const prevState = audioPlaybackStates[playingAudioId];
+                if (prevState?.sound) {
+                    await prevState.sound.stopAsync();
+                    await prevState.sound.unloadAsync();
+                }
+            }
+
+            // Получаем URI аудио
+            let audioUri = message.mediaUri || message.serverFileUrl;
+            if (!audioUri) {
+                console.log('🎤 [PLAY] No audio URI, loading from server...');
+                audioUri = await getMediaServerUrl(messageId);
+                if (!audioUri) {
+                    Alert.alert('Ошибка', 'Не удалось загрузить аудио');
+                    return;
+                }
+            }
+
+            console.log('🎤 [PLAY] Loading sound from:', audioUri.substring(0, 100));
+
+            // Создаем и загружаем звук
+            const { sound } = await Audio.Sound.createAsync(
+                { uri: audioUri },
+                { shouldPlay: true },
+                (status) => {
+                    if (status.isLoaded) {
+                        setAudioPlaybackStates(prev => ({
+                            ...prev,
+                            [messageId]: {
+                                ...prev[messageId],
+                                isPlaying: status.isPlaying,
+                                position: status.positionMillis,
+                                duration: status.durationMillis || 0
+                            }
+                        }));
+
+                        // Если закончилось воспроизведение
+                        if (status.didJustFinish) {
+                            setPlayingAudioId(null);
+                            sound.unloadAsync();
+                        }
+                    }
+                }
+            );
+
+            setPlayingAudioId(messageId);
+            setAudioPlaybackStates(prev => ({
+                ...prev,
+                [messageId]: {
+                    sound: sound,
+                    isPlaying: true,
+                    position: 0,
+                    duration: 0
+                }
+            }));
+
+            console.log('🎤 [PLAY] ✅ Audio playing');
+
+        } catch (error) {
+            console.error('🎤 [PLAY] ❌ Error playing audio:', error);
+            Alert.alert('Ошибка', 'Не удалось воспроизвести аудио');
+        }
     };
 
     // Выбор изображения
@@ -2117,10 +2515,8 @@ export default function ChatScreen() {
                 await Audio.setAudioModeAsync({
                     allowsRecordingIOS: false,
                     staysActiveInBackground: false,
-                    interruptionModeIOS: Audio.InterruptionModeIOS.MixWithOthers,
                     playsInSilentModeIOS: true,
                     shouldDuckAndroid: true,
-                    interruptionModeAndroid: Audio.InterruptionModeAndroid.DuckOthers,
                     playThroughEarpieceAndroid: false
                 });
                 setAudioSessionReady(true);
@@ -2148,10 +2544,8 @@ export default function ChatScreen() {
                     await Audio.setAudioModeAsync({
                         allowsRecordingIOS: false,
                         staysActiveInBackground: false,
-                        interruptionModeIOS: Audio.InterruptionModeIOS.MixWithOthers,
                         playsInSilentModeIOS: true,
                         shouldDuckAndroid: true,
-                        interruptionModeAndroid: Audio.InterruptionModeAndroid.DuckOthers,
                         playThroughEarpieceAndroid: false
                     });
                     setAudioSessionReady(true);
@@ -2991,10 +3385,8 @@ export default function ChatScreen() {
                     await Audio.setAudioModeAsync({
                         allowsRecordingIOS: false,
                         staysActiveInBackground: true,
-                        interruptionModeIOS: Audio.InterruptionModeIOS.DoNotMix,
                         playsInSilentModeIOS: true,
                         shouldDuckAndroid: true,
-                        interruptionModeAndroid: Audio.InterruptionModeAndroid.DoNotMix,
                         playThroughEarpieceAndroid: false
                     });
                     setAudioSessionReady(true);
@@ -3008,6 +3400,40 @@ export default function ChatScreen() {
     };
 
     // Функция принудительного воспроизведения с беззвучным режимом
+
+    // Функция для остановки всех других видео
+    const pauseAllOtherVideos = async (exceptMessageId: string | number) => {
+        console.log('🎥 [PAUSE-ALL] Pausing all videos except:', exceptMessageId);
+
+        // Получаем все ID видео которые сейчас воспроизводятся
+        const playingVideoIds = Object.keys(inlineVideoStates).filter(
+            id => inlineVideoStates[id]?.isPlaying && String(id) !== String(exceptMessageId)
+        );
+
+        console.log('🎥 [PAUSE-ALL] Found', playingVideoIds.length, 'playing videos to pause');
+
+        // Останавливаем каждое видео
+        for (const videoId of playingVideoIds) {
+            try {
+                const videoRef = inlineVideoRefs.current[videoId];
+                if (videoRef) {
+                    await videoRef.pauseAsync();
+                    console.log('🎥 [PAUSE-ALL] ✅ Paused video:', videoId);
+
+                    // Обновляем состояние
+                    setInlineVideoStates(prev => ({
+                        ...prev,
+                        [videoId]: {
+                            ...prev[videoId],
+                            isPlaying: false
+                        }
+                    }));
+                }
+            } catch (error) {
+                console.warn('🎥 [PAUSE-ALL] ⚠️ Failed to pause video:', videoId, error);
+            }
+        }
+    };
 
     // Функции управления встроенным видео
     const toggleInlineVideo = async (messageId: string | number, videoUri: string) => {
@@ -3084,6 +3510,9 @@ export default function ChatScreen() {
                 });
 
                 if (newPlayingState) {
+                    // При запуске видео сначала останавливаем все другие видео
+                    await pauseAllOtherVideos(messageId);
+
                     // При запуске видео сначала убеждаемся что оно отключено (для избежания ошибок аудио)
                     if (appState === 'active') {
                         await videoRef.setIsMutedAsync(true); // Начинаем без звука
@@ -4064,6 +4493,99 @@ export default function ChatScreen() {
 
                     </View>
                 );
+            } else if (item.mediaType === 'audio') {
+                // Аудио сообщение
+                const audioUri = item.serverFileUrl || item.mediaUri;
+                const audioState = audioPlaybackStates[item.id];
+                const isPlaying = playingAudioId === item.id && audioState?.isPlaying;
+
+                if (!audioUri) {
+                    // Аудио не загружено
+                    return (
+                        <LazyMedia
+                            onVisible={async () => {
+                                console.log('🎤 [LAZY-LOAD] Audio became visible, loading via API:', item.id);
+
+                                if (!item.isLoadingServerUrl && !item.serverFileUrl) {
+                                    updateMessageSafely(item.id, { isLoadingServerUrl: true });
+
+                                    const serverUrl = await getMediaServerUrl(item.id);
+                                    if (serverUrl) {
+                                        updateMessageSafely(item.id, {
+                                            serverFileUrl: serverUrl,
+                                            mediaUri: serverUrl,
+                                            isLoadingServerUrl: false
+                                        });
+                                        console.log('🎤 [LAZY-LOAD] ✅ Audio URL loaded');
+                                    } else {
+                                        updateMessageSafely(item.id, {
+                                            isLoadingServerUrl: false,
+                                            needsReload: true
+                                        });
+                                    }
+                                }
+                            }}
+                            style={styles.audioContainer}
+                        >
+                            {item.isLoadingServerUrl ? (
+                                <View style={styles.audioPlayerContainer}>
+                                    <ActivityIndicator size="small" color={theme.primary} />
+                                    <Text style={[styles.audioLoadingText, { color: theme.textSecondary }]}>
+                                        Загрузка аудио...
+                                    </Text>
+                                </View>
+                            ) : (
+                                <View style={styles.audioPlayerContainer}>
+                                    <MaterialIcons name="mic" size={24} color={theme.textSecondary} />
+                                    <Text style={[styles.audioLoadingText, { color: theme.textSecondary }]}>
+                                        Голосовое сообщение
+                                    </Text>
+                                </View>
+                            )}
+                        </LazyMedia>
+                    );
+                }
+
+                // Аудио-плеер
+                const duration = audioState?.duration || 0;
+                const position = audioState?.position || 0;
+                const progress = duration > 0 ? (position / duration) * 100 : 0;
+
+                return (
+                    <TouchableOpacity 
+                        style={styles.audioPlayerContainer}
+                        onPress={() => playAudio(item)}
+                        activeOpacity={0.7}
+                    >
+                        <View style={[styles.audioPlayButton, { backgroundColor: theme.primary }]}>
+                            <MaterialIcons 
+                                name={isPlaying ? "pause" : "play-arrow"} 
+                                size={24} 
+                                color="white" 
+                            />
+                        </View>
+
+                        <View style={styles.audioWaveform}>
+                            <View style={[styles.audioProgressBar, { backgroundColor: theme.border }]}>
+                                <View 
+                                    style={[
+                                        styles.audioProgressFill, 
+                                        { 
+                                            backgroundColor: theme.primary,
+                                            width: `${progress}%`
+                                        }
+                                    ]} 
+                                />
+                            </View>
+                            <Text style={[styles.audioDuration, { color: theme.textSecondary }]}>
+                                {duration > 0 
+                                    ? `${Math.floor(position / 1000)}:${String(Math.floor((position % 1000) / 10)).padStart(2, '0')} / ${Math.floor(duration / 1000)}:${String(Math.floor((duration % 1000) / 10)).padStart(2, '0')}`
+                                    : item.message.match(/\((\d+)с\)/)?.[1] ? `${item.message.match(/\((\d+)с\)/)?.[1]}с` : '0:00'
+                                }
+                            </Text>
+                        </View>
+                    </TouchableOpacity>
+                );
             } else if (item.mediaType === 'file') {
                 // ЛЕНИВАЯ ЗАГРУЗКА URL для документов (как для изображений и видео)
                 const fileUrl = item.serverFileUrl || item.mediaUri;
@@ -4326,85 +4848,137 @@ export default function ChatScreen() {
                 />
 
                 <View style={styles.inputContainer}>
-                    <View style={styles.mediaButtonsContainer}>
-                        <TouchableOpacity
-                            style={[styles.mediaButton, { backgroundColor: theme.surface }]}
-                            onPress={pickImage}
-                            disabled={!isConnected || !isDataLoaded || !recipient || !currentUserId}
-                        >
-                            <MaterialIcons
-                                name="photo"
-                                size={24}
-                                color={(isConnected && isDataLoaded && recipient && currentUserId) ? theme.primary : theme.placeholder}
-                            />
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            style={[styles.mediaButton, { backgroundColor: theme.surface }]}
-                            onPress={pickVideo}
-                            disabled={!isConnected || !isDataLoaded || !recipient || !currentUserId}
-                        >
-                            <MaterialIcons
-                                name="videocam"
-                                size={24}
-                                color={(isConnected && isDataLoaded && recipient && currentUserId) ? theme.primary : theme.placeholder}
-                            />
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            style={[styles.mediaButton, { backgroundColor: theme.surface }]}
-                            onPress={pickDocument}
-                            disabled={!isConnected || !isDataLoaded || !recipient || !currentUserId}
-                        >
-                            <MaterialIcons
-                                name="attach-file"
-                                size={24}
-                                color={(isConnected && isDataLoaded && recipient && currentUserId) ? theme.primary : theme.placeholder}
-                            />
-                        </TouchableOpacity>
-
-                        {/* Кнопка для ручного переподключения */}
-                        {(!isConnected || reconnectAttempts >= 3) && (
+                    {isRecordingAudio ? (
+                        /* Панель записи аудио */
+                        <View style={styles.recordingContainer}>
                             <TouchableOpacity
-                                style={[styles.mediaButton, { backgroundColor: '#ff9800' }]}
-                                onPress={() => {
-                                    setReconnectAttempts(0);
-                                    setLastReconnectTime(0);
-                                    reconnect();
-                                }}
+                                style={[styles.cancelRecordButton, { backgroundColor: theme.error || '#ff4444' }]}
+                                onPress={cancelAudioRecording}
                             >
-                                <MaterialIcons
-                                    name="wifi"
-                                    size={24}
-                                    color="white"
-                                />
+                                <MaterialIcons name="close" size={24} color="white" />
                             </TouchableOpacity>
-                        )}
-                    </View>
-                    <TextInput
-                        style={[styles.input, { backgroundColor: theme.surface, color: theme.text }]}
-                        value={messageText}
-                        onChangeText={setMessageText}
-                        placeholder="Введите сообщение..."
-                        placeholderTextColor={theme.placeholder}
-                        multiline
-                        maxLength={1000}
-                    />
-                    <Pressable
-                        style={[
-                            styles.sendButton,
-                            {
-                                backgroundColor: messageText.trim() && isConnected && isDataLoaded ? theme.primary : theme.placeholder,
-                                opacity: messageText.trim() && isConnected && isDataLoaded ? 1 : 0.5
-                            }
-                        ]}
-                        onPress={handleSend}
-                        disabled={!messageText.trim() || !isConnected || !isDataLoaded}
-                    >
-                        <MaterialIcons
-                            name="send"
-                            size={20}
-                            color={messageText.trim() && isConnected && isDataLoaded ? "#fff" : theme.textSecondary}
-                        />
-                    </Pressable>
+
+                            <View style={styles.recordingIndicator}>
+                                <View style={styles.recordingDot} />
+                                <Text style={[styles.recordingText, { color: theme.text }]}>
+                                    {Math.floor(recordingDuration / 60)}:{String(recordingDuration % 60).padStart(2, '0')}
+                                </Text>
+                            </View>
+
+                            <TouchableOpacity
+                                style={[styles.sendRecordButton, { backgroundColor: theme.primary }]}
+                                onPress={stopAndSendAudio}
+                            >
+                                <MaterialIcons name="send" size={24} color="white" />
+                            </TouchableOpacity>
+                        </View>
+                    ) : (
+                        /* Обычная панель ввода */
+                        <>
+                            <View style={styles.mediaButtonsContainer}>
+                                <TouchableOpacity
+                                    style={[styles.mediaButton, { backgroundColor: theme.surface }]}
+                                    onPress={pickImage}
+                                    disabled={!isConnected || !isDataLoaded || !recipient || !currentUserId}
+                                >
+                                    <MaterialIcons
+                                        name="photo"
+                                        size={24}
+                                        color={(isConnected && isDataLoaded && recipient && currentUserId) ? theme.primary : theme.placeholder}
+                                    />
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={[styles.mediaButton, { backgroundColor: theme.surface }]}
+                                    onPress={pickVideo}
+                                    disabled={!isConnected || !isDataLoaded || !recipient || !currentUserId}
+                                >
+                                    <MaterialIcons
+                                        name="videocam"
+                                        size={24}
+                                        color={(isConnected && isDataLoaded && recipient && currentUserId) ? theme.primary : theme.placeholder}
+                                    />
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={[styles.mediaButton, { backgroundColor: theme.surface }]}
+                                    onPress={pickDocument}
+                                    disabled={!isConnected || !isDataLoaded || !recipient || !currentUserId}
+                                >
+                                    <MaterialIcons
+                                        name="attach-file"
+                                        size={24}
+                                        color={(isConnected && isDataLoaded && recipient && currentUserId) ? theme.primary : theme.placeholder}
+                                    />
+                                </TouchableOpacity>
+
+                                {/* Кнопка для ручного переподключения */}
+                                {(!isConnected || reconnectAttempts >= 3) && (
+                                    <TouchableOpacity
+                                        style={[styles.mediaButton, { backgroundColor: '#ff9800' }]}
+                                        onPress={() => {
+                                            setReconnectAttempts(0);
+                                            setLastReconnectTime(0);
+                                            reconnect();
+                                        }}
+                                    >
+                                        <MaterialIcons
+                                            name="wifi"
+                                            size={24}
+                                            color="white"
+                                        />
+                                    </TouchableOpacity>
+                                )}
+                            </View>
+                            <TextInput
+                                style={[styles.input, { backgroundColor: theme.surface, color: theme.text }]}
+                                value={messageText}
+                                onChangeText={setMessageText}
+                                placeholder="Введите сообщение..."
+                                placeholderTextColor={theme.placeholder}
+                                multiline
+                                maxLength={1000}
+                            />
+
+                            {messageText.trim() ? (
+                                /* Кнопка отправки текста */
+                                <Pressable
+                                    style={[
+                                        styles.sendButton,
+                                        {
+                                            backgroundColor: isConnected && isDataLoaded ? theme.primary : theme.placeholder,
+                                            opacity: isConnected && isDataLoaded ? 1 : 0.5
+                                        }
+                                    ]}
+                                    onPress={handleSend}
+                                    disabled={!isConnected || !isDataLoaded}
+                                >
+                                    <MaterialIcons
+                                        name="send"
+                                        size={20}
+                                        color={isConnected && isDataLoaded ? "#fff" : theme.textSecondary}
+                                    />
+                                </Pressable>
+                            ) : (
+                                /* Кнопка записи аудио */
+                                <Pressable
+                                    style={[
+                                        styles.audioRecordButton,
+                                        {
+                                            backgroundColor: isConnected && isDataLoaded ? theme.primary : theme.placeholder,
+                                            opacity: isConnected && isDataLoaded ? 1 : 0.5
+                                        }
+                                    ]}
+                                    onPress={startAudioRecording}
+                                    disabled={!isConnected || !isDataLoaded}
+                                >
+                                    <MaterialIcons
+                                        name="mic"
+                                        size={24}
+                                        color="white"
+                                    />
+                                </Pressable>
+                            )}
+                        </>
+                    )}
                 </View>
 
                 {/* Просмотрщик изображений с поддержкой масштабирования */}
@@ -4438,7 +5012,7 @@ export default function ChatScreen() {
                                         }
                                     }}
                                 >
-                                    <MaterialIcons name="download" size={24} color="rgba(255, 255, 255, 0.9)" />
+                                    <MaterialIcons name="ios-share" size={32} color="white" />
                                 </TouchableOpacity>
                             )}
 
@@ -4709,7 +5283,7 @@ export default function ChatScreen() {
                                         }
                                     }}
                                 >
-                                    <MaterialIcons name="download" size={24} color="white" />
+                                    <MaterialIcons name="ios-share" size={32} color="white" />
                                 </TouchableOpacity>
 
 
@@ -4860,7 +5434,7 @@ export default function ChatScreen() {
                                 }
                             }}
                         >
-                            <MaterialIcons name="download" size={24} color="white" />
+                            <MaterialIcons name="ios-share" size={32} color="white" />
                         </TouchableOpacity>
 
 
@@ -5237,11 +5811,11 @@ const createStyles = (theme: any) => {
     videoDownloadButtonFullscreen: {
         position: 'absolute',
         top: 50,
-        left: 80,
+        left: 20,
         zIndex: 1000,
-        backgroundColor: 'rgba(0, 123, 255, 0.9)',
+        backgroundColor: 'rgba(0, 0, 0, 0.7)',
         borderRadius: 25,
-        padding: 10,
+        padding: 8,
         elevation: 10,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
@@ -5349,17 +5923,17 @@ const createStyles = (theme: any) => {
     },
     imageFullscreenDownloadButton: {
         position: 'absolute',
-        bottom: 80,
-        right: 20,
-        backgroundColor: 'rgba(0, 123, 255, 0.8)',
-        borderRadius: 25,
-        padding: 12,
+        top: 60,
+        left: 20,
         zIndex: 10,
+        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        borderRadius: 25,
+        padding: 8,
         elevation: 5,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.3,
-        shadowRadius: 4,
+        shadowOpacity: 0.25,
+        shadowRadius: 3.84,
     },
     fileContainer: {
         flexDirection: 'row',
@@ -5773,6 +6347,96 @@ const createStyles = (theme: any) => {
     },
     videoLoadingSize: {
         fontSize: 12,
+    },
+    // Стили для аудио записи
+    recordingContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        width: '100%',
+        paddingVertical: 8,
+    },
+    cancelRecordButton: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    sendRecordButton: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    recordingIndicator: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginHorizontal: 16,
+    },
+    recordingDot: {
+        width: 12,
+        height: 12,
+        borderRadius: 6,
+        backgroundColor: '#ff4444',
+        marginRight: 8,
+    },
+    recordingText: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        fontFamily: 'monospace',
+    },
+    audioRecordButton: {
+        justifyContent: 'center',
+        alignItems: 'center',
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+    },
+    // Стили для аудио плеера
+    audioContainer: {
+        marginBottom: 8,
+        borderRadius: 12,
+        overflow: 'hidden',
+    },
+    audioPlayerContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 8,
+        borderRadius: 12,
+        backgroundColor: 'rgba(0, 0, 0, 0.05)',
+        minWidth: 200,
+    },
+    audioPlayButton: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 8,
+    },
+    audioWaveform: {
+        flex: 1,
+    },
+    audioProgressBar: {
+        height: 4,
+        borderRadius: 2,
+        overflow: 'hidden',
+        marginBottom: 4,
+    },
+    audioProgressFill: {
+        height: '100%',
+        borderRadius: 2,
+    },
+    audioDuration: {
+        fontSize: 12,
+    },
+    audioLoadingText: {
+        fontSize: 14,
+        marginLeft: 8,
     },
     });
 };
