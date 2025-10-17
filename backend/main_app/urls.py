@@ -3,7 +3,7 @@ from django.urls import path
 from main_app.views import (
     ArticleDetailView,
     CategoryListView,
-    CategoryDetailView,
+    CategoryDetailView, DownloadAppView, App,
 
 )
 from main_app.view_api import (
@@ -21,7 +21,8 @@ app_name = MainAppConfig.name
 urlpatterns = [
     # Template views
     path('category/<slug:slug>/', CategoryDetailView.as_view(), name='category_detail'),
-    path('', CategoryListView.as_view(), name='main_category'),
+    path('', App.as_view(), name='main_category'),
+    path('mobile_app', DownloadAppView.as_view(), name='mobile_app'),
     path(
         "article/<slug:slug>/",
         ArticleDetailView.as_view(),

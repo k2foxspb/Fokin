@@ -7,7 +7,7 @@ from rest_framework import viewsets, status, mixins
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from django.db.models import Q, F, IntegerField, Case, When, Subquery, OuterRef, Count
+from django.db.models import Q, F, IntegerField, Case, When, Subquery, OuterRef, Count, CharField, Value
 from .models import PrivateChatRoom, PrivateMessage
 from .serializers import ChatRoomSerializer, ChatPreviewSerializer
 
@@ -31,11 +31,20 @@ class ChatViewSet(viewsets.GenericViewSet,
     def list_preview(self, request):
         user = self.request.user
 
-        # Подзапрос для последнего сообщения
+        # Подзапрос для последнего сообщения с учетом типа медиа
         last_message_subquery = Subquery(
             PrivateMessage.objects.filter(
                 room=OuterRef('pk')
-            ).order_by('-timestamp')[:1].values('message')
+            ).order_by('-timestamp')[:1].annotate(
+                formatted_message=Case(
+                    When(media_type='image', then=Value('📷 Изображение')),
+                    When(media_type='video', then=Value('🎥 Видео')),
+                    When(media_type='document', then=Value('📄 Документ')),
+                    When(media_type='other', then=Value('📎 Файл')),
+                    default=F('message'),
+                    output_field=CharField(),
+                )
+            ).values('formatted_message')
         )
 
         # Подзапрос для времени последнего сообщения
@@ -73,11 +82,13 @@ class ChatViewSet(viewsets.GenericViewSet,
         # Подготавливаем данные для сериализации
         chat_previews = []
         for chat in chats:
-            if chat.last_message:  # Пропускаем чаты без сообщений
+            # Теперь включаем чаты даже если last_message пустое или None
+            # Это может произойти для совсем новых чатов
+            if chat.last_message_time:  # Проверяем наличие хотя бы времени
                 chat_preview = {
                     'id': chat.id,
                     'other_user': chat.user2 if chat.user1 == user else chat.user1,
-                    'last_message': chat.last_message,
+                    'last_message': chat.last_message or '📎 Медиафайл',  # Fallback для пустых сообщений
                     'last_message_time': chat.last_message_time,
                     'unread_count': chat.unread_count
                 }

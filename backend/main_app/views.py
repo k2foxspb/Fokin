@@ -1,3 +1,8 @@
+import os
+from django.conf import settings
+from django.http import FileResponse, Http404
+from django.views import View
+
 from django.contrib.auth.mixins import PermissionRequiredMixin
 
 from django.urls import reverse_lazy
@@ -33,3 +38,18 @@ class CategoryDetailView(DetailView):
 class ArticleDetailView(DetailView):
     model = models.Article
     template_name = "main/articles/articles_detail.html"
+
+class App(TemplateView):
+    template_name = "main/articles/download_app.html"
+
+class DownloadAppView(View):
+    """
+    Возвращает файл мобильного приложения для скачивания.
+    Ожидается, что файл `mobile_app.apk` находится в директории
+    <project_root>/static/ (или в любой другой директории, указанной в settings.BASE_DIR).
+    """
+    def get(self, request, *args, **kwargs):
+        file_path = os.path.join(settings.BASE_DIR, 'static', 'mobile_app.apk')
+        if not os.path.exists(file_path):
+            raise Http404("Файл мобильного приложения не найден.")
+        return FileResponse(open(file_path, 'rb'), as_attachment=True, filename='mobile_app.apk')

@@ -152,6 +152,8 @@ export default function ChatScreen() {
     const [zoomLevel, setZoomLevel] = useState(0); // 0 - обычный, 1 - 1.5x, 2 - 2.5x
     const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
     const [isVideoViewerVisible, setIsVideoViewerVisible] = useState(false);
+    // Id сообщения, откуда открывается видео (нужен для скачивания)
+    const [selectedMessageId, setSelectedMessageId] = useState<number | null>(null);
     const [isVideoPlaying, setIsVideoPlaying] = useState(false);
     const [isVideoMuted, setIsVideoMuted] = useState(false); // Изменено: по умолчанию звук включен
     const [videoError, setVideoError] = useState<string | null>(null);
@@ -2219,28 +2221,6 @@ export default function ChatScreen() {
         };
     }, [roomId]);
 
-    // Тест-функция для проверки связи с сервером
-    const testServerConnection = () => {
-        console.log('🧪 [CHAT-TEST] Testing server connection...');
-
-        // Отправляем простой пинг
-        const pingMessage = {
-            type: 'ping',
-            timestamp: Date.now()
-        };
-
-        try {
-            sendMessage(pingMessage);
-            console.log('🧪 [CHAT-TEST] Ping sent, waiting for pong...');
-
-            setTimeout(() => {
-                console.log('🧪 [CHAT-TEST] 3 seconds passed - did server respond?');
-            }, 3000);
-        } catch (error) {
-            // Ошибка отправки ping сообщения
-        }
-    };
-
     // Отправка сообщения
     const handleSend = () => {
         console.log('💬 [CHAT] ========== SENDING MESSAGE ==========');
@@ -2451,6 +2431,128 @@ export default function ChatScreen() {
         console.log('🖼️ [IMAGE-VIEWER] Closing image viewer');
     };
 
+    // Функция для получения пути к кешированному видео
+    const getCachedVideoPath = (messageId: number): string => {
+        return `${FileSystem.documentDirectory}cached_video_${messageId}.mp4`;
+    };
+
+    // Функция для проверки существования видео в кеше
+    const checkVideoCacheExists = async (messageId: number): Promise<boolean> => {
+        try {
+            const cachedPath = getCachedVideoPath(messageId);
+            const fileInfo = await FileSystem.getInfoAsync(cachedPath);
+
+            if (fileInfo.exists) {
+                console.log('📹 [VIDEO-CACHE] ✅ Cache file exists:', {
+                    messageId,
+                    size: fileInfo.size,
+                    path: cachedPath.substring(cachedPath.lastIndexOf('/') + 1)
+                });
+                return true;
+            } else {
+                console.log('📹 [VIDEO-CACHE] ⚠️ Cache file does not exist:', messageId);
+                return false;
+            }
+        } catch (error) {
+            console.error('📹 [VIDEO-CACHE] ❌ Error checking cache:', error);
+            return false;
+        }
+    };
+
+    // Функция для кеширования видео на устройстве
+    const cacheVideoToDevice = async (videoUri: string, messageId: number): Promise<string | null> => {
+        try {
+            console.log('📹 [VIDEO-CACHE] Starting video caching:', {
+                messageId,
+                sourceUri: videoUri.substring(0, 100)
+            });
+
+            const cachedPath = getCachedVideoPath(messageId);
+
+            // Проверяем, не закеширован ли уже файл
+            const exists = await checkVideoCacheExists(messageId);
+            if (exists) {
+                console.log('📹 [VIDEO-CACHE] ✅ Video already cached');
+                return cachedPath;
+            }
+
+            // Загружаем видео с сервера и сохраняем локально
+            if (videoUri.startsWith('http')) {
+                console.log('📹 [VIDEO-CACHE] Downloading video from server...');
+
+                const downloadResult = await FileSystem.downloadAsync(
+                    videoUri,
+                    cachedPath,
+                    {
+                        sessionType: FileSystem.FileSystemSessionType.BACKGROUND,
+                    }
+                );
+
+                if (downloadResult.status === 200) {
+                    console.log('📹 [VIDEO-CACHE] ✅ Video cached successfully:', cachedPath);
+                    return cachedPath;
+                } else {
+                    throw new Error(`Download failed with status ${downloadResult.status}`);
+                }
+            } else if (videoUri.startsWith('file://')) {
+                // Копируем локальный файл в кеш
+                console.log('📹 [VIDEO-CACHE] Copying local video to cache...');
+                await FileSystem.copyAsync({
+                    from: videoUri,
+                    to: cachedPath
+                });
+                console.log('📹 [VIDEO-CACHE] ✅ Video copied to cache');
+                return cachedPath;
+            } else {
+                console.warn('📹 [VIDEO-CACHE] ⚠️ Unsupported video URI format');
+                return null;
+            }
+        } catch (error) {
+            console.error('📹 [VIDEO-CACHE] ❌ Error caching video:', error);
+            return null;
+        }
+    };
+
+    // Функция для получения видео URI с проверкой кеша
+    const getVideoUriWithCache = async (message: Message): Promise<string | null> => {
+        try {
+            const messageId = Number(message.id);
+
+            // Сначала проверяем кеш
+            const cacheExists = await checkVideoCacheExists(messageId);
+            if (cacheExists) {
+                const cachedPath = getCachedVideoPath(messageId);
+                console.log('📹 [VIDEO-CACHE] ✅ Using cached video:', messageId);
+
+                // ВАЖНО: Обновляем сообщение чтобы не показывалась ошибка
+                updateMessageSafely(messageId, {
+                    mediaUri: cachedPath,
+                    videoLoadRequested: true,
+                    videoIsLoading: false,
+                    needsReload: false
+                });
+
+                return cachedPath;
+            }
+
+            // Если в кеше нет, получаем URI с сервера
+            console.log('📹 [VIDEO-CACHE] Video not in cache, fetching from server:', messageId);
+            const serverUrl = message.serverFileUrl || await getMediaServerUrl(messageId);
+
+            if (!serverUrl) {
+                console.error('📹 [VIDEO-CACHE] ❌ No server URL available');
+                return null;
+            }
+
+            // Кешируем видео при первом воспроизведении
+            const cachedPath = await cacheVideoToDevice(serverUrl, messageId);
+            return cachedPath || serverUrl; // Возвращаем кешированный путь или серверный URL
+        } catch (error) {
+            console.error('📹 [VIDEO-CACHE] ❌ Error getting video URI:', error);
+            return null;
+        }
+    };
+
     // Загрузка и открытие документа
     const downloadAndOpenDocument = async (message: Message) => {
         console.log('📄 [DOC-DOWNLOAD] ========== OPENING DOCUMENT ==========');
@@ -2574,6 +2676,37 @@ export default function ChatScreen() {
         } finally {
             setDownloadingDocuments(prev => ({ ...prev, [messageId]: false }));
             setDocumentDownloadProgress(prev => ({ ...prev, [messageId]: 0 }));
+        }
+    };
+
+    // Функция для запроса загрузки видео с автоматическим кешированием
+    const requestVideoLoad = async (message: Message) => {
+        console.log('🎥 [REQUEST-LOAD] Requesting video load with caching:', message.id);
+
+        updateMessageSafely(message.id, {
+            videoLoadRequested: true,
+            videoIsLoading: true
+        });
+
+        try {
+            // Используем функцию с автоматическим кешированием
+            const cachedUri = await getVideoUriWithCache(message);
+
+            if (cachedUri) {
+                updateMessageSafely(message.id, {
+                    mediaUri: cachedUri,
+                    videoIsLoading: false
+                });
+                console.log('🎥 [REQUEST-LOAD] ✅ Video loaded and cached');
+            } else {
+                throw new Error('Failed to load video');
+            }
+        } catch (error) {
+            console.error('🎥 [REQUEST-LOAD] ❌ Error loading video:', error);
+            updateMessageSafely(message.id, {
+                videoIsLoading: false,
+                needsReload: true
+            });
         }
     };
 
@@ -2838,7 +2971,7 @@ export default function ChatScreen() {
     };
 
     // Открытие полноэкранного видеоплеера
-    const openVideoViewer = async (videoUri: string) => {
+    const openVideoViewer = async (videoUri: string, messageId?: number) => {
         // Очищаем предыдущее состояние
         setVideoError(null);
         setIsVideoPlaying(false);
@@ -2848,6 +2981,8 @@ export default function ChatScreen() {
 
         setSelectedVideo(videoUri);
         setIsVideoViewerVisible(true);
+        // Store the message ID for download functionality
+        setSelectedMessageId(messageId ?? null);
 
         // Настраиваем аудио сессию после отображения модального окна
         setTimeout(async () => {
@@ -2881,29 +3016,60 @@ export default function ChatScreen() {
         };
         const newPlayingState = !currentState.isPlaying;
 
-        // Проверяем доступность видео если это не HTTP URL
-        if (!videoUri.startsWith('http')) {
-            try {
-                const fileInfo = await FileSystem.getInfoAsync(videoUri);
-                if (!fileInfo.exists) {
-                    console.log('🎥 [INLINE] Video file not in cache, reloading from server');
+        // Проверяем кеш и доступность видео
+        const message = messages.find(msg => String(msg.id) === String(messageId));
+        if (message) {
+            // ВСЕГДА проверяем кеш перед воспроизведением
+            const cacheExists = await checkVideoCacheExists(Number(messageId));
 
-                    // Находим сообщение и загружаем с сервера
-                    const message = messages.find(msg => String(msg.id) === String(messageId));
-                    if (message && message.serverFileUrl) {
-                        // Обновляем URI на серверный
-                        updateMessageSafely(message.id, {
-                            mediaUri: message.serverFileUrl
-                        });
-                        return;
-                    } else if (message) {
-                        // Запрашиваем URL с сервера
-                        await requestVideoLoad(message);
-                        return;
-                    }
+            if (cacheExists) {
+                // Используем кешированную версию
+                const cachedPath = getCachedVideoPath(Number(messageId));
+                console.log('🎥 [INLINE] ✅ Using cached video:', cachedPath);
+
+                if (videoUri !== cachedPath) {
+                    // Обновляем URI если он отличается
+                    updateMessageSafely(message.id, {
+                        mediaUri: cachedPath
+                    });
+                    videoUri = cachedPath;
                 }
-            } catch (checkError) {
-                console.log('🎥 [INLINE] Error checking video file, will try server URL:', checkError);
+            } else if (!videoUri.startsWith('http')) {
+                console.log('🎥 [INLINE] Video not in cache and not HTTP, fetching and caching...');
+
+                // Получаем URI с кешированием
+                const cachedUri = await getVideoUriWithCache(message);
+                if (cachedUri) {
+                    // Обновляем URI на кешированный
+                    updateMessageSafely(message.id, {
+                        mediaUri: cachedUri
+                    });
+                    videoUri = cachedUri;
+                } else if (message.serverFileUrl) {
+                    // Fallback на серверный URL
+                    updateMessageSafely(message.id, {
+                        mediaUri: message.serverFileUrl
+                    });
+                    return;
+                } else {
+                    // Запрашиваем URL с сервера
+                    await requestVideoLoad(message);
+                    return;
+                }
+            } else if (videoUri.startsWith('http')) {
+                console.log('🎥 [INLINE] Caching video from server during playback...');
+                // Кешируем в фоновом режиме при воспроизведении
+                cacheVideoToDevice(videoUri, Number(messageId)).then(cachedPath => {
+                    if (cachedPath) {
+                        console.log('🎥 [INLINE] ✅ Video cached in background');
+                        // Обновляем URI на следующее воспроизведение
+                        updateMessageSafely(message.id, {
+                            mediaUri: cachedPath
+                        });
+                    }
+                }).catch(err => {
+                    console.warn('🎥 [INLINE] Background caching failed:', err);
+                });
             }
         }
 
@@ -3025,15 +3191,44 @@ export default function ChatScreen() {
 
     // Улучшенная функция переключения полноэкранного режима
     // ВАЖНО: Полноэкранный режим использует тот же videoUri что и инлайн плеер
-    // Приоритет загрузки: 1) Галерея (file://) 2) Сервер (http://) 3) Base64 (data:)
+    // Приоритет загрузки: 1) Кеш (file://cached) 2) Галерея (file://) 3) Сервер (http://) 4) Base64 (data:)
     const toggleVideoFullscreen = async (messageId: string | number, videoUri: string) => {
         const currentState = inlineVideoStates[messageId] || {
             isPlaying: false, isMuted: false, isExpanded: false, duration: 0, position: 0, isLoaded: false, isFullscreen: false
         };
 
-        const videoSource = videoUri?.startsWith('file://') ? 'local-gallery' :
-                          videoUri?.startsWith('http') ? 'server-url' :
-                          videoUri?.startsWith('data:') ? 'base64-data' : 'unknown';
+        // ПРОВЕРЯЕМ КЕШ ПЕРЕД ОТКРЫТИЕМ ПОЛНОЭКРАННОГО РЕЖИМА
+        const message = messages.find(msg => String(msg.id) === String(messageId));
+        let finalVideoUri = videoUri;
+
+        if (message) {
+            const cacheExists = await checkVideoCacheExists(Number(messageId));
+            if (cacheExists) {
+                const cachedPath = getCachedVideoPath(Number(messageId));
+                console.log('🎥 [FULLSCREEN] ✅ Using cached video for fullscreen:', cachedPath);
+                finalVideoUri = cachedPath;
+                // Обновляем mediaUri в сообщении
+                updateMessageSafely(message.id, {
+                    mediaUri: cachedPath
+                });
+            } else if (videoUri.startsWith('http')) {
+                console.log('🎥 [FULLSCREEN] Video not cached, will cache during playback');
+                // Кешируем в фоновом режиме
+                cacheVideoToDevice(videoUri, Number(messageId)).then(cachedPath => {
+                    if (cachedPath) {
+                        console.log('🎥 [FULLSCREEN] ✅ Video cached during fullscreen playback');
+                        updateMessageSafely(message.id, {
+                            mediaUri: cachedPath
+                        });
+                    }
+                });
+            }
+        }
+
+        const videoSource = finalVideoUri?.startsWith('file://') ? 
+                          (finalVideoUri.includes('cached_video_') ? 'cached' : 'local-gallery') :
+                          finalVideoUri?.startsWith('http') ? 'server-url' :
+                          finalVideoUri?.startsWith('data:') ? 'base64-data' : 'unknown';
 
         if (!currentState.isFullscreen) {
             // ОСТАНАВЛИВАЕМ поток видео в миниатюре перед открытием полноэкранного режима
@@ -3048,8 +3243,10 @@ export default function ChatScreen() {
             }
 
             // Включаем полноэкранный режим через модальное окно
-            // Используем тот же URI что и для инлайн плеера (приоритет: галерея -> сервер -> base64)
-            setFullscreenModalVideoUri(videoUri);
+            // Используем кешированный URI (приоритет: кеш -> галерея -> сервер -> base64)
+            setFullscreenModalVideoUri(finalVideoUri);
+            setSelectedVideo(finalVideoUri); // Сохраняем для кнопок управления
+            setSelectedMessageId(Number(messageId)); // Сохраняем ID сообщения
             setIsFullscreenModalVisible(true);
             setInlineVideoStates(prev => ({
                 ...prev,
@@ -3319,46 +3516,36 @@ export default function ChatScreen() {
 
                     return (
                         <LazyMedia style={styles.mediaContainer}>
-                            <View style={styles.imageContainerWithButton}>
-                                <TouchableOpacity
-                                    onPress={() => openImageViewer(imageUri)}
-                                    style={styles.mediaContainer}
-                                >
-                                    <DirectImage
-                                        uri={imageUri}
-                                        style={styles.messageImage}
-                                        resizeMode="cover"
-                                        onError={async () => {
-                                            console.error('🎨 [IMAGE-ERROR] Image load failed, reloading via API:', item.id);
+                            <TouchableOpacity
+                                onPress={() => openImageViewer(imageUri)}
+                                style={styles.mediaContainer}
+                            >
+                                <DirectImage
+                                    uri={imageUri}
+                                    style={styles.messageImage}
+                                    resizeMode="cover"
+                                    onError={async () => {
+                                        console.error('🎨 [IMAGE-ERROR] Image load failed, reloading via API:', item.id);
 
-                                            // УНИФИЦИРОВАННАЯ ОБРАБОТКА ОШИБОК: как для видео
-                                            updateMessageSafely(item.id, { isLoadingServerUrl: true });
+                                        // УНИФИЦИРОВАННАЯ ОБРАБОТКА ОШИБОК: как для видео
+                                        updateMessageSafely(item.id, { isLoadingServerUrl: true });
 
-                                            const serverUrl = await getMediaServerUrl(item.id);
-                                            if (serverUrl) {
-                                                updateMessageSafely(item.id, {
-                                                    serverFileUrl: serverUrl,
-                                                    isLoadingServerUrl: false
-                                                });
-                                                console.log('🎨 [AUTO-RELOAD] ✅ Image reloaded via API');
-                                            } else {
-                                                updateMessageSafely(item.id, {
-                                                    isLoadingServerUrl: false,
-                                                    needsReload: true
-                                                });
-                                            }
-                                        }}
-                                    />
-                                </TouchableOpacity>
-
-                                {/* Кнопка скачивания изображения */}
-                                <TouchableOpacity
-                                    style={styles.imageDownloadButton}
-                                    onPress={() => downloadImage(imageUri, Number(item.id))}
-                                >
-                                    <MaterialIcons name="download" size={20} color="white" />
-                                </TouchableOpacity>
-                            </View>
+                                        const serverUrl = await getMediaServerUrl(item.id);
+                                        if (serverUrl) {
+                                            updateMessageSafely(item.id, {
+                                                serverFileUrl: serverUrl,
+                                                isLoadingServerUrl: false
+                                            });
+                                            console.log('🎨 [AUTO-RELOAD] ✅ Image reloaded via API');
+                                        } else {
+                                            updateMessageSafely(item.id, {
+                                                isLoadingServerUrl: false,
+                                                needsReload: true
+                                            });
+                                        }
+                                    }}
+                                />
+                            </TouchableOpacity>
                         </LazyMedia>
                 );
             } else if (item.mediaType === 'video') {
@@ -3373,10 +3560,25 @@ export default function ChatScreen() {
                         <LazyMedia
                             onVisible={async () => {
                                 // Предзагружаем URL видео когда превью становится видимым
-                                console.log('🎥 [LAZY-PREFETCH] Video preview visible, prefetching URL:', item.id);
+                                console.log('🎥 [LAZY-PREFETCH] Video preview visible, checking cache first:', item.id);
+
+                                // СНАЧАЛА ПРОВЕРЯЕМ КЕШ
+                                const cacheExists = await checkVideoCacheExists(item.id);
+                                if (cacheExists) {
+                                    const cachedPath = getCachedVideoPath(item.id);
+                                    console.log('🎥 [LAZY-PREFETCH] ✅ Found in cache, using cached version');
+                                    updateMessageSafely(item.id, {
+                                        mediaUri: cachedPath,
+                                        serverFileUrl: item.serverFileUrl || null,
+                                        videoLoadRequested: true,
+                                        videoIsLoading: false,
+                                        needsReload: false
+                                    });
+                                    return;
+                                }
 
                                 if (!item.videoIsLoading && !item.serverFileUrl) {
-                                    // Загружаем только URL, не сам файл
+                                    // Загружаем только URL, не сам файл (кеширование при воспроизведении)
                                     try {
                                         const serverUrl = await getMediaServerUrl(item.id);
                                         if (serverUrl) {
@@ -3394,8 +3596,23 @@ export default function ChatScreen() {
                             <TouchableOpacity
                                 style={styles.videoPreviewContainer}
                                 onPress={async () => {
-                                    console.log('🎥 [LAZY-LOAD] User pressed play - starting video load:', item.id);
-                                    await requestVideoLoad(item);
+                                    console.log('🎥 [LAZY-LOAD] User pressed play - checking cache first:', item.id);
+
+                                    // ПРОВЕРЯЕМ КЕШ ПЕРЕД ЗАГРУЗКОЙ
+                                    const cacheExists = await checkVideoCacheExists(item.id);
+                                    if (cacheExists) {
+                                        const cachedPath = getCachedVideoPath(item.id);
+                                        console.log('🎥 [LAZY-LOAD] ✅ Found in cache, using immediately');
+                                        updateMessageSafely(item.id, {
+                                            mediaUri: cachedPath,
+                                            videoLoadRequested: true,
+                                            videoIsLoading: false,
+                                            needsReload: false
+                                        });
+                                    } else {
+                                        console.log('🎥 [LAZY-LOAD] Not in cache, loading and caching...');
+                                        await requestVideoLoad(item);
+                                    }
                                 }}
                             >
                                 <View style={styles.videoPreviewContent}>
@@ -3434,13 +3651,28 @@ export default function ChatScreen() {
                 }
 
                 // Если не удалось загрузить - показываем ошибку
-                if (isVideoRequested && !hasVideoUri && !isVideoLoading) {
+                // ВАЖНО: НЕ показываем ошибку если есть mediaUri (может быть кеш)
+                if (isVideoRequested && !hasVideoUri && !isVideoLoading && !item.mediaUri) {
                     return (
                         <TouchableOpacity
                             style={styles.missingMediaContainer}
                             onPress={async () => {
                                 console.log('🎥 [RETRY] Retrying video load:', item.id);
-                                await requestVideoLoad(item);
+
+                                // Проверяем кеш перед повторной загрузкой
+                                const cacheExists = await checkVideoCacheExists(item.id);
+                                if (cacheExists) {
+                                    const cachedPath = getCachedVideoPath(item.id);
+                                    console.log('🎥 [RETRY] ✅ Found in cache on retry');
+                                    updateMessageSafely(item.id, {
+                                        mediaUri: cachedPath,
+                                        videoLoadRequested: true,
+                                        videoIsLoading: false,
+                                        needsReload: false
+                                    });
+                                } else {
+                                    await requestVideoLoad(item);
+                                }
                             }}
                         >
                             <MaterialIcons name="videocam-off" size={48} color={theme.textSecondary} />
@@ -3455,8 +3687,11 @@ export default function ChatScreen() {
                 }
 
                 // Видео загружено - показываем плеер
-                // Приоритет: serverFileUrl (всегда доступен) -> локальный mediaUri -> base64
-                const videoUri = item.serverFileUrl || hasVideoUri;
+                // ВАЖНО: Приоритет кешированного видео!
+                // 1. Проверяем mediaUri (может быть кешированный путь file://)
+                // 2. Затем serverFileUrl (HTTP)
+                // 3. В конце base64
+                const videoUri = item.mediaUri || item.serverFileUrl || hasVideoUri;
                 if (!videoUri) {
                     return null;
                 }
@@ -3525,15 +3760,44 @@ export default function ChatScreen() {
                                                     error?.error?.includes('unable to read file') ||
                                                     (!videoUri?.startsWith('http') && error?.error);
 
-                                if (isCacheError && item.serverFileUrl) {
-                                    // Кэш очищен - автоматически загружаем с сервера
-                                    console.log('🎥 [AUTO-RELOAD] Cache cleared, reloading from server:', item.id);
+                                if (isCacheError) {
+                                    // Кэш очищен - повторно загружаем и кешируем с сервера
+                                    console.log('🎥 [AUTO-RELOAD] Cache cleared, fetching and caching from server:', item.id);
 
                                     updateMessageSafely(item.id, {
-                                        mediaUri: item.serverFileUrl,
-                                        videoLoadRequested: true,
-                                        videoIsLoading: false
+                                        videoIsLoading: true
                                     });
+
+                                    try {
+                                        // Получаем и кешируем видео заново
+                                        const newCachedUri = await getVideoUriWithCache(item);
+                                        if (newCachedUri) {
+                                            updateMessageSafely(item.id, {
+                                                mediaUri: newCachedUri,
+                                                videoLoadRequested: true,
+                                                videoIsLoading: false
+                                            });
+                                            console.log('🎥 [AUTO-RELOAD] ✅ Video re-cached successfully');
+                                        } else {
+                                            throw new Error('Failed to get cached video');
+                                        }
+                                    } catch (cacheError) {
+                                        console.error('🎥 [AUTO-RELOAD] Re-caching failed:', cacheError);
+
+                                        // Fallback на прямой серверный URL
+                                        if (item.serverFileUrl) {
+                                            updateMessageSafely(item.id, {
+                                                mediaUri: item.serverFileUrl,
+                                                videoLoadRequested: true,
+                                                videoIsLoading: false
+                                            });
+                                        } else {
+                                            updateMessageSafely(item.id, {
+                                                videoIsLoading: false,
+                                                needsReload: true
+                                            });
+                                        }
+                                    }
 
                                     return;
                                 } else if (isCacheError && !item.serverFileUrl) {
@@ -3645,7 +3909,7 @@ export default function ChatScreen() {
                                     };
 
                                     // Проверяем, закончилось ли видео
-                                    const isFinished = status.positionMillis >= status.durationMillis - 100; // 100ms погрешность
+                                    const isFinished = status.positionMillis >= status.durationMillis - 200; // 100ms погрешность
 
                                     if (isFinished && currentState.isPlaying) {
                                         // Перематываем в начало и останавливаем
@@ -3675,7 +3939,69 @@ export default function ChatScreen() {
                             }}
                         />
 
-                        {/* Прогресс-бар */}
+
+
+                        {/* Контролы видео */}
+                        <View style={videoState.isExpanded ? styles.fullscreenVideoControls : styles.inlineVideoControls}>
+                            {/* Кнопка воспроизведения/паузы удалена, управление происходит через центральную кнопку в полноэкранном модальном плеере */}
+
+                            {/* Кнопка полноэкранного режима */}
+                            <TouchableOpacity
+                                style={styles.inlineVideoButton}
+                                onPress={() => toggleVideoFullscreen(messageId, videoUri)}
+                            >
+                                <MaterialIcons
+                                    name={videoState.isFullscreen ? "fullscreen-exit" : "fullscreen"}
+                                    size={videoState.isExpanded ? 28 : 20}
+                                    color="white"
+                                />
+                            </TouchableOpacity>
+
+                            {/* Дополнительные кнопки только в развернутом режиме */}
+                            {(videoState.isExpanded || videoState.isFullscreen) && (
+                                <>
+                                    {/* Кнопка звука */}
+                                    <TouchableOpacity
+                                        style={styles.inlineVideoButton}
+                                        onPress={() => toggleInlineVideoSound(messageId)}
+                                    >
+                                        <MaterialIcons
+                                            name={videoState.isMuted ? "volume-off" : "volume-up"}
+                                            size={videoState.isFullscreen ? 32 : 28}
+                                            color={audioSessionReady ? "white" : "rgba(255, 255, 255, 0.5)"}
+                                        />
+                                    </TouchableOpacity>
+
+                                    {/* Кнопка скачивания */}
+                                    <TouchableOpacity
+                                        style={styles.inlineVideoButton}
+                                        onPress={() => downloadVideo(videoUri, Number(messageId))}
+                                    >
+                                        <MaterialIcons
+                                            name="download"
+                                            size={videoState.isFullscreen ? 32 : 28}
+                                            color="white"
+                                        />
+                                    </TouchableOpacity>
+
+                                    {/* Кнопка открытия в браузере */}
+                                    {videoUri?.startsWith('http') && (
+                                        <TouchableOpacity
+                                            style={styles.inlineVideoButton}
+                                            onPress={() => openVideoInBrowser(videoUri)}
+                                        >
+                                            <MaterialIcons
+                                                name="open-in-browser"
+                                                size={videoState.isFullscreen ? 32 : 28}
+                                                color="rgba(255, 255, 255, 0.9)"
+                                            />
+                                        </TouchableOpacity>
+                                    )}
+                                </>
+                            )}
+                        </View>
+
+                        {/* Прогресс-бар (перемещён под кнопки) */}
                         {videoState.isLoaded && videoState.duration > 0 && (
                             <View style={styles.videoProgressContainer}>
                                 <View style={styles.videoProgressBar}>
@@ -3701,126 +4027,26 @@ export default function ChatScreen() {
                             </View>
                         )}
 
-                        {/* Время воспроизведения */}
-                        {videoState.isLoaded && videoState.duration > 0 && (
-                            <View style={styles.videoTimeContainer}>
+                        {/* Время воспроизведения (под прогресс‑баром) */}
+                        {videoState.isLoaded && (
+                            <View style={styles.videoTimeContainerSimple}>
                                 <Text style={styles.videoTimeText}>
-                                    {Math.floor(videoState.position / 1000)}s / {Math.floor(videoState.duration / 1000)}s
+                                    {Math.floor(videoState.position / 1000)}s / {Math.floor((videoState.duration ?? 0) / 1000)}s
                                 </Text>
                             </View>
                         )}
 
-                        {/* Контролы видео */}
-                        <View style={videoState.isExpanded ? styles.fullscreenVideoControls : styles.inlineVideoControls}>
-                            {/* Кнопка воспроизведения/паузы */}
-                            <TouchableOpacity
-                                style={styles.inlineVideoButton}
-                                onPress={() => toggleInlineVideo(messageId, videoUri)}
-                            >
-                                <MaterialIcons
-                                    name={videoState.isPlaying ? "pause" : "play-arrow"}
-                                    size={videoState.isExpanded ? 32 : 24}
-                                    color="white"
-                                />
-                            </TouchableOpacity>
-
-                            {/* Кнопка полноэкранного режима */}
-                            <TouchableOpacity
-                                style={styles.inlineVideoButton}
-                                onPress={() => toggleVideoFullscreen(messageId, videoUri)}
-                            >
-                                <MaterialIcons
-                                    name={videoState.isFullscreen ? "fullscreen-exit" : "fullscreen"}
-                                    size={videoState.isExpanded ? 28 : 20}
-                                    color="white"
-                                />
-                            </TouchableOpacity>
-
-                            {/* Кнопка скачивания - только для миниатюры */}
-                            {!videoState.isExpanded && (
-                                <TouchableOpacity
-                                    style={styles.inlineVideoButton}
-                                    onPress={() => downloadVideo(videoUri, Number(messageId))}
-                                >
-                                    <MaterialIcons
-                                        name="download"
-                                        size={20}
-                                        color="white"
-                                    />
-                                </TouchableOpacity>
-                            )}
-
-                            {/* Дополнительные кнопки только в развернутом режиме */}
-                            {videoState.isExpanded && (
-                                <>
-                                    {/* Кнопка звука */}
-                                    <TouchableOpacity
-                                        style={styles.inlineVideoButton}
-                                        onPress={() => toggleInlineVideoSound(messageId)}
-                                    >
-                                        <MaterialIcons
-                                            name={videoState.isMuted ? "volume-off" : "volume-up"}
-                                            size={28}
-                                            color={audioSessionReady ? "white" : "rgba(255, 255, 255, 0.5)"}
-                                        />
-                                    </TouchableOpacity>
-
-                                    {/* Кнопка скачивания */}
-                                    <TouchableOpacity
-                                        style={styles.inlineVideoButton}
-                                        onPress={() => downloadVideo(videoUri, Number(messageId))}
-                                    >
-                                        <MaterialIcons
-                                            name="download"
-                                            size={28}
-                                            color="white"
-                                        />
-                                    </TouchableOpacity>
-
-                                    {/* Кнопка открытия в браузере */}
-                                    {videoUri?.startsWith('http') && (
-                                        <TouchableOpacity
-                                            style={styles.inlineVideoButton}
-                                            onPress={() => openVideoInBrowser(videoUri)}
-                                        >
-                                            <MaterialIcons
-                                                name="open-in-browser"
-                                                size={28}
-                                                color="rgba(255, 255, 255, 0.9)"
-                                            />
-                                        </TouchableOpacity>
-                                    )}
-
-                                    {/* Кнопка расширения в модальное окно */}
-                                    {!videoState.isFullscreen && (
-                                        <TouchableOpacity
-                                            style={styles.inlineVideoButton}
-                                            onPress={() => openVideoViewer(videoUri)}
-                                        >
-                                            <MaterialIcons
-                                                name="open-in-new"
-                                                size={28}
-                                                color="rgba(255, 255, 255, 0.8)"
-                                            />
-                                        </TouchableOpacity>
-                                    )}
-                                </>
-                            )}
-                        </View>
-
-                        {/* Показываем overlay только если видео не играет */}
-                        {!videoState.isPlaying && !videoState.isExpanded && (
-                            <TouchableOpacity
-                                style={styles.videoPlayOverlay}
-                                onPress={() => toggleInlineVideo(messageId, videoUri)}
-                            >
-                                <MaterialIcons
-                                    name="play-circle-filled"
-                                    size={48}
-                                    color="rgba(255, 255, 255, 0.8)"
-                                />
-                            </TouchableOpacity>
-                        )}
+                        {/* Всегда показываем overlay, меняя иконку в зависимости от состояния */}
+                        <TouchableOpacity
+                            style={styles.videoPlayOverlay}
+                            onPress={() => toggleInlineVideo(messageId, videoUri)}
+                        >
+                            <MaterialIcons
+                                name={videoState.isPlaying ? "pause-circle-filled" : "play-circle-filled"}
+                                size={48}
+                                color="rgba(255, 255, 255, 0.4)"  // более прозрачный цвет
+                            />
+                        </TouchableOpacity>
 
                         {/* Центрированная кнопка воспроизведения для полноэкранного режима */}
                         {!videoState.isPlaying && videoState.isExpanded && (
@@ -3836,19 +4062,6 @@ export default function ChatScreen() {
                             </TouchableOpacity>
                         )}
 
-                        {/* Кнопка закрытия полноэкранного режима */}
-                        {videoState.isFullscreen && (
-                            <TouchableOpacity
-                                style={styles.fullscreenCloseButton}
-                                onPress={() => toggleVideoFullscreen(messageId, videoUri)}
-                            >
-                                <MaterialIcons
-                                    name="close"
-                                    size={28}
-                                    color="white"
-                                />
-                            </TouchableOpacity>
-                        )}
                     </View>
                 );
             } else if (item.mediaType === 'file') {
@@ -4200,7 +4413,7 @@ export default function ChatScreen() {
                     transparent={true}
                     animationType="fade"
                     onRequestClose={closeImageViewer}
-                    statusBarTranslucent={true}
+                    statusBarTransluceholder="true"
                 >
                     <GestureHandlerRootView style={{flex: 1}}>
                         <View style={styles.imageViewerContainer}>
@@ -4210,6 +4423,24 @@ export default function ChatScreen() {
                             >
                                 <MaterialIcons name="close" size={32} color="white" />
                             </TouchableOpacity>
+
+                            {/* Кнопка скачивания изображения в полноэкранном режиме */}
+                            {selectedImage && (
+                                <TouchableOpacity
+                                    style={styles.imageFullscreenDownloadButton}
+                                    onPress={() => {
+                                        const messageId = messages.find(msg => 
+                                            (msg.serverFileUrl === selectedImage || 
+                                            (msg.mediaBase64 && `data:image/jpeg;base64,${msg.mediaBase64}` === selectedImage))
+                                        )?.id;
+                                        if (messageId) {
+                                            downloadImage(selectedImage, Number(messageId));
+                                        }
+                                    }}
+                                >
+                                    <MaterialIcons name="download" size={24} color="rgba(255, 255, 255, 0.9)" />
+                                </TouchableOpacity>
+                            )}
 
                             {/* Индикатор масштаба */}
                             {zoomLevel > 0 && (
@@ -4259,112 +4490,16 @@ export default function ChatScreen() {
                     onRequestClose={() => setIsVideoViewerVisible(false)}
                 >
                     <View style={styles.videoViewerContainer}>
-                        {/* Кнопка принудительного воспроизведения */}
-                        {!isVideoPlaying && !videoError && (
-                            <TouchableOpacity
-                                style={styles.forcePlayButton}
-
-                            >
-                                <MaterialIcons name="play-circle-filled" size={64} color="rgba(255, 255, 255, 0.9)" />
-                                <Text style={styles.forcePlayText}>Нажмите для воспроизведения</Text>
-                                <Text style={styles.forcePlaySubtext}>(без звука)</Text>
-                            </TouchableOpacity>
-                        )}
-
-                        {/* Кнопка управления звуком */}
-                        {isVideoPlaying && (
-                            <TouchableOpacity
-                                style={styles.soundButton}
-                                onPress={toggleVideoSound}
-                            >
-                                <MaterialIcons
-                                    name={isVideoMuted ? "volume-off" : "volume-up"}
-                                    size={24}
-                                    color={audioSessionReady ? "rgba(255, 255, 255, 0.9)" : "rgba(255, 255, 255, 0.5)"}
-                                />
-                                {!audioSessionReady && (
-                                    <View style={styles.audioWarningDot} />
-                                )}
-                            </TouchableOpacity>
-                        )}
-
-                        {/* Кнопка открытия в браузере */}
-                        {selectedVideo?.startsWith('http') && (
-                            <TouchableOpacity
-                                style={styles.browserButton}
-                                onPress={() => openVideoInBrowser(selectedVideo)}
-                            >
-                                <MaterialIcons name="open-in-browser" size={24} color="rgba(255, 255, 255, 0.9)" />
-                            </TouchableOpacity>
-                        )}
-
-                        {/* Кнопка системного плеера */}
-                        {selectedVideo?.startsWith('http') && (
-                            <TouchableOpacity
-                                style={styles.systemPlayerButton}
-                                onPress={() => openInSystemPlayer(selectedVideo)}
-                            >
-                                <MaterialIcons name="open-in-new" size={24} color="rgba(255, 255, 255, 0.9)" />
-                            </TouchableOpacity>
-                        )}
-
-                        {/* Отображение ошибки */}
-                        {videoError && (
-                            <View style={styles.videoErrorContainer}>
-                                <MaterialIcons name="error" size={48} color="red" />
-                                <Text style={styles.videoErrorText}>Ошибка воспроизведения:</Text>
-                                <Text style={styles.videoErrorDetails}>{videoError}</Text>
-                                <TouchableOpacity
-                                    style={styles.retryButton}
-
-                                >
-                                    <Text style={styles.retryButtonText}>Попробовать снова</Text>
-                                </TouchableOpacity>
-                                {selectedVideo?.startsWith('http') && (
-                                    <TouchableOpacity
-                                        style={[styles.retryButton, { backgroundColor: 'rgba(0, 123, 255, 0.3)' }]}
-                                        onPress={() => openInSystemPlayer(selectedVideo)}
-                                    >
-                                        <Text style={styles.retryButtonText}>Открыть в системном плеере</Text>
-                                    </TouchableOpacity>
-                                )}
-                            </View>
-                        )}
-
-                        <TouchableOpacity
-                            style={styles.videoViewerCloseButton}
-                            onPress={async () => {
-                                try {
-                                    // Останавливаем видео перед закрытием
-                                    if (videoRef.current) {
-                                        await videoRef.current.pauseAsync();
-                                        await videoRef.current.unloadAsync();
-                                    }
-
-                                    console.log('🎥 [CLEANUP] Video stopped and unloaded');
-                                } catch (cleanupError) {
-                                    console.warn('🎥 [CLEANUP] Error during video cleanup:', cleanupError);
-                                }
-
-                                setIsVideoViewerVisible(false);
-                                setSelectedVideo(null);
-                                setIsVideoPlaying(false);
-                                setIsVideoMuted(true);
-                                setVideoError(null);
-                            }}
-                        >
-                            <MaterialIcons name="close" size={30} color="white" />
-                        </TouchableOpacity>
                         {selectedVideo && (
                             <Video
                                 ref={videoRef}
                                 source={{ uri: selectedVideo }}
                                 style={styles.fullScreenVideo}
                                 resizeMode={ResizeMode.CONTAIN}
-                                useNativeControls={false}
-                                shouldPlay={false}
+                                useNativeControls={true}
+                                shouldPlay={true}
                                 isLooping={false}
-                                isMuted={isVideoMuted}
+                                isMuted={false}
                                 onLoad={(data) => {
                                     console.log('🎥 [FULLSCREEN] Video loaded:', {
                                         duration: data.durationMillis,
@@ -4372,8 +4507,7 @@ export default function ChatScreen() {
                                         uri: selectedVideo?.substring(selectedVideo.lastIndexOf('/') + 1)
                                     });
 
-                                    // Не запускаем автоматически - пользователь сам нажмет play
-                                    console.log('🎥 [FULLSCREEN] Video ready for manual playback');
+                                    console.log('🎥 [FULLSCREEN] Video ready with native controls');
                                 }}
                                 onError={(error) => {
                                     console.error('🎥 [FULLSCREEN] ❌ Video decoder error:', {
@@ -4522,6 +4656,8 @@ export default function ChatScreen() {
                     onRequestClose={() => {
                         setIsFullscreenModalVisible(false);
                         setFullscreenModalVideoUri(null);
+                        setSelectedVideo(null);
+                        setSelectedMessageId(null);
                         if (fullscreenVideoId) {
                             setInlineVideoStates(prev => ({
                                 ...prev,
@@ -4542,6 +4678,8 @@ export default function ChatScreen() {
                             onPress={() => {
                                 setIsFullscreenModalVisible(false);
                                 setFullscreenModalVideoUri(null);
+                                setSelectedVideo(null);
+                                setSelectedMessageId(null);
                                 if (fullscreenVideoId) {
                                     setInlineVideoStates(prev => ({
                                         ...prev,
@@ -4558,6 +4696,25 @@ export default function ChatScreen() {
                         >
                             <MaterialIcons name="close" size={32} color="white" />
                         </TouchableOpacity>
+
+                        {/* Кнопки управления для fullscreen modal */}
+                        {fullscreenModalVideoUri && (
+                            <>
+                                {/* Кнопка скачивания */}
+                                <TouchableOpacity
+                                    style={styles.videoDownloadButtonFullscreen}
+                                    onPress={() => {
+                                        if (fullscreenModalVideoUri && selectedMessageId) {
+                                            downloadVideo(fullscreenModalVideoUri, selectedMessageId);
+                                        }
+                                    }}
+                                >
+                                    <MaterialIcons name="download" size={24} color="white" />
+                                </TouchableOpacity>
+
+
+                            </>
+                        )}
 
                         {fullscreenModalVideoUri && (
                             <Video
@@ -4649,6 +4806,93 @@ export default function ChatScreen() {
                                 }}
                             />
                         )}
+
+                        {/* Кнопка принудительного воспроизведения */}
+                        {!isVideoPlaying && !videoError && (
+                            <TouchableOpacity
+                                style={styles.forcePlayButton}
+                                onPress={async () => {
+                                    if (!videoRef.current) return;
+                                    try {
+                                        if (isVideoPlaying) {
+                                            await videoRef.current.pauseAsync();
+                                            setIsVideoPlaying(false);
+                                        } else {
+                                            await videoRef.current.playAsync();
+                                            setIsVideoPlaying(true);
+                                        }
+                                    } catch (e) {
+                                        console.error('🎥 [FULLSCREEN] ❌ Error toggling playback from central button:', e);
+                                        Alert.alert('Ошибка', 'Не удалось изменить состояние воспроизведения');
+                                    }
+                                }}
+                            >
+
+                            </TouchableOpacity>
+                        )}
+
+
+
+                        {/* Кнопка скачивания видео - рядом с кнопкой звука */}
+                        <TouchableOpacity
+                            style={styles.videoDownloadButtonFullscreen}
+                            onPress={() => {
+                                console.log('🎥 [DOWNLOAD] ========== DOWNLOAD BUTTON PRESSED ==========');
+                                console.log('🎥 [DOWNLOAD] Selected video:', selectedVideo);
+                                console.log('🎥 [DOWNLOAD] Selected message ID:', selectedMessageId);
+
+                                let messageId = selectedMessageId;
+                                if (!messageId) {
+                                    const foundMessage = messages.find(msg => 
+                                        msg.serverFileUrl === selectedVideo || 
+                                        msg.mediaUri === selectedVideo ||
+                                        (msg.mediaBase64 && `data:video/mp4;base64,${msg.mediaBase64}` === selectedVideo)
+                                    );
+                                    messageId = foundMessage ? Number(foundMessage.id) : Date.now();
+                                    console.log('🎥 [DOWNLOAD] Found message ID:', messageId);
+                                }
+
+                                if (selectedVideo) {
+                                    downloadVideo(selectedVideo, messageId);
+                                } else {
+                                    console.error('🎥 [DOWNLOAD] No selected video!');
+                                    Alert.alert('Ошибка', 'Видео недоступно для скачивания');
+                                }
+                            }}
+                        >
+                            <MaterialIcons name="download" size={24} color="white" />
+                        </TouchableOpacity>
+
+
+
+                        {/* Отображение ошибки */}
+                        {videoError && (
+                            <View style={styles.videoErrorContainer}>
+                                <MaterialIcons name="error" size={48} color="red" />
+                                <Text style={styles.videoErrorText}>Ошибка воспроизведения:</Text>
+                                <Text style={styles.videoErrorDetails}>{videoError}</Text>
+                                <TouchableOpacity
+                                    style={styles.retryButton}
+                                    onPress={() => {
+                                        setVideoError(null);
+                                        setIsVideoPlaying(false);
+                                    }}
+                                >
+                                    <Text style={styles.retryButtonText}>Попробовать снова</Text>
+                                </TouchableOpacity>
+                                {selectedVideo?.startsWith('http') && (
+                                    <TouchableOpacity
+                                        style={[styles.retryButton, { backgroundColor: 'rgba(0, 123, 255, 0.3)' }]}
+                                        onPress={() => openInSystemPlayer(selectedVideo)}
+                                    >
+                                        <Text style={styles.retryButtonText}>Открыть в системном плеере</Text>
+                                    </TouchableOpacity>
+                                )}
+                            </View>
+                        )}
+
+
+
                     </View>
                 </Modal>
             </KeyboardAvoidingView>
@@ -4882,6 +5126,8 @@ const createStyles = (theme: any) => {
     },
     mediaMessage: {
         maxWidth: '85%',
+        borderWidth: 0,
+        borderColor: 'transparent',
     },
     mediaMessageText: {
         fontSize: 12,
@@ -4965,7 +5211,7 @@ const createStyles = (theme: any) => {
         bottom: 0,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: 'rgba(0, 0, 0, 0.3)',
+        backgroundColor: 'rgba(0, 0, 0, 0.05)', // почти прозрачен
         borderRadius: 12,
     },
     videoViewerContainer: {
@@ -4978,10 +5224,29 @@ const createStyles = (theme: any) => {
         position: 'absolute',
         top: 50,
         right: 20,
-        zIndex: 1,
-        backgroundColor: 'rgba(0, 0, 0, 0.6)',
-        borderRadius: 20,
+        zIndex: 1000,
+        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        borderRadius: 25,
         padding: 8,
+        elevation: 10,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.5,
+        shadowRadius: 4,
+    },
+    videoDownloadButtonFullscreen: {
+        position: 'absolute',
+        top: 50,
+        left: 80,
+        zIndex: 1000,
+        backgroundColor: 'rgba(0, 123, 255, 0.9)',
+        borderRadius: 25,
+        padding: 10,
+        elevation: 10,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.5,
+        shadowRadius: 4,
     },
     fullScreenVideo: {
         width: '100%',
@@ -5082,21 +5347,19 @@ const createStyles = (theme: any) => {
         textAlign: 'center',
         fontStyle: 'italic',
     },
-    imageContainerWithButton: {
-        position: 'relative',
-    },
-    imageDownloadButton: {
+    imageFullscreenDownloadButton: {
         position: 'absolute',
-        bottom: 8,
-        right: 8,
-        backgroundColor: 'rgba(0, 0, 0, 0.6)',
-        borderRadius: 20,
-        padding: 8,
-        elevation: 3,
+        bottom: 80,
+        right: 20,
+        backgroundColor: 'rgba(0, 123, 255, 0.8)',
+        borderRadius: 25,
+        padding: 12,
+        zIndex: 10,
+        elevation: 5,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.3,
-        shadowRadius: 3,
+        shadowRadius: 4,
     },
     fileContainer: {
         flexDirection: 'row',
@@ -5190,12 +5453,17 @@ const createStyles = (theme: any) => {
     },
     soundButton: {
         position: 'absolute',
-        bottom: 100,
-        right: 20,
-        backgroundColor: 'rgba(0, 0, 0, 0.5)',
-        padding: 12,
+        top: 50,
+        left: 20,
+        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        padding: 10,
         borderRadius: 25,
-        zIndex: 2,
+        zIndex: 1000,
+        elevation: 10,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.5,
+        shadowRadius: 4,
     },
     videoErrorContainer: {
         position: 'absolute',
@@ -5247,31 +5515,44 @@ const createStyles = (theme: any) => {
     },
     browserButton: {
         position: 'absolute',
-        bottom: 160,
-        left: 20,
+        top: 50,
+        left: 140,
         backgroundColor: 'rgba(0, 123, 255, 0.8)',
-        padding: 12,
+        padding: 10,
         borderRadius: 25,
-        zIndex: 2,
+        zIndex: 1000,
+        elevation: 10,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.5,
+        shadowRadius: 4,
     },
     systemPlayerButton: {
         position: 'absolute',
-        bottom: 100,
-        left: 20,
-        backgroundColor: 'rgba(0, 0, 0, 0.5)',
-        padding: 12,
+        top: 50,
+        left: 200,
+        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        padding: 10,
         borderRadius: 25,
-        zIndex: 2,
+        zIndex: 1000,
+        elevation: 10,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.5,
+        shadowRadius: 4,
     },
     // Стили для встроенного видеоплеера
     inlineVideoContainer: {
         position: 'relative',
         marginBottom: 8,
         borderRadius: 8,
-        overflow: 'hidden',
-        maxWidth: '100%', // Ограничиваем максимальную ширину
-        width: 250, // Уменьшаем ширину для лучшего помещения в сообщение
-        height: 180, // Соответственно корректируем высоту
+        overflow: 'visible',
+        maxWidth: '100%',
+        width: 250,
+        height: 180,                  // фиксированная высота, как было изначально
+        borderWidth: 0.5,
+        borderColor: 'transparent',
+        borderStyle: 'solid',
     },
     inlineVideo: {
         width: '100%',
@@ -5372,12 +5653,9 @@ const createStyles = (theme: any) => {
         minWidth: 26,
         minHeight: 26,
     },
-    videoProgressContainer: {
-        position: 'absolute',
-        bottom: 35,
-        left: 6,
-        right: 6,
-        zIndex: 2,
+    videoProgressContainerSimple: {
+        marginTop: 8,               // небольшое отступление от кнопок
+        marginHorizontal: 6,       // отступы по бокам, чтобы не прилипало к краям
     },
     videoProgressBar: {
         height: 3,
@@ -5397,15 +5675,20 @@ const createStyles = (theme: any) => {
         left: 0,
         right: 0,
     },
+    // Текущий стиль теперь просто контейнер без абсолютного позиционирования
     videoTimeContainer: {
-        position: 'absolute',
-        bottom: 42,
-        left: 6,
+        // Сохранён для совместимости, но не используется в рендере
+    },
+
+    // Новый простой стиль для времени под прогресс‑баром
+    videoTimeContainerSimple: {
+        marginTop: 4,
+        marginHorizontal: 6,
         backgroundColor: 'rgba(0, 0, 0, 0.8)',
         paddingHorizontal: 6,
         paddingVertical: 1,
         borderRadius: 3,
-        zIndex: 2,
+        alignSelf: 'flex-start',
     },
     videoTimeText: {
         color: 'white',
@@ -5433,9 +5716,9 @@ const createStyles = (theme: any) => {
         marginBottom: 8,
         borderRadius: 12,
         backgroundColor: theme.surface,
-        borderWidth: 2,
-        borderColor: theme.primary,
-        borderStyle: 'dashed',
+        borderWidth: 0.5,           // почти незаметная граница
+        borderColor: 'transparent', // полностью прозрачная
+        borderStyle: 'solid',
         padding: 16,
         alignItems: 'center',
         justifyContent: 'center',

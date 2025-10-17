@@ -239,8 +239,7 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
         PrivateChatConsumer.connected_users.add(self.user.id)
 
         # Устанавливаем статус пользователя онлайн
-        await self.set_user_online(self.user.id)
-        await self.broadcast_user_status(self.user.id, 'online')
+
 
         await self.accept()
 
@@ -772,7 +771,7 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
             # Отправляем push-уведомление асинхронно
             try:
                 await sync_to_async(self._send_push_notification_sync)(message_instance, recipient)
-                logger.info(f"🔥 [PUSH] ✅ Push notification send attempt completed")
+
             except Exception as send_error:
                 logger.error(f"🔥 [PUSH] ❌ Push notification send failed: {send_error}")
                 logger.error(f"🔥 [PUSH] ❌ Send error details: {str(send_error)}")
@@ -786,23 +785,9 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
         """
         Синхронная версия отправки push-уведомления
         """
-        logger.info(f"🔥 [PUSH-SYNC] === SENDING PUSH NOTIFICATION ===")
-        logger.info(f"🔥 [PUSH-SYNC] Target user: {recipient.username} (ID: {recipient.id})")
-        logger.info(f"🔥 [PUSH-SYNC] Message: {message_instance.message}")
-        logger.info(f"🔥 [PUSH-SYNC] Sender: {message_instance.sender.username}")
-        logger.info(f"🔥 [PUSH-SYNC] Chat ID: {message_instance.room.id}")
-
-        # Получаем push токены получателя
-        logger.info(f"🔥 [PUSH-SYNC] Initializing PushNotificationService...")
         push_service = PushNotificationService()
 
         try:
-            logger.info(f"🔥 [PUSH-SYNC] Calling send_message_notification with:")
-            logger.info(f"🔥 [PUSH-SYNC]   recipient_id: {recipient.id}")
-            logger.info(f"🔥 [PUSH-SYNC]   sender_name: {message_instance.sender.username}")
-            logger.info(f"🔥 [PUSH-SYNC]   message: {message_instance.message[:100]}...")
-            logger.info(f"🔥 [PUSH-SYNC]   chat_id: {message_instance.room.id}")
-            logger.info(f"🔥 [PUSH-SYNC]   sender_id: {message_instance.sender.id}")
 
             # Сначала получаем FCM токены получателя из базы данных
             logger.info(f"🔥 [PUSH-SYNC] Getting FCM tokens for user {recipient.id}")
@@ -811,7 +796,6 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
             fcm_tokens = []
             if hasattr(recipient, 'fcm_token') and recipient.fcm_token:
                 fcm_tokens.append(recipient.fcm_token)
-                logger.info(f"🔥 [PUSH-SYNC] Found FCM token: {recipient.fcm_token[:20]}...")
             else:
                 logger.warning(f"🔥 [PUSH-SYNC] ❌ No FCM token found for user {recipient.username}")
                 return
@@ -826,8 +810,8 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
                 chat_id=message_instance.room.id
             )
 
-            logger.info(f"🔥 [PUSH-SYNC] ✅ Push notification service returned: {result}")
-            logger.info(f"🔥 [PUSH-SYNC] ✅ Push notification for {recipient.username} sent successfully")
+
+
 
         except Exception as e:
             logger.error(f"🔥 [PUSH-SYNC] ❌ Error sending push notification for {recipient.username}: {e}")
@@ -866,6 +850,7 @@ class NotificationConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
         self.previous_messages_cache = {}
 
     async def connect(self):
+
         await self.accept()
 
         # Получаем пользователя из токена

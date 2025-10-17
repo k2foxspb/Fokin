@@ -130,8 +130,8 @@ export default function MessagesScreen() {
                 unread_count: wsMessage.count || chat.unread_count
               };
 
-              // Обновляем последнее сообщение если оно новее
-              if (wsMessage.last_message && wsMessage.last_message.trim() !== '') {
+              // Обновляем последнее сообщение если оно присутствует (включая медиафайлы)
+              if (wsMessage.last_message !== null && wsMessage.last_message !== undefined) {
                 updatedChat.last_message = wsMessage.last_message;
               }
 
@@ -182,13 +182,44 @@ export default function MessagesScreen() {
     return senderCounts.get(userId) || 0;
   };
 
+  // Функция для форматирования последнего сообщения с поддержкой медиафайлов
+  const formatLastMessage = (message: string): string => {
+    if (!message || message.trim() === '') {
+      // Если сообщение пустое, предполагаем медиафайл
+      return '📎 Медиафайл';
+    }
+
+    // Проверяем специальные маркеры для медиафайлов
+    const lowerMessage = message.toLowerCase().trim();
+
+    if (lowerMessage === '[photo]' || lowerMessage === 'photo' || lowerMessage.includes('📷')) {
+      return '📷 Изображение';
+    }
+
+    if (lowerMessage === '[video]' || lowerMessage === 'video' || lowerMessage.includes('🎥')) {
+      return '🎥 Видео';
+    }
+
+    if (lowerMessage === '[document]' || lowerMessage === 'document' || lowerMessage.includes('📄')) {
+      return '📄 Документ';
+    }
+
+    if (lowerMessage === '[file]' || lowerMessage === 'file') {
+      return '📎 Файл';
+    }
+
+    // Если это обычное текстовое сообщение
+    return message;
+  };
+
   // Функция для получения актуального последнего сообщения
   const getLastMessage = (chat: ChatPreview) => {
     const wsMessage = messages.find(msg => msg.sender_id === chat.other_user.id);
-    if (wsMessage && wsMessage.last_message && wsMessage.last_message.trim() !== '') {
-      return wsMessage.last_message;
+    if (wsMessage && wsMessage.last_message !== null && wsMessage.last_message !== undefined) {
+      return formatLastMessage(wsMessage.last_message);
     }
-    return chat.last_message;
+    // Возвращаем сообщение из чата, если оно есть
+    return formatLastMessage(chat.last_message || '');
   };
 
   // Функция для получения актуального времени последнего сообщения
@@ -375,7 +406,7 @@ export default function MessagesScreen() {
                       </Text>
                     </View>
                     <Text style={[styles.lastMessage, { color: theme.textSecondary }]} numberOfLines={1}>
-                      {currentLastMessage}
+                      {currentLastMessage || '📎 Медиафайл'}
                     </Text>
                   </View>
                   {displayUnreadCount > 0 && (
