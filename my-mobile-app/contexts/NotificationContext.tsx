@@ -141,14 +141,44 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
     const previousMessagesRef = useRef<MessageType[]>([]);
     const checkConnectionIntervalRef = useRef<NodeJS.Timeout | null>(null);
     const lastPingTimeRef = useRef<number>(Date.now());
-    const sentNotificationsCache = useRef<Set<string>>(new Set()); // Кеш отправленных уведомлений
+    // const sentNotificationsCache = useRef<Set<string>>(new Set()); // Удалён лишний кеш
     const globalNotificationCache = useRef<Set<string>>(new Set()); // Глобальный кеш ВСЕХ уведомлений (Firebase + локальные)
     const lastNavigationTime = useRef<number>(0);
     const lastNavigatedChatId = useRef<string | null>(null);
     const isNavigating = useRef<boolean>(false);
     const listenerInitialized = useRef<boolean>(false);
+    // Очередь сообщений, используемая processNotificationQueue и queueNotification
+    const notificationQueueRef = useRef<MessageType[]>([]); // Хранит сообщения до обработки
     const notificationBuffer = useRef<MessageType[]>([]); // Буфер для группировки уведомлений
     const notificationDebounceTimer = useRef<NodeJS.Timeout | null>(null); // Таймер для дебаунсинга
+    // Хранилище ID локальных уведомлений, сгруппированных по chatId
+    const chatNotificationIds = useRef<Map<string, Set<string>>>(new Map());
+    // Очередь сообщений, используемую processNotificationQueue\
+    // Флаг, чтобы добавить Firebase‑handler только один раз
+    const firebaseHandlerAdded = useRef<boolean>(false);
+
+    /**
+     * Единая функция для добавления сообщений в буфер.
+     * Гарантирует отсутствие дублирования через глобальный кеш.
+     * Формирует ключ `${senderId}_${messageId || 'none'}_${count}`.
+     */
+    function enqueueNotification(msgArray: MessageType[]): void {
+        if (!msgArray || msgArray.length === 0) return;
+
+        // Добавляем сообщения в очередь, которая обрабатывается processNotificationQueue
+        notificationQueueRef.current.push(...msgArray);
+        console.log('🔔 [Notification] Enqueued', msgArray.length, 'message(s) into queue');
+
+        // Перезапускаем таймер дебаунса (800 мс)
+        if (notificationDebounceTimer.current) {
+            clearTimeout(notificationDebounceTimer.current);
+        }
+        notificationDebounceTimer.current = setTimeout(() => {
+            processNotificationQueue();
+            notificationDebounceTimer.current = null;
+        }, 800);
+    }
+
     useEffect(() => {
         const setupNotificationChannels = async () => {
             try {
@@ -289,22 +319,34 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
                             }, 10000);
 
                             if (isAuthenticated) {
-                                console.log('🔥 [FCM] User authenticated - refreshing notifications');
-                                refreshNotifications();
+                                console.log('🔥 [FCM] User authenticated - enqueuing Firebase message');
+                                // Попытка преобразовать данные Firebase в структуру MessageType
+                                const firebaseMsg: MessageType = {
+                                    sender_id: Number(messageData?.data?.senderId) || 0,
+                                    sender_name: undefined,
+                                    count: Number(messageData?.data?.count) || 1,
+                                    last_message: messageData?.notification?.title,
+                                    timestamp: Date.now(),
+                                    chat_id: Number(messageData?.data?.chatId),
+                                    message_id: Number(messageData?.data?.messageId),
+                                };
+                                enqueueNotification([firebaseMsg]);
                             } else {
-                                console.warn('🔥 [FCM] User not authenticated, skipping refresh');
+                                console.warn('🔥 [FCM] User not authenticated, skipping enqueue');
                             }
                         };
 
-                        // Добавляем только ОДИН handler
-                        firebaseService.addMessageHandler(messageHandler);
+                        // Добавляем только один handler за всё время жизни компонента
+                        if (!firebaseHandlerAdded.current) {
+                            firebaseService.addMessageHandler(messageHandler);
+                            firebaseHandlerAdded.current = true;
+                        }
                         // Финальная проверка
                         const finalStatus = await firebaseService.getStatus();
                         console.log('🔥 [FCM] === FINAL STATUS CHECK ===', {
                             hasPermission: finalStatus.hasPermission,
                             isEnabled: finalStatus.isEnabled,
                             tokenType: finalStatus.type,
-                            // Добавим проверку количества handlers через тестовый метод
                         });
 
                         // Вызываем тестовый метод для полной диагностики
@@ -430,6 +472,9 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
                         }
                     });
                     console.log('🔥 [NotificationContext] ✅ Navigation successful');
+
+                    // И закрываем все остальные уведомления из этого чата (шторки + внутренняя очередь)
+                    closeChatNotifications(chatId);
                 } catch (navError) {
                     console.error('🔥 [NotificationContext] ❌ Navigation failed:', navError);
                     router.push('/(main)/messages');
@@ -449,14 +494,14 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
 
     // Функция для группировой обработки накопленных уведомлений
     const processNotificationQueue = () => {
-        if (notificationQueue.current.length === 0) {
+        if (notificationQueueRef.current.length === 0) {
             console.log('📬 [NotificationQueue] Queue is empty, skipping');
             return;
         }
 
         // Группируем сообщения по sender_id, берем самое свежее от каждого
         const groupedBySender = new Map<number, MessageType>();
-        notificationQueue.current.forEach(msg => {
+        notificationQueueRef.current.forEach(msg => {
             const existing = groupedBySender.get(msg.sender_id);
             if (!existing || (msg.timestamp && existing.timestamp && msg.timestamp > existing.timestamp)) {
                 groupedBySender.set(msg.sender_id, msg);
@@ -465,12 +510,12 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
 
         const uniqueMessages = Array.from(groupedBySender.values());
         console.log('📬 [NotificationQueue] Processing queue:', {
-            rawCount: notificationQueue.current.length,
+            rawCount: notificationQueueRef.current.length,
             uniqueCount: uniqueMessages.length,
         });
 
         // Очищаем очередь
-        notificationQueue.current = [];
+        notificationQueueRef.current = [];
 
         // Определяем тип уведомления
         const isAppActive = AppState.currentState === 'active';
@@ -478,9 +523,9 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
         if (isAppActive) {
             console.log('📬 [NotificationQueue] App active - vibrate only');
             vibrateWithoutNotification(uniqueMessages);
-        } else if (hasNotificationPermission) {
-            console.log('📬 [NotificationQueue] App inactive - sending notification');
-            sendNotificationWithUserData(uniqueMessages);
+        } else {
+            console.log('📬 [NotificationQueue] App inactive - local notifications suppressed');
+            // No local notification is sent; the push will be delivered by Firebase
         }
     };
 
@@ -493,7 +538,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
         console.log('📬 [NotificationQueue] Adding to queue:', messageArray.length);
 
         // Добавляем в очередь
-        notificationQueue.current.push(...messageArray);
+        notificationQueueRef.current.push(...messageArray);
 
         // Сбрасываем предыдущий таймер
         if (notificationDebounceTimer.current) {
@@ -590,14 +635,12 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
                 return;
             }
 
-            // Добавляем в оба кеша
+            // Добавляем в глобальный кеш (единственный кеш)
             globalNotificationCache.current.add(notificationKey);
-            sentNotificationsCache.current.add(notificationKey);
 
             // Очищаем через 5 секунд
             setTimeout(() => {
                 globalNotificationCache.current.delete(notificationKey);
-                sentNotificationsCache.current.delete(notificationKey);
             }, 5000);
 
             setLastMessageTimestamp(currentTime);
@@ -720,12 +763,20 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
                 notificationContent.categoryIdentifier = 'message';
             }
 
-            await Notifications.scheduleNotificationAsync({
+            // Планируем шторку и получаем её идентификатор
+            const identifier = await Notifications.scheduleNotificationAsync({
                 content: notificationContent,
                 trigger: null,
             });
 
-            console.log('✅ [Notification] LOCAL notification sent, key:', notificationKey);
+            console.log('✅ [Notification] LOCAL notification sent, key:', notificationKey, 'identifier:', identifier);
+
+            // Сохраняем identifier в реф, чтобы потом можно было явно димисить это уведомление
+            const chatIdStr = String(mostActiveMsg.chat_id);
+            if (!chatNotificationIds.current.has(chatIdStr)) {
+                chatNotificationIds.current.set(chatIdStr, new Set());
+            }
+            chatNotificationIds.current.get(chatIdStr)!.add(identifier);
 
             // Если несколько отправителей - создаем summary notification для Android
             if (Platform.OS === 'android' && totalSenders > 1) {
@@ -803,7 +854,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
             // Обработка принудительного обновления (например, после прочтения сообщений)
             if (data.trigger_update) {
                 previousMessagesRef.current = [];
-                sentNotificationsCache.current.clear();
+                    globalNotificationCache.current.clear();
 
                 // Запрашиваем свежие данные немедленно
                 setTimeout(() => {
@@ -872,7 +923,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
                 // ИСПОЛЬЗУЕМ БУФЕР для группировки уведомлений
                 if (messageArray.length > 0) {
                     console.log('📱 [Notification] Получено сообщений:', messageArray.length, '- добавляем в буфер');
-                    addToNotificationBuffer(messageArray);
+                    enqueueNotification(messageArray);
                 }
                 return;
             }
@@ -909,7 +960,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
 
                         if (isNewOrUpdated) {
                             console.log('📱 [Notification] Individual message - добавляем в буфер');
-                            addToNotificationBuffer([messageData]);
+                            enqueueNotification([messageData]);
                         }
 
                         // Обновляем ссылку на предыдущие сообщения
@@ -972,7 +1023,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
 
                         if (hasChanges) {
                             console.log('📱 [Notification] messages_by_sender_update - изменения обнаружены, добавляем в буфер');
-                            addToNotificationBuffer(messageArray);
+                            enqueueNotification(messageArray);
                         }
                     }
 
@@ -1008,7 +1059,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
 
             // Сбрасываем кеши при переподключении для корректного сравнения
             previousMessagesRef.current = [];
-            sentNotificationsCache.current.clear();
+            globalNotificationCache.current.clear();
 
             const initialDataMessage = {type: 'get_initial_data'};
             sendMessage(initialDataMessage);
@@ -1050,6 +1101,78 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
             if (isAuthenticated) {
                 reconnect();
             }
+        }
+    };
+
+    /**
+     * Закрывает все показанные уведомления, принадлежащие указанному чату.
+     * Используется после перехода в чат, чтобы пользователь не видел «зависшие» шторки.
+     */
+    const closeChatNotifications = async (chatId: string) => {
+        try {
+            // ---------- 1️⃣ Снятие уже отображённых шторок ----------
+            const getPresented = (Notifications as any).getPresentedNotificationsAsync
+                ? (Notifications as any).getPresentedNotificationsAsync.bind(Notifications)
+                : null;
+
+            let presentedDismissed = 0;
+            if (getPresented) {
+                const presented = await getPresented();
+
+                const toDismiss = presented.filter(
+                    n => n.request?.content?.data?.chatId?.toString() === chatId
+                );
+
+                await Promise.all(
+                    toDismiss.map(n => Notifications.dismissNotificationAsync?.(n.identifier))
+                );
+
+                presentedDismissed = toDismiss.length;
+                console.log(
+                    `🔥 [Notification] Closed ${presentedDismissed} presented notification(s) for chatId ${chatId}`
+                );
+            } else {
+                console.warn('🔥 [Notification] getPresentedNotificationsAsync not available – skipping UI dismissal');
+            }
+
+            // Если ничего не найдено среди уже показанных, принудительно свернём всё (на случай, когда система не возвращает их)
+            if (presentedDismissed === 0) {
+                try {
+                    await Notifications.dismissAllNotificationsAsync?.();
+                    console.log(`🔥 [Notification] dismissAllNotificationsAsync called for chatId ${chatId}`);
+                } catch (dismissAllErr) {
+                    console.warn('🔥 [Notification] dismissAllNotificationsAsync failed:', dismissAllErr);
+                }
+            }
+
+            // ---------- 2️⃣ Димисс запланированных уведомлений, сохранённых в chatNotificationIds ----------
+            const storedIds = chatNotificationIds.current.get(chatId);
+            if (storedIds && storedIds.size > 0) {
+                const idsArray = Array.from(storedIds);
+                await Promise.all(
+                    idsArray.map(id => Notifications.dismissNotificationAsync?.(id))
+                );
+                console.log(
+                    `🔥 [Notification] Dismissed ${idsArray.length} scheduled notification(s) for chatId ${chatId}`
+                );
+                // Очищаем запись из рефа
+                chatNotificationIds.current.delete(chatId);
+            }
+
+            // ---------- 3️⃣ Очистка внутренней очереди ----------
+            if (notificationQueueRef.current.length > 0) {
+                const beforeCount = notificationQueueRef.current.length;
+                // Оставляем только сообщения, которые *не* принадлежат закрываемому чату
+                notificationQueueRef.current = notificationQueueRef.current.filter(
+                    msg => String(msg.chat_id) !== chatId
+                );
+                const afterCount = notificationQueueRef.current.length;
+                console.log(
+                    `🔥 [Notification] Queue cleaned for chatId ${chatId}: ${beforeCount - afterCount} item(s) removed`
+                );
+            }
+        } catch (err) {
+            console.error('🔥 [Notification] Error while closing notifications for chatId', chatId, err);
         }
     };
 
