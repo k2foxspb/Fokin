@@ -26,14 +26,6 @@
         "buildType": "apk"
       }
     },
-    "production": {
-      "ios": {
-        "resourceClass": "m-medium"
-      },
-      "android": {
-        "buildType": "apk"
-      }
-    },
     "production-firebase": {
       "extends": "production",
       "env": {

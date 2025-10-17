@@ -480,8 +480,8 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
                 sentNotificationsCache.current.delete(notificationKey);
             }, 10 * 60 * 1000);
 
-            let senderInfo = mostActiveMsg.sender_name || `Пользователь ${mostActiveMsg.sender_id}`;
-            let notificationBody = mostActiveMsg.last_message || 'Новое сообщение';
+            let senderInfo = mostActiveMsg.sender_name;
+            let notificationBody = mostActiveMsg.last_message;
 
             // Если сообщение слишком длинное, обрезаем его
             if (notificationBody.length > 50) {

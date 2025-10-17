@@ -496,9 +496,9 @@ class FirebaseNotificationService {
       try {
         const onMessageUnsubscribe = messaging().onMessage(async (remoteMessage: FirebaseMessagingTypes.RemoteMessage) => {
         const messageData: MessageData = {
-          title: remoteMessage.notification?.title || 'Новое сообщение',
-          body: remoteMessage.notification?.body || 'У вас новое сообщение',
-          data: remoteMessage.data || {},
+          title: remoteMessage.notification?.title,
+          body: remoteMessage.notification?.body,
+          data: remoteMessage.data,
           isFirebase: true
         };
 

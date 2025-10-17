@@ -10,7 +10,6 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { NotificationPermissionManager } from '../../components/NotificationPermissionManager';
 import { API_CONFIG } from '../../config';
 import CachedImage from "@/components/CachedImage";
-
 interface User {
   gender: string;
   id: number;
@@ -26,6 +25,7 @@ interface ChatPreview {
   last_message_time: string | number;
   unread_count: number;
 }
+
 
 export default function MessagesScreen() {
   const router = useRouter();
@@ -53,7 +53,7 @@ export default function MessagesScreen() {
       }
 
       const response = await axios.get<ChatPreview[]>(
-        `${API_CONFIG.BASE_URL}/chat/api/chats/list_preview/`,
+        `${API_CONFIG.BASE_URL}/chat/api/chats/list-preview/`,
         {
           headers: {
             'Authorization': `Token ${token}`,

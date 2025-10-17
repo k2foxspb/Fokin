@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, Linking } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Linking, Vibration, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNotifications } from '../contexts/NotificationContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -10,9 +10,65 @@ interface NotificationPermissionManagerProps {
 }
 
 export const NotificationPermissionManager: React.FC<NotificationPermissionManagerProps> = ({ style }) => {
-  const { debugInfo, requestPermissions } = useNotifications();
   const { theme } = useTheme();
   const [isRequesting, setIsRequesting] = useState(false);
+
+  // Получаем контекст уведомлений; если провайдер отсутствует, используем пустой объект.
+  // requestPermissions может быть undefined – в этом случае создаём безопасный заглушечный
+  // async‑метод, который просто возвращает false (разрешения не получены).
+  const {
+    debugInfo = { hasPermission: false },
+    requestPermissions: rp,
+  } = useNotifications() || {};
+
+  const requestPermissions = rp
+    ? rp
+    : async () => {
+        // Нет провайдера – считаем, что разрешения не получены.
+        return false;
+      };
+
+  // Обрабатываем уведомления, когда приложение находится в фокусе
+  useEffect(() => {
+    // Переменная для хранения подписки, если она будет создана
+    let subscription: any = null;
+
+    // Выполняем только на мобильных платформах
+    if (Platform.OS !== 'web') {
+      // Попытка установить глобальный обработчик уведомлений
+      try {
+        if (typeof Notifications.setNotificationHandler === 'function') {
+          Notifications.setNotificationHandler({
+            handleNotification: () => ({
+              shouldShowAlert: false,
+              shouldPlaySound: false,
+              shouldSetBadge: false,
+            }),
+          });
+        }
+      } catch (e) {
+        console.warn('Ошибка при установке NotificationHandler:', e);
+      }
+
+      // Попытка добавить слушатель получения уведомления
+      try {
+        if (typeof Notifications.addNotificationReceivedListener === 'function') {
+          subscription = Notifications.addNotificationReceivedListener(() => {
+            Vibration.vibrate();
+          });
+        }
+      } catch (e) {
+        console.warn('Ошибка при добавлении NotificationReceivedListener:', e);
+      }
+    }
+
+    // Функция‑очистка, вызываемая при размонтировании компонента
+    return () => {
+      if (subscription && typeof subscription.remove === 'function') {
+        subscription.remove();
+      }
+    };
+  }, []);
 
   const handleRequestPermissions = async () => {
     setIsRequesting(true);
@@ -35,8 +91,9 @@ export const NotificationPermissionManager: React.FC<NotificationPermissionManag
     }
   };
 
-  // Не показываем компонент если разрешения уже есть
-  if (debugInfo.hasPermission) {
+  // Не показываем компонент, если разрешения уже получены.
+  // Защищаемся от возможного undefined у debugInfo.
+  if (debugInfo && debugInfo.hasPermission) {
     return null;
   }
 

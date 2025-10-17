@@ -69,6 +69,12 @@ export default function Register() {
       Alert.alert('Ошибка', 'Введите имя пользователя');
       return false;
     }
+    // Проверяем, что логин состоит только из допустимых ASCII‑символов
+    const asciiUsernamePattern = /^[\w.@+-]+$/;
+    if (!asciiUsernamePattern.test(username)) {
+      Alert.alert('Ошибка', 'Имя пользователя может содержать только буквы, цифры и символы @/./+/-/_');
+      return false;
+    }
     if (!email.trim()) {
       Alert.alert('Ошибка', 'Введите email');
       return false;
