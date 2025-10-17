@@ -3,7 +3,7 @@ import {useWebSocket} from '../hooks/useWebSocket';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import {router} from 'expo-router';
-import {AppState, Platform} from 'react-native';
+import {AppState, Platform, Vibration} from 'react-native';
 import axios from 'axios';
 import {API_CONFIG} from '../config';
 
@@ -142,6 +142,10 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
     const checkConnectionIntervalRef = useRef<NodeJS.Timeout | null>(null);
     const lastPingTimeRef = useRef<number>(Date.now());
     const sentNotificationsCache = useRef<Set<string>>(new Set()); // Кеш отправленных уведомлений
+    const lastNavigationTime = useRef<number>(0);
+    const lastNavigatedChatId = useRef<string | null>(null);
+    const isNavigating = useRef<boolean>(false);
+    const listenerInitialized = useRef<boolean>(false);
     useEffect(() => {
         const setupNotificationChannels = async () => {
             try {
@@ -317,55 +321,40 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
         }
     }, [isAuthenticated]);
 
-    // Проверка запуска из уведомления
+    // Настройка notification listener ОДИН РАЗ при монтировании
+    // БЕЗ зависимостей чтобы избежать повторных регистраций
     useEffect(() => {
-        const checkLaunchNotification = async () => {
-            try {
-                // Получаем время запуска приложения из AsyncStorage
-                const appLaunchTime = await AsyncStorage.getItem('appLaunchTime');
-                const currentLaunchTime = Date.now().toString();
+        // КРИТИЧНО: Регистрируем listener только ОДИН раз
+        if (listenerInitialized.current) {
+            console.log('🔥 [NotificationContext] ⚠️ Listener ALREADY initialized, skipping');
+            return;
+        }
 
-                // Сохраняем текущее время запуска
-                await AsyncStorage.setItem('appLaunchTime', currentLaunchTime);
+        console.log('🔥 [NotificationContext] 🎯 Registering notification response listener (ONCE)');
 
-                const lastNotificationResponse = await Notifications.getLastNotificationResponseAsync();
+        // Устанавливаем ЕДИНСТВЕННЫЙ listener для всех нажатий
+        const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
+            console.log('🔥 [NotificationContext] 📱 Notification tapped - processing');
+            handleNotificationResponse(response);
+        });
 
-                if (lastNotificationResponse) {
-                    const notificationTime = lastNotificationResponse.notification.date;
-                    const timeSinceNotification = Date.now() - notificationTime;
+        responseListener.current = subscription;
+        listenerInitialized.current = true;
 
-                    // Проверяем, что уведомление было нажато недавно (в течение последних 30 секунд)
-                    // и это новый запуск приложения
-                    const isRecentNotification = timeSinceNotification < 30000; // 30 секунд
-                    const isNewAppLaunch = !appLaunchTime || (parseInt(currentLaunchTime) - parseInt(appLaunchTime) > 5000);
+        console.log('🔥 [NotificationContext] ✅ Listener registered successfully');
 
-                    if (isRecentNotification && isNewAppLaunch) {
-                        const isFromFirebase = lastNotificationResponse.notification.request.content.data?.isFirebase === true;
-
-                        if (isFromFirebase) {
-                            console.log('🔥 [FCM] Приложение запущено из уведомления!');
-                            console.log(`🔥 [FCM] Время с момента нажатия: ${Math.round(timeSinceNotification / 1000)}с`);
-                            console.log('🔥 [FCM] Данные уведомления:', JSON.stringify(lastNotificationResponse.notification.request.content.data));
-                        }
-
-                        setTimeout(() => {
-                            if (isFromFirebase) {
-                                console.log('🔥 [FCM] Обрабатываем уведомление, из которого запущено приложение');
-                            }
-                            handleNotificationResponse(lastNotificationResponse);
-                        }, 1000);
-                    }
-                }
-            } catch (error) {
+        // Cleanup при размонтировании компонента (НЕ при изменении состояния)
+        return () => {
+            console.log('🔥 [NotificationContext] 🗑️ Component unmounting - removing listener');
+            if (responseListener.current) {
+                responseListener.current.remove();
+                responseListener.current = null;
+                listenerInitialized.current = false;
             }
         };
+    }, []); // ПУСТОЙ массив зависимостей - выполняется ТОЛЬКО при монтировании
 
-        if (isAuthenticated) {
-            checkLaunchNotification();
-        }
-    }, [isAuthenticated]);
-
-    // Обработка ответа на уведомление - ЕДИНСТВЕННОЕ МЕСТО ДЛЯ НАВИГАЦИИ
+    // Обработка ответа на уведомление с защитой от дублирования
     const handleNotificationResponse = (response: Notifications.NotificationResponse) => {
         try {
             // Используем data вместо устаревшего dataString
@@ -382,72 +371,107 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
             const isFromFirebase = data?.isFirebase === true;
 
             if (isFromFirebase) {
-                console.log('🔥 [FCM] Обработка ответа на уведомление:', response.notification.request.identifier);
-                console.log('🔥 [FCM] Данные уведомления:', JSON.stringify(data));
+                console.log('🔥 [NotificationContext] Notification response:', response.notification.request.identifier);
             }
 
             if (isAuthenticated) {
-                if (isFromFirebase) {
-                    console.log('🔥 [FCM] Обновляем данные после нажатия на уведомление');
-                }
                 refreshNotifications();
             }
 
-            if (data?.startfrom !== undefined && isFromFirebase) {
-                console.log('🔥 [FCM] Уведомление с startfrom:', data.startfrom);
-            }
+            if (data && data.type === 'message_notification' && data.chatId) {
+                const chatId = String(data.chatId);
+                const now = Date.now();
 
-            if (data && data.type === 'message_notification') {
-                if (isFromFirebase) {
-                    console.log('🔥 [FCM] Это уведомление о сообщении, выполняем навигацию');
-                    console.log('🔥 [FCM] Данные для навигации:', {
-                        chatId: data.chatId,
-                        senderId: data.senderId || data.sender_id,
-                        type: data.type
-                    });
+                // КРИТИЧЕСКАЯ ЗАЩИТА: Проверяем дублирование
+                if (isNavigating.current) {
+                    console.log('🔥 [NotificationContext] ⚠️ Navigation already in progress, SKIPPING');
+                    return;
                 }
 
-                if (data.chatId) {
-                    if (isFromFirebase) {
-                        console.log('🔥 [FCM] Переходим к чату:', data.chatId);
-                    }
+                const timeSinceLastNav = now - lastNavigationTime.current;
+                if (lastNavigatedChatId.current === chatId && timeSinceLastNav < 5000) {
+                    console.log('🔥 [NotificationContext] ⚠️ Duplicate navigation to same chat, SKIPPING');
+                    return;
+                }
 
-                    // Простая навигация без задержки
-                    try {
-                        router.push({
-                            pathname: '/chat/[id]' as any,
-                            params: {
-                                "id": String(data.chatId),
-                                "userId": String(data.senderId || data.sender_id)
-                            }
-                        });
-                        if (isFromFirebase) {
-                            console.log('🔥 [FCM] ✅ Навигация в чат выполнена успешно');
+                // Устанавливаем флаги
+                isNavigating.current = true;
+                lastNavigationTime.current = now;
+                lastNavigatedChatId.current = chatId;
+
+                console.log('🔥 [NotificationContext] 🚀 Navigating to chat:', chatId);
+
+                // Выполняем навигацию
+                try {
+                    router.push({
+                        pathname: '/chat/[id]' as any,
+                        params: {
+                            "id": chatId,
+                            "userId": String(data.senderId || data.sender_id)
                         }
-                    } catch (navError) {
-                        // Fallback - переход к списку сообщений
-                        router.push('/(main)/messages');
-                    }
-                } else {
+                    });
+                    console.log('🔥 [NotificationContext] ✅ Navigation successful');
+                } catch (navError) {
+                    console.error('🔥 [NotificationContext] ❌ Navigation failed:', navError);
                     router.push('/(main)/messages');
                 }
+
+                // Сбрасываем флаг через 3 секунды
+                setTimeout(() => {
+                    isNavigating.current = false;
+                }, 3000);
             }
         } catch (error) {
+            console.error('🔥 [NotificationContext] Error handling notification:', error);
+            isNavigating.current = false;
         }
     };
 
 
-    // Функция для отправки локального уведомления
-    const sendNotificationWithUserData = async (messageArray: MessageType[]) => {
-        // При Firebase разрешаем уведомления только для активного приложения
-        console.log('🔥 [FCM] sendNotificationWithUserData called - Firebase mode:', isUsingFirebaseNavigation);
-        if (isUsingFirebaseNavigation && AppState.currentState !== 'active') {
+    // Функция для вибрации без уведомления (когда приложение активно)
+    const vibrateWithoutNotification = (messageArray: MessageType[]) => {
+        try {
+            if (!messageArray || messageArray.length === 0) {
+                return;
+            }
 
-            return;
+            const currentTime = Date.now();
+
+            // Проверяем дублирование вибрации
+            if (currentTime - lastMessageTimestamp < 500) {
+                return;
+            }
+
+            const mostActiveMsg = messageArray[0];
+            const notificationKey = `${mostActiveMsg.sender_id}_${mostActiveMsg.message_id}_${mostActiveMsg.count}`;
+
+            if (sentNotificationsCache.current.has(notificationKey)) {
+                return;
+            }
+
+            // Добавляем в кеш
+            sentNotificationsCache.current.add(notificationKey);
+            setTimeout(() => {
+                sentNotificationsCache.current.delete(notificationKey);
+            }, 10 * 60 * 1000);
+
+            setLastMessageTimestamp(currentTime);
+
+            // Вибрация: 400мс вибрация, 200мс пауза, 400мс вибрация
+            Vibration.vibrate([0, 400, 200, 400]);
+
+            console.log('📳 [Notification] Vibration triggered for active app');
+        } catch (error) {
+            console.error('❌ [Notification] Error in vibrateWithoutNotification:', error);
         }
+    };
+
+    // Функция для отправки локального уведомления (когда приложение неактивно)
+    const sendNotificationWithUserData = async (messageArray: MessageType[]) => {
+        // При Firebase разрешаем уведомления только когда приложение НЕ активно
+        console.log('🔥 [FCM] sendNotificationWithUserData called - App state:', AppState.currentState);
 
         try {
-
             if (!hasNotificationPermission) {
                 const granted = await requestPermissions();
                 if (!granted) {
@@ -497,7 +521,23 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
 
             setLastMessageTimestamp(currentTime);
 
+            // Отправляем уведомление в шторку только если приложение НЕ активно
+            await Notifications.scheduleNotificationAsync({
+                content: {
+                    title: senderInfo,
+                    body: notificationBody,
+                    sound: 'default',
+                    data: {
+                        type: 'message_notification',
+                        chatId: mostActiveMsg.chat_id,
+                        senderId: mostActiveMsg.sender_id,
+                        isFirebase: isUsingFirebaseNavigation,
+                    },
+                },
+                trigger: null,
+            });
 
+            console.log('✅ [Notification] Notification sent to notification tray');
 
             // Добавляем в кеш отправленных уведомлений
             sentNotificationsCache.current.add(notificationKey);
@@ -509,6 +549,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
                 entries.slice(-25).forEach(key => sentNotificationsCache.current.add(key));
             }
         } catch (error) {
+            console.error('❌ [Notification] Error in sendNotificationWithUserData:', error);
         }
     };
 
@@ -621,13 +662,23 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
                 const newUnreadCount = data.unique_sender_count !== undefined ? data.unique_sender_count : messageArray.length;
                 setUnreadCount(newUnreadCount);
 
-                // Показываем уведомление только если есть разрешения
-                const shouldShowNotification = hasNotificationPermission && AppState.currentState !== 'active' && messageArray.length > 0;
+                // Определяем тип уведомления в зависимости от состояния приложения
+                if (messageArray.length > 0) {
+                    const isAppActive = AppState.currentState === 'active';
 
-                if (shouldShowNotification) {
-                    setTimeout(() => {
-                        sendNotificationWithUserData(messageArray);
-                    }, 300);
+                    if (isAppActive) {
+                        // Приложение открыто - только вибрация
+                        console.log('📱 [Notification] App is active - vibration only');
+                        setTimeout(() => {
+                            vibrateWithoutNotification(messageArray);
+                        }, 300);
+                    } else if (hasNotificationPermission) {
+                        // Приложение свёрнуто/закрыто - полное уведомление
+                        console.log('📱 [Notification] App is inactive - showing notification');
+                        setTimeout(() => {
+                            sendNotificationWithUserData(messageArray);
+                        }, 300);
+                    }
                 }
                 return;
             }
@@ -662,12 +713,20 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
                         const previousMsg = previousMessagesRef.current.find(m => m.sender_id === messageData.sender_id);
                         const isNewOrUpdated = true; // Всегда true для рабочего режима
 
-                        if (isNewOrUpdated && hasNotificationPermission) {
+                        if (isNewOrUpdated) {
+                            const isAppActive = AppState.currentState === 'active';
+
                             setTimeout(async () => {
                                 try {
-                                    await sendNotificationWithUserData([messageData]);
+                                    if (isAppActive) {
+                                        // Приложение открыто - только вибрация
+                                        vibrateWithoutNotification([messageData]);
+                                    } else if (hasNotificationPermission) {
+                                        // Приложение свёрнуто/закрыто - полное уведомление
+                                        await sendNotificationWithUserData([messageData]);
+                                    }
                                 } catch (error) {
-                                    console.error('❌ [Notification] Error in sendNotificationWithUserData:', error);
+                                    console.error('❌ [Notification] Error in notification:', error);
                                 }
                             }, 300);
                         }
@@ -722,17 +781,25 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
                         setUnreadCount(messageArray.length);
                     }
 
-                    // Показываем уведомления для обновлений (но не для начальных данных) и только если приложение неактивно
-                    if (data.type === 'messages_by_sender_update' && AppState.currentState !== 'active') {
+                    // Показываем уведомления для обновлений (но не для начальных данных)
+                    if (data.type === 'messages_by_sender_update') {
                         const previousMessages = previousMessagesRef.current;
                         const hasChanges = messageArray.some(newMsg => {
                             const prevMsg = previousMessages.find(m => m.sender_id === newMsg.sender_id);
                             return !prevMsg || newMsg.count > prevMsg.count;
                         });
 
-                        if (hasChanges && hasNotificationPermission) {
+                        if (hasChanges) {
+                            const isAppActive = AppState.currentState === 'active';
+
                             setTimeout(() => {
-                                sendNotificationWithUserData(messageArray);
+                                if (isAppActive) {
+                                    // Приложение открыто - только вибрация
+                                    vibrateWithoutNotification(messageArray);
+                                } else if (hasNotificationPermission) {
+                                    // Приложение свёрнуто/закрыто - полное уведомление
+                                    sendNotificationWithUserData(messageArray);
+                                }
                             }, 300);
                         }
                     }

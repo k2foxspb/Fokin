@@ -106,6 +106,7 @@ class PrivateMessage(models.Model):
     message = models.TextField()
     timestamp = models.DateTimeField(auto_now_add=True)
     read = models.BooleanField(default=False)
+    read_at = models.DateTimeField(null=True, blank=True)
 
     # Поля для медиафайлов
     media_type = models.CharField(max_length=10, choices=MEDIA_TYPE_CHOICES, default='text')

@@ -15,6 +15,7 @@ import messaging, {
 import {addNotificationReceivedListener, setNotificationHandler} from "expo-notifications";
 import {log} from "expo/build/devtools/logger";
 import {async} from "@firebase/util";
+import { router } from 'expo-router';
 
 // Импортируем типы отдельно
 const AuthorizationStatus = messaging.AuthorizationStatus;
@@ -61,7 +62,6 @@ interface InitResult {
 }
 
 type MessageHandler = (message: MessageData) => void;
-type NavigationRef = any; // Можно заменить на конкретный тип навигации если известен
 
 /**
  * Умный Firebase сервис с fallback на Expo Notifications
@@ -70,7 +70,6 @@ type NavigationRef = any; // Можно заменить на конкретны
 class FirebaseNotificationService {
   private static instance: FirebaseNotificationService;
   private isFirebaseAvailable: boolean = false;
-  private navigationRef: NavigationRef = null;
   private messageHandlers: MessageHandler[] = [];
   private isInitialized: boolean = false;
   private lastNavigationTime: number = 0;
@@ -471,9 +470,15 @@ class FirebaseNotificationService {
       const Notifications = require('expo-notifications');
 
 
-      // Дополнительно для Android - создаем высокоприоритетный канал
+      // Дополнительно для Android - создаем высокоприоритетный канал с группировкой
       if (Platform.OS === 'android') {
         try {
+          // Создаем группу уведомлений
+          await Notifications.setNotificationChannelGroupAsync('app-messages', {
+            name: 'Сообщения приложения',
+          });
+
+          // Создаем канал с привязкой к группе
           await Notifications.setNotificationChannelAsync('urgent-messages', {
             name: 'Срочные сообщения',
             importance: Notifications.AndroidImportance.MAX, // Максимальная важность
@@ -484,7 +489,10 @@ class FirebaseNotificationService {
             showBadge: true,
             lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
             bypassDnd: true, // Обход режима "Не беспокоить"
+            groupId: 'app-messages', // Привязываем к группе
           });
+
+          console.log('🔥 [FCM] ✅ Notification channel group created for Android');
         } catch (channelError) {
           console.error('🔥 [FCM] Failed to create notification channel:', channelError);
         }
@@ -520,23 +528,37 @@ class FirebaseNotificationService {
 
         if (currentState === 'active') {
           try {
-            // Создаем локальное уведомление для активного приложения
-            const activeNotificationId = await Notifications.scheduleNotificationAsync({
-              content: {
-                title: messageData.title,
-                body: messageData.body,
-                data: {
-                  ...messageData.data,
-                  source: 'firebase_active',
-                  timestamp: Date.now(),
-                },
-                sound: 'default',
-                ...(Platform.OS === 'android' && {
-                  channelId: 'urgent-messages',
-                }),
+            // Создаем локальное уведомление для активного приложения с группировкой
+            const notificationContent: any = {
+              title: messageData.title,
+              body: messageData.body,
+              data: {
+                ...messageData.data,
+                source: 'firebase_active',
+                timestamp: Date.now(),
               },
+              sound: 'default',
+            };
+
+            // Android - добавляем group для автоматической группировки
+            if (Platform.OS === 'android') {
+              notificationContent.channelId = 'urgent-messages';
+              notificationContent.groupId = 'app-messages'; // Группируем все уведомления
+              notificationContent.groupSummary = false; // Это не summary уведомление
+            }
+
+            // iOS - добавляем threadIdentifier для группировки
+            if (Platform.OS === 'ios') {
+              notificationContent.threadIdentifier = 'app-messages'; // Группируем по thread
+              notificationContent.categoryIdentifier = 'message'; // Категория для действий
+            }
+
+            const activeNotificationId = await Notifications.scheduleNotificationAsync({
+              content: notificationContent,
               trigger: null,
             });
+
+            console.log('🔥 [FCM] ✅ Grouped notification created:', activeNotificationId);
 
           } catch (error) {
             console.error('🔥 [FCM] ❌ Active app notification failed:', error);
@@ -554,24 +576,26 @@ class FirebaseNotificationService {
         throw onMessageError;
       }
 
+      // Expo listener УДАЛЕН - навигация ТОЛЬКО в NotificationContext
+      // Это предотвращает дублирование обработчиков и двойную навигацию
+
+      // Firebase notification tap listeners ОТКЛЮЧЕНЫ
+      // Навигация полностью обрабатывается в NotificationContext
+      // Firebase только получает уведомления для показа
+
       try {
-        // Обработка открытия приложения через уведомление
-        messaging().onNotificationOpenedApp((remoteMessage: FirebaseMessagingTypes.RemoteMessage) => {
-          this.handleNotificationTap(remoteMessage);
+        // Только логируем, НЕ обрабатываем
+        messaging().onNotificationOpenedApp(async (remoteMessage: FirebaseMessagingTypes.RemoteMessage) => {
+          console.log('🔥 [FCM] 📱 Notification opened app - handled by NotificationContext');
+          // Ничего не делаем - NotificationContext обработает
         });
 
-
-        // Проверка начального уведомления (если приложение было закрыто)
+        // Только логируем начальное уведомление
         messaging().getInitialNotification()
-          .then((remoteMessage: FirebaseMessagingTypes.RemoteMessage | null) => {
+          .then(async (remoteMessage: FirebaseMessagingTypes.RemoteMessage | null) => {
             if (remoteMessage) {
-              console.log('🔥 [FCM] Initial notification:', remoteMessage);
-              // Добавляем небольшую задержку для инициализации навигации
-              setTimeout(() => {
-                this.handleNotificationTap(remoteMessage);
-              }, 2000);
-            } else {
-              console.log('🔥 [FCM] No initial notification');
+              console.log('🔥 [FCM] 📱 Initial notification detected - will be handled by NotificationContext');
+              // Ничего не делаем - NotificationContext обработает
             }
           })
           .catch((initialError) => {
@@ -767,6 +791,9 @@ class FirebaseNotificationService {
         // Не прерываем инициализацию из-за ошибки listeners
       }
 
+      // Отложенная навигация обрабатывается в NotificationContext
+      console.log('🔥 [Firebase] Pending navigation will be handled by NotificationContext');
+
       // В продакшене - дополнительная проверка
       if (!__DEV__) {
         console.log('🔥 [PROD] === PRODUCTION VERIFICATION ===');
@@ -829,53 +856,8 @@ class FirebaseNotificationService {
     this.messageHandlers = [];
   }
 
-  // Метод для установки навигационной ссылки
-  setNavigationRef(ref: NavigationRef): void {
-    this.navigationRef = ref;
-  }
-
-  // Обработка нажатия на уведомление - ОТКЛЮЧЕНА
-  private handleNotificationTap(message: FirebaseMessagingTypes.RemoteMessage | RemoteMessage): void {
-    try {
-      const data = message.data || message;
-      console.log('🔥 [Firebase] ⚠️ Notification tap received but NAVIGATION DISABLED in Firebase service');
-      console.log('🔥 [Firebase] Data:', JSON.stringify(data));
-      console.log('🔥 [Firebase] Navigation will be handled by NotificationContext only');
-
-      // НE делаем навигацию - только логируем для отладки
-      if (data.type === 'message_notification' && data.chatId) {
-        console.log('🔥 [Firebase] Would navigate to chat:', data.chatId, 'but navigation is disabled here');
-      }
-    } catch (error) {
-      console.error('🔥 [Firebase] Error processing notification tap:', error);
-    }
-  }
-
-  // ЛОКАЛЬНЫЕ УВЕДОМЛЕНИЯ ПОЛНОСТЬЮ УДАЛЕНЫ - ТОЛЬКО FIREBASE FCM
-
-  // Проверка отложенной навигации
-  private async checkPendingNavigation(): Promise<void> {
-    try {
-      const pendingNavigation = await AsyncStorage.getItem('pendingNavigation');
-      if (pendingNavigation) {
-        const navData = JSON.parse(pendingNavigation);
-
-        // Проверяем, что навигация не слишком старая (максимум 5 минут)
-        if (Date.now() - navData.timestamp < 300000) {
-          setTimeout(() => {
-            if (this.navigationRef?.current) {
-              this.navigationRef.current.navigate(navData.screen, navData.params);
-              AsyncStorage.removeItem('pendingNavigation');
-            }
-          }, 1000);
-        } else {
-          AsyncStorage.removeItem('pendingNavigation');
-        }
-      }
-    } catch (error) {
-      console.log('🔥 [Firebase] Error checking pending navigation:', error);
-    }
-  }
+  // executePendingNavigation и checkPendingChatNavigation УДАЛЕНЫ
+  // Навигация полностью обрабатывается в NotificationContext
 
 
 

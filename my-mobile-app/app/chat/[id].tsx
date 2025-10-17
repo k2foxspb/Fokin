@@ -179,6 +179,9 @@ export default function ChatScreen() {
 
     // Состояния для записи аудио
     const [isRecordingAudio, setIsRecordingAudio] = useState(false);
+
+    // Флаг для отслеживания активности компонента чата
+    const [isChatActive, setIsChatActive] = useState(true);
     const [audioRecording, setAudioRecording] = useState<Audio.Recording | null>(null);
     const [recordingDuration, setRecordingDuration] = useState(0);
     const [audioPermissionGranted, setAudioPermissionGranted] = useState(false);
@@ -202,6 +205,59 @@ export default function ChatScreen() {
             prev.map(msg => msg.id === messageId ? { ...msg, ...updates } : msg)
         );
     };
+
+    // Функция для отправки уведомления о прочитанности сообщения
+    const markMessageAsRead = useCallback((messageId: number, senderId: number) => {
+        console.log('📖 [READ-RECEIPT] ========== ATTEMPTING TO MARK MESSAGE AS READ ==========');
+        console.log('📖 [READ-RECEIPT] Message ID:', messageId);
+        console.log('📖 [READ-RECEIPT] Sender ID:', senderId);
+        console.log('📖 [READ-RECEIPT] Current User ID:', currentUserId);
+        console.log('📖 [READ-RECEIPT] Room ID:', roomId);
+        console.log('📖 [READ-RECEIPT] Conditions:', {
+            isChatActive,
+            isConnected,
+            isDataLoaded,
+            senderId,
+            currentUserId,
+            isNotMyMessage: senderId !== currentUserId
+        });
+
+        // Отправляем только если ВСЕ условия выполнены:
+        // 1. Чат активен
+        // 2. WebSocket подключен
+        // 3. Данные загружены
+        // 4. currentUserId инициализирован
+        // 5. Сообщение не от текущего пользователя
+        if (isChatActive && isConnected && isDataLoaded && currentUserId && senderId !== currentUserId) {
+            console.log('📖 [READ-RECEIPT] ✅ All conditions met, sending read receipt...');
+
+            try {
+                const readReceiptData = {
+                    type: 'mark_as_read',
+                    message_id: messageId,
+                    room_id: roomId,
+                    user_id: currentUserId
+                };
+
+                console.log('📖 [READ-RECEIPT] Sending data:', JSON.stringify(readReceiptData, null, 2));
+
+                sendMessage(readReceiptData);
+
+                console.log('📖 [READ-RECEIPT] ✅✅✅ Read receipt sent successfully for message:', messageId);
+            } catch (error) {
+                console.error('📖 [READ-RECEIPT] ❌ Error sending read receipt:', error);
+            }
+        } else {
+            console.warn('📖 [READ-RECEIPT] ⚠️ Conditions not met, NOT sending read receipt');
+            console.warn('📖 [READ-RECEIPT] Reasons:', {
+                chatNotActive: !isChatActive,
+                notConnected: !isConnected,
+                dataNotLoaded: !isDataLoaded,
+                noCurrentUserId: !currentUserId,
+                isMyMessage: senderId === currentUserId
+            });
+        }
+    }, [isChatActive, isConnected, isDataLoaded, currentUserId, roomId, sendMessage]);
 
     // Создаем стили с темой
     const styles = createStyles(theme);
@@ -253,9 +309,47 @@ export default function ChatScreen() {
 
                     // Обработка сообщений чата (включая сообщения без типа)
                     if (data.message && (!data.type || data.type === 'chat_message' || data.type === 'media_message')) {
+                        console.log('💬 [NEW-MESSAGE] ========== NEW MESSAGE RECEIVED ==========');
+                        console.log('💬 [NEW-MESSAGE] Data:', JSON.stringify(data, null, 2));
+
                         const isMyMessage = (data.sender_id === currentUserId) || (data.sender__username === currentUsername);
 
                         const messageId = data.id || Date.now();
+
+                        console.log('💬 [NEW-MESSAGE] Analysis:', {
+                            messageId,
+                            isMyMessage,
+                            hasSenderId: !!data.sender_id,
+                            currentUserId,
+                            senderUsername: data.sender__username
+                        });
+
+                        // Автоматически помечаем сообщение как прочитанное, если:
+                        // 1. Это не мое сообщение
+                        // 2. Пользователь находится в чате
+                        // 3. Сообщение имеет валидный ID
+                        // 4. Все необходимые данные инициализированы
+                        if (!isMyMessage && messageId && data.sender_id && currentUserId && isDataLoaded) {
+                            console.log('💬 [NEW-MESSAGE] ✅ Will mark as read in 500ms');
+                            // Небольшая задержка для уверенности что сообщение отобразилось
+                            setTimeout(() => {
+                                // Повторная проверка перед отправкой (на случай изменения состояния)
+                                if (isConnected && currentUserId && isChatActive) {
+                                    console.log('💬 [NEW-MESSAGE] Calling markMessageAsRead now...');
+                                    markMessageAsRead(messageId, data.sender_id);
+                                } else {
+                                    console.warn('💬 [NEW-MESSAGE] ⚠️ State changed, skipping read receipt');
+                                }
+                            }, 500);
+                        } else {
+                            console.log('💬 [NEW-MESSAGE] ⚠️ Will NOT mark as read. Reasons:', {
+                                isMyMessage,
+                                missingMessageId: !messageId,
+                                missingSenderId: !data.sender_id,
+                                noCurrentUserId: !currentUserId,
+                                dataNotLoaded: !isDataLoaded
+                            });
+                        }
 
                         setMessages(prev => {
                             // Если это мое сообщение, ищем оптимистичное сообщение для обновления
@@ -2442,6 +2536,25 @@ export default function ChatScreen() {
                     });
                     setPage(1);
 
+                    // Помечаем непрочитанные сообщения как прочитанные
+                    // Отправляем только для последних 10 сообщений от другого пользователя
+                    const unreadMessages = processedMessages
+                        .filter(msg => msg.sender_id !== currentUserId && msg.sender_id)
+                        .slice(0, 10);
+
+                    if (unreadMessages.length > 0) {
+                        console.log('📖 [READ-RECEIPT] Marking', unreadMessages.length, 'history messages as read');
+
+                        // Отправляем с небольшой задержкой чтобы не перегружать WebSocket
+                        setTimeout(() => {
+                            unreadMessages.forEach((msg, index) => {
+                                setTimeout(() => {
+                                    markMessageAsRead(msg.id, msg.sender_id!);
+                                }, index * 100); // 100ms между каждым сообщением
+                            });
+                        }, 1000); // Начинаем через 1 секунду после загрузки
+                    }
+
                     // Ленивая загрузка: URL загружаются только при прокрутке к медиа
                     console.log('📜 [HISTORY] Loaded', processedMessages.length, 'messages');
                     console.log('📜 [HISTORY] Media will be loaded lazily when visible');
@@ -2531,11 +2644,38 @@ export default function ChatScreen() {
     }, [appState]);
 
     // Инициализация чата
+    // Отслеживание активности чата
+    useEffect(() => {
+        // Устанавливаем чат как активный при монтировании
+        setIsChatActive(true);
+        console.log('📖 [CHAT-ACTIVE] ========== CHAT MOUNTED ==========');
+        console.log('📖 [CHAT-ACTIVE] Room ID:', roomId);
+        console.log('📖 [CHAT-ACTIVE] Current User ID:', currentUserId);
+        console.log('📖 [CHAT-ACTIVE] Is Connected:', isConnected);
+        console.log('📖 [CHAT-ACTIVE] Chat is now ACTIVE');
+
+        // При размонтировании помечаем чат как неактивный
+        return () => {
+            setIsChatActive(false);
+            console.log('📖 [CHAT-ACTIVE] ========== CHAT UNMOUNTED ==========');
+            console.log('📖 [CHAT-ACTIVE] Chat is now INACTIVE');
+        };
+    }, [roomId, currentUserId, isConnected]);
+
     // Отслеживание состояния приложения
     useEffect(() => {
         const subscription = AppState.addEventListener('change', async nextAppState => {
             console.log('🎥 [APP-STATE] App state changed:', appState, '->', nextAppState);
             setAppState(nextAppState);
+
+            // Обновляем состояние активности чата в зависимости от состояния приложения
+            if (nextAppState === 'active') {
+                setIsChatActive(true);
+                console.log('📖 [CHAT-ACTIVE] Chat became active');
+            } else {
+                setIsChatActive(false);
+                console.log('📖 [CHAT-ACTIVE] Chat became inactive');
+            }
 
             // Переконфигурируем аудио при возвращении в активное состояние
             if (nextAppState === 'active' && appState !== 'active') {

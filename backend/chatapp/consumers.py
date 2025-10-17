@@ -292,7 +292,7 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
     async def receive(self, text_data):
         try:
             data = json.loads(text_data)
-            message_type = data.get('type', '')
+            message_type = data.get('type', 'chat_message')
 
             logger.info(f"📡 [CONSUMER] Received message type: {message_type}")
 
@@ -300,6 +300,8 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
                 await self.handle_text_message(data)
             elif message_type == 'media_message':
                 await self.handle_media_message(data)
+            elif message_type == 'mark_as_read':
+                await self.handle_mark_as_read(data)
             else:
                 logger.warning(f"Unknown message type: {message_type}")
 
@@ -387,6 +389,73 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
         else:
             logger.error(f"📷 [CONSUMER] ❌ Missing required media data")
             await self.send(text_data=json.dumps({'error': 'Missing media data'}))
+
+    async def handle_mark_as_read(self, data):
+        """Обработка пометки сообщения как прочитанного"""
+        message_id = data.get('message_id')
+        room_id = data.get('room_id')
+        user_id = data.get('user_id')
+
+        logger.info(f"📖 [READ-RECEIPT] ========== PROCESSING READ RECEIPT ==========")
+        logger.info(f"📖 [READ-RECEIPT] Message ID: {message_id}")
+        logger.info(f"📖 [READ-RECEIPT] Room ID: {room_id}")
+        logger.info(f"📖 [READ-RECEIPT] User ID: {user_id}")
+
+        if not message_id or not user_id:
+            logger.error(f"📖 [READ-RECEIPT] ❌ Missing required data")
+            await self.send(text_data=json.dumps({
+                'type': 'read_receipt_confirmation',
+                'success': False,
+                'error': 'Missing message_id or user_id'
+            }))
+            return
+
+        try:
+            # Помечаем сообщение как прочитанное в БД
+            success, sender_id = await self.mark_message_as_read_in_db(message_id, user_id)
+
+            if success:
+                logger.info(f"📖 [READ-RECEIPT] ✅ Message {message_id} marked as read")
+
+                # Отправляем подтверждение текущему пользователю
+                await self.send(text_data=json.dumps({
+                    'type': 'read_receipt_confirmation',
+                    'message_id': message_id,
+                    'success': True
+                }))
+
+                # Уведомляем отправителя что сообщение прочитано
+                if sender_id:
+                    await self.channel_layer.group_send(
+                        self.room_group_name,
+                        {
+                            'type': 'message_read_notification',
+                            'message_id': message_id,
+                            'reader_id': user_id
+                        }
+                    )
+
+                    # Также отправляем обновление счетчиков уведомлений
+                    await self.send_notification_updates_for_read(sender_id)
+
+                    logger.info(f"📖 [READ-RECEIPT] ✅ Notified sender {sender_id}")
+            else:
+                logger.warning(f"📖 [READ-RECEIPT] ⚠️ Failed to mark message as read")
+                await self.send(text_data=json.dumps({
+                    'type': 'read_receipt_confirmation',
+                    'message_id': message_id,
+                    'success': False,
+                    'error': 'Message not found or already read'
+                }))
+
+        except Exception as e:
+            logger.error(f"📖 [READ-RECEIPT] ❌ Error: {e}")
+            await self.send(text_data=json.dumps({
+                'type': 'read_receipt_confirmation',
+                'message_id': message_id,
+                'success': False,
+                'error': str(e)
+            }))
 
     async def broadcast_message(self, message_instance, recipient_id, room):
         """Отправка обычного сообщения всем участникам"""
@@ -576,6 +645,68 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
         except Exception as e:
             logger.error(f"💾 [DB] ❌ Error saving message: {e}")
             return None
+
+    @database_sync_to_async
+    def mark_message_as_read_in_db(self, message_id, reader_id):
+        """
+        Помечаем сообщение как прочитанное в базе данных
+        Возвращает (success: bool, sender_id: int)
+        """
+        try:
+            message = PrivateMessage.objects.select_related('sender').get(id=message_id)
+
+            # Проверяем, что читатель - это получатель сообщения
+            if message.recipient_id != reader_id:
+                logger.warning(f"📖 [DB] User {reader_id} is not recipient of message {message_id}")
+                return False, None
+
+            # Если уже прочитано, не обновляем
+            if message.read:
+                logger.info(f"📖 [DB] Message {message_id} already read")
+                return True, message.sender_id
+
+            # Помечаем как прочитанное
+            message.read = True
+            message.read_at = timezone.now()
+            message.save(update_fields=['read', 'read_at'])
+
+            logger.info(f"📖 [DB] ✅ Message {message_id} marked as read in database")
+            return True, message.sender_id
+
+        except PrivateMessage.DoesNotExist:
+            logger.error(f"📖 [DB] ❌ Message {message_id} not found")
+            return False, None
+        except Exception as e:
+            logger.error(f"📖 [DB] ❌ Error marking message as read: {e}")
+            return False, None
+
+    async def send_notification_updates_for_read(self, sender_id):
+        """
+        Отправляем обновление счетчиков уведомлений после прочтения сообщения
+        """
+        try:
+            await self.channel_layer.group_send(
+                f'notifications_{sender_id}',
+                {
+                    'type': 'new_message_notification',
+                    'sender_id': sender_id,
+                    'trigger_update': True
+                }
+            )
+            logger.info(f"📖 [NOTIFICATION] Sent notification update to sender {sender_id}")
+        except Exception as e:
+            logger.error(f"📖 [NOTIFICATION] Error sending notification update: {e}")
+
+    async def message_read_notification(self, event):
+        """
+        Обработчик уведомления о прочитанности сообщения
+        Отправляется отправителю когда его сообщение прочитали
+        """
+        await self.send(text_data=json.dumps({
+            'type': 'message_read',
+            'message_id': event['message_id'],
+            'reader_id': event['reader_id']
+        }))
 
     @database_sync_to_async
     def notify_chat_list_update(self, user_ids):
