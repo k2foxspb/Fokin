@@ -34,6 +34,17 @@
             font-size: xx-small;
             color: #aeadad;
         }
+
+        .unread-message {
+            background-color: #fffacd;
+            padding: 5px;
+            border-radius: 5px;
+            transition: background-color 1.5s ease;
+        }
+
+        .unread-message.read {
+            background-color: transparent;
+        }
     </style>
 
 {% endblock %}
@@ -78,9 +89,32 @@
             timestampSpan.textContent = ` ${new Date(messageData.timestamp * 1000).toLocaleString()}`;
             messageDiv.appendChild(timestampSpan);
             messageDiv.classList.add(messageData.sender__username === username ? 'my-message' : 'other-message');
+
+            // Если сообщение не от текущего пользователя и не прочитано
+            if (messageData.sender__username !== username && messageData.is_read === false) {
+                messageDiv.classList.add('unread-message');
+                messageDiv.dataset.messageId = messageData.id;
+
+                // Плавно отмечаем как прочитанное через 2 секунды
+                setTimeout(() => {
+                    messageDiv.classList.add('read');
+                    // Отправляем на сервер информацию о прочтении
+                    markMessageAsRead(messageData.id);
+                }, 2000);
+            }
+
             chatbox.appendChild(messageDiv);
             chatbox.scrollTop = chatbox.scrollHeight;
             messageInput.focus()
+        }
+
+        function markMessageAsRead(messageId) {
+            if (websocketmessage.readyState === WebSocket.OPEN) {
+                websocketmessage.send(JSON.stringify({
+                    type: 'mark_as_read',
+                    message_id: messageId
+                }));
+            }
         }
 
         websocketmessage.onmessage = function (event) {

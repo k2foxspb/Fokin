@@ -138,6 +138,7 @@ export default function ChatScreen() {
     const [page, setPage] = useState(1);
     const [hasMore, setHasMore] = useState(true);
     const [isLoadingMore, setIsLoadingMore] = useState(false);
+    const [isInitialLoading, setIsInitialLoading] = useState(false);
     const [selectedImage, setSelectedImage] = useState<string | null>(null);
     const [isImageViewerVisible, setIsImageViewerVisible] = useState(false);
     const [lastImageTap, setLastImageTap] = useState(0);
@@ -170,8 +171,6 @@ export default function ChatScreen() {
         isLoaded: boolean,
         isFullscreen: boolean
     }}>({});
-    const [fullscreenVideoId, setFullscreenVideoId] = useState<string | null>(null);
-    const [isAnyVideoFullscreen, setIsAnyVideoFullscreen] = useState(false);
     const [fullscreenModalVideoUri, setFullscreenModalVideoUri] = useState<string | null>(null);
     const [isFullscreenModalVisible, setIsFullscreenModalVisible] = useState(false);
     const [downloadingDocuments, setDownloadingDocuments] = useState<{[key: number]: boolean}>({});
@@ -182,6 +181,19 @@ export default function ChatScreen() {
 
     // Флаг для отслеживания активности компонента чата
     const [isChatActive, setIsChatActive] = useState(true);
+
+    // Кеш для отслеживания уже помеченных сообщений (предотвращение дублирования)
+    const markedAsReadCache = useRef<Set<number>>(new Set());
+    // Состояние для отслеживания непрочитанных сообщений с анимацией
+    const [unreadMessages, setUnreadMessages] = useState<Set<number>>(new Set());
+    const unreadAnimations = useRef<{[key: number]: Animated.Value}>({});
+    // Очередь для сообщений, полученных до инициализации
+    const pendingMessagesQueue = useRef<Array<{messageId: number, senderId: number}>>([]);
+    // Ref'ы для актуальных значений состояний (для использования в WebSocket колбэках)
+    const currentUserIdRef = useRef<number | null>(null);
+    const isDataLoadedRef = useRef<boolean>(false);
+    const isConnectedRef = useRef<boolean>(false);
+    const isChatActiveRef = useRef<boolean>(false);
     const [audioRecording, setAudioRecording] = useState<Audio.Recording | null>(null);
     const [recordingDuration, setRecordingDuration] = useState(0);
     const [audioPermissionGranted, setAudioPermissionGranted] = useState(false);
@@ -206,58 +218,184 @@ export default function ChatScreen() {
         );
     };
 
+    // Функция для анимированного перехода сообщения в состояние "прочитано"
+    const animateMessageAsRead = useCallback((messageId: number) => {
+        console.log('✨ [ANIMATION] Starting read animation for message:', messageId);
+        console.log('✨ [ANIMATION] Current unread messages:', Array.from(unreadMessages));
+        console.log('✨ [ANIMATION] Animation exists:', !!unreadAnimations.current[messageId]);
+
+        // Создаем анимацию затухания фона, если еще не создана
+        if (!unreadAnimations.current[messageId]) {
+            const AnimatedNative = require('react-native').Animated;
+            unreadAnimations.current[messageId] = new AnimatedNative.Value(1);
+            console.log('✨ [ANIMATION] Created new animation value for message:', messageId);
+        }
+
+        // Плавно убираем фоновую подсветку за 1.5 секунды
+        const AnimatedNative = require('react-native').Animated;
+        AnimatedNative.timing(unreadAnimations.current[messageId], {
+            toValue: 0,
+            duration: 1500, // 1.5 секунды для плавного перехода
+            useNativeDriver: false, // backgroundColor не поддерживает native driver
+        }).start(() => {
+            // После завершения анимации удаляем сообщение из непрочитанных
+            console.log('✨ [ANIMATION] Animation finished, removing from unread:', messageId);
+
+            // Используем setTimeout чтобы избежать обновления состояния во время рендера
+            setTimeout(() => {
+                setUnreadMessages(prev => {
+                    const newSet = new Set(prev);
+                    newSet.delete(messageId);
+                    console.log('✨ [ANIMATION] Updated unread messages:', Array.from(newSet));
+                    return newSet;
+                });
+                // Очищаем анимацию
+                delete unreadAnimations.current[messageId];
+                console.log('✨ [ANIMATION] Read animation completed for message:', messageId);
+            }, 0);
+        });
+    }, []);
+
+    // Функция для массовой отметки сообщений как прочитанных (для истории)
+    const markMultipleMessagesAsRead = useCallback((messageIds: number[]) => {
+        // ИСПОЛЬЗУЕМ REF'Ы для актуальных значений
+        const actualCurrentUserId = currentUserIdRef.current;
+        const actualIsConnected = isConnectedRef.current;
+        const actualIsChatActive = isChatActiveRef.current;
+        const actualIsDataLoaded = isDataLoadedRef.current;
+
+        console.log('📖 [BULK-READ] ========== MARKING MULTIPLE MESSAGES AS READ ==========');
+        console.log('📖 [BULK-READ] Count:', messageIds.length);
+        console.log('📖 [BULK-READ] Current state (from refs):', {
+            actualIsChatActive,
+            actualIsConnected,
+            actualIsDataLoaded,
+            actualCurrentUserId,
+            roomId
+        });
+
+        if (!actualIsChatActive || !actualIsConnected || !actualIsDataLoaded || !actualCurrentUserId) {
+            console.warn('📖 [BULK-READ] ⚠️ Cannot mark bulk messages - conditions not met');
+            return;
+        }
+
+        // Фильтруем сообщения: убираем уже помеченные и свои собственные
+        const messagesToMark = messageIds.filter(id => !markedAsReadCache.current.has(id));
+
+        if (messagesToMark.length === 0) {
+            console.log('📖 [BULK-READ] ℹ️ No messages to mark (all already marked or own messages)');
+            return;
+        }
+
+        console.log('📖 [BULK-READ] Messages to mark:', messagesToMark.length);
+
+        // Добавляем в кеш ВСЕ сообщения перед отправкой
+        messagesToMark.forEach(id => markedAsReadCache.current.add(id));
+
+        try {
+            const bulkReadData = {
+                type: 'mark_multiple_as_read',
+                message_ids: messagesToMark,
+                room_id: roomId,
+                user_id: actualCurrentUserId
+            };
+
+            console.log('📖 [BULK-READ] Sending bulk read receipt for', messagesToMark.length, 'messages');
+            sendMessage(bulkReadData);
+            console.log('📖 [BULK-READ] ✅ Bulk read receipt sent successfully');
+        } catch (error) {
+            console.error('📖 [BULK-READ] ❌ Error sending bulk read receipt:', error);
+            // Убираем из кеша при ошибке
+            messagesToMark.forEach(id => markedAsReadCache.current.delete(id));
+        }
+    }, [roomId, sendMessage]);
+
     // Функция для отправки уведомления о прочитанности сообщения
     const markMessageAsRead = useCallback((messageId: number, senderId: number) => {
+        // Проверяем, не было ли это сообщение уже помечено
+        if (markedAsReadCache.current.has(messageId)) {
+            console.log('📖 [READ-RECEIPT] ⚠️ Message', messageId, 'already marked as read (cached)');
+            return;
+        }
+
+        // ИСПОЛЬЗУЕМ REF'Ы для актуальных значений
+        const actualCurrentUserId = currentUserIdRef.current;
+        const actualIsConnected = isConnectedRef.current;
+        const actualIsChatActive = isChatActiveRef.current;
+        const actualIsDataLoaded = isDataLoadedRef.current;
+
         console.log('📖 [READ-RECEIPT] ========== ATTEMPTING TO MARK MESSAGE AS READ ==========');
         console.log('📖 [READ-RECEIPT] Message ID:', messageId);
         console.log('📖 [READ-RECEIPT] Sender ID:', senderId);
-        console.log('📖 [READ-RECEIPT] Current User ID:', currentUserId);
+        console.log('📖 [READ-RECEIPT] Current User ID (ref):', actualCurrentUserId);
         console.log('📖 [READ-RECEIPT] Room ID:', roomId);
-        console.log('📖 [READ-RECEIPT] Conditions:', {
-            isChatActive,
-            isConnected,
-            isDataLoaded,
+        console.log('📖 [READ-RECEIPT] Conditions (from refs):', {
+            actualIsChatActive,
+            actualIsConnected,
+            actualIsDataLoaded,
             senderId,
-            currentUserId,
-            isNotMyMessage: senderId !== currentUserId
+            actualCurrentUserId,
+            isNotMyMessage: senderId !== actualCurrentUserId
         });
 
-        // Отправляем только если ВСЕ условия выполнены:
-        // 1. Чат активен
-        // 2. WebSocket подключен
-        // 3. Данные загружены
-        // 4. currentUserId инициализирован
-        // 5. Сообщение не от текущего пользователя
-        if (isChatActive && isConnected && isDataLoaded && currentUserId && senderId !== currentUserId) {
-            console.log('📖 [READ-RECEIPT] ✅ All conditions met, sending read receipt...');
-
-            try {
-                const readReceiptData = {
-                    type: 'mark_as_read',
-                    message_id: messageId,
-                    room_id: roomId,
-                    user_id: currentUserId
-                };
-
-                console.log('📖 [READ-RECEIPT] Sending data:', JSON.stringify(readReceiptData, null, 2));
-
-                sendMessage(readReceiptData);
-
-                console.log('📖 [READ-RECEIPT] ✅✅✅ Read receipt sent successfully for message:', messageId);
-            } catch (error) {
-                console.error('📖 [READ-RECEIPT] ❌ Error sending read receipt:', error);
-            }
-        } else {
-            console.warn('📖 [READ-RECEIPT] ⚠️ Conditions not met, NOT sending read receipt');
-            console.warn('📖 [READ-RECEIPT] Reasons:', {
-                chatNotActive: !isChatActive,
-                notConnected: !isConnected,
-                dataNotLoaded: !isDataLoaded,
-                noCurrentUserId: !currentUserId,
-                isMyMessage: senderId === currentUserId
-            });
+        // УЛУЧШЕННАЯ ПРОВЕРКА: более гибкие условия
+        // Главное - не отправлять для своих сообщений
+        if (senderId === actualCurrentUserId) {
+            console.log('📖 [READ-RECEIPT] ⚠️ Skipping - this is my own message');
+            return;
         }
-    }, [isChatActive, isConnected, isDataLoaded, currentUserId, roomId, sendMessage]);
+
+        // Проверяем минимальные требования
+        if (!actualCurrentUserId) {
+            console.warn('📖 [READ-RECEIPT] ⚠️ Cannot send - currentUserId not initialized');
+            return;
+        }
+
+        // ОТПРАВЛЯЕМ даже если чат неактивен (для фоновой обработки)
+        // но ТОЛЬКО если WebSocket подключен
+        // FALLBACK: используем wsIsConnected() если ref показывает false
+        const wsConnectedNow = wsIsConnected();
+        const isActuallyConnected = actualIsConnected || wsConnectedNow;
+
+        if (!isActuallyConnected) {
+            console.warn('📖 [READ-RECEIPT] ⚠️ Cannot send - WebSocket not connected');
+            console.warn('📖 [READ-RECEIPT] Connection status:', {
+                refValue: actualIsConnected,
+                wsIsConnected: wsConnectedNow,
+                actuallyConnected: isActuallyConnected
+            });
+            return;
+        }
+
+        console.log('📖 [READ-RECEIPT] ✅ Connection verified:', {
+            refValue: actualIsConnected,
+            wsIsConnected: wsConnectedNow,
+            usingFallback: !actualIsConnected && wsConnectedNow
+        });
+
+        // Добавляем в кеш ПЕРЕД отправкой
+        markedAsReadCache.current.add(messageId);
+        console.log('📖 [READ-RECEIPT] ✅ Conditions met, sending read receipt...');
+
+        try {
+            const readReceiptData = {
+                type: 'mark_as_read',
+                message_id: messageId,
+                room_id: roomId,
+                user_id: actualCurrentUserId
+            };
+
+            console.log('📖 [READ-RECEIPT] Sending data:', JSON.stringify(readReceiptData, null, 2));
+
+            sendMessage(readReceiptData);
+
+            console.log('📖 [READ-RECEIPT] ✅✅✅ Read receipt sent successfully for message:', messageId);
+        } catch (error) {
+            console.error('📖 [READ-RECEIPT] ❌ Error sending read receipt:', error);
+            // Убираем из кеша при ошибке
+            markedAsReadCache.current.delete(messageId);
+        }
+    }, [roomId, sendMessage, wsIsConnected]);
 
     // Создаем стили с темой
     const styles = createStyles(theme);
@@ -268,12 +406,54 @@ export default function ChatScreen() {
             setReconnectAttempts(0);
             setLastReconnectTime(0);
         }
-    }, [isConnected, isDataLoaded, recipient, currentUserId]);
+    }, [isConnected, isDataLoaded, recipient, currentUserId, wsIsConnected]);
+
+    // Дополнительная синхронизация isConnected с wsIsConnected
+    useEffect(() => {
+        const checkConnection = () => {
+            const wsConnected = wsIsConnected();
+            const refValue = isConnectedRef.current;
+
+            if (wsConnected !== refValue) {
+                console.log('🔄 [CONNECTION-SYNC] WebSocket connection state mismatch detected:', {
+                    refValue: refValue,
+                    wsConnected: wsConnected,
+                    stateValue: isConnected
+                });
+
+                // Синхронизируем в обе стороны
+                if (wsConnected && !isConnected) {
+                    console.log('🔄 [CONNECTION-SYNC] ✅ Updating state: connected');
+                    setIsConnected(true);
+                } else if (!wsConnected && isConnected) {
+                    console.log('🔄 [CONNECTION-SYNC] ⚠️ Updating state: disconnected');
+                    setIsConnected(false);
+                }
+            }
+        };
+
+        // Немедленная проверка при монтировании
+        checkConnection();
+
+        // Проверяем подключение каждые 200мс (сокращено для более быстрой синхронизации)
+        const intervalId = setInterval(checkConnection, 200);
+
+        return () => {
+            clearInterval(intervalId);
+        };
+    }, [isConnected, wsIsConnected]);
 
     const {connect, disconnect, sendMessage, isConnected: wsIsConnected, reconnect} = useWebSocket(
         `/${API_CONFIG.WS_PROTOCOL}/private/${roomId}/`,
         {
             onOpen: () => {
+                console.log('🌐 [WEBSOCKET] ========== CONNECTION OPENED ==========');
+                console.log('🌐 [WEBSOCKET] Setting isConnected to true');
+                console.log('🌐 [WEBSOCKET] Current refs:', {
+                    currentUserIdRef: currentUserIdRef.current,
+                    isDataLoadedRef: isDataLoadedRef.current,
+                    isConnectedRef: isConnectedRef.current
+                });
                 setIsConnected(true);
                 setReconnectAttempts(0);
                 setLastReconnectTime(0);
@@ -312,7 +492,44 @@ export default function ChatScreen() {
                         console.log('💬 [NEW-MESSAGE] ========== NEW MESSAGE RECEIVED ==========');
                         console.log('💬 [NEW-MESSAGE] Data:', JSON.stringify(data, null, 2));
 
-                        const isMyMessage = (data.sender_id === currentUserId) || (data.sender__username === currentUsername);
+                        // КРИТИЧНО: Используем ref'ы для актуальных значений
+                        const actualCurrentUserId = currentUserIdRef.current;
+                        const actualIsDataLoaded = isDataLoadedRef.current;
+                        const actualIsConnected = isConnectedRef.current;
+                        const actualIsChatActive = isChatActiveRef.current;
+
+                        // Дополнительная проверка через wsIsConnected()
+                        const wsConnectedNow = wsIsConnected();
+
+                        console.log('💬 [NEW-MESSAGE] Actual state from refs:', {
+                            actualCurrentUserId,
+                            actualIsDataLoaded,
+                            actualIsConnected,
+                            actualIsChatActive,
+                            wsConnectedNow
+                        });
+
+                        // Если ref показывает отключен, но wsIsConnected() показывает подключен - обновляем
+                        if (!actualIsConnected && wsConnectedNow) {
+                            console.log('💬 [NEW-MESSAGE] ⚠️ Ref out of sync, updating isConnected...');
+                            setIsConnected(true);
+                        }
+
+                        // Проверяем инициализацию с использованием актуальных значений
+                        if (!actualCurrentUserId || !actualIsDataLoaded) {
+                            console.warn('💬 [NEW-MESSAGE] ⚠️ Received message before initialization complete');
+                            console.warn('💬 [NEW-MESSAGE] Current state:', {
+                                actualCurrentUserId,
+                                actualIsDataLoaded,
+                                actualIsConnected
+                            });
+                            console.warn('💬 [NEW-MESSAGE] Message will be processed after initialization');
+
+                            // Сообщение все равно добавится, но не будет помечено как прочитанное
+                            // до завершения инициализации
+                        }
+
+                        const isMyMessage = (data.sender_id === actualCurrentUserId) || (data.sender__username === currentUsername);
 
                         const messageId = data.id || Date.now();
 
@@ -320,8 +537,11 @@ export default function ChatScreen() {
                             messageId,
                             isMyMessage,
                             hasSenderId: !!data.sender_id,
-                            currentUserId,
-                            senderUsername: data.sender__username
+                            actualCurrentUserId,
+                            currentUsername,
+                            actualIsDataLoaded,
+                            senderUsername: data.sender__username,
+                            senderId: data.sender_id
                         });
 
                         // Автоматически помечаем сообщение как прочитанное, если:
@@ -329,25 +549,92 @@ export default function ChatScreen() {
                         // 2. Пользователь находится в чате
                         // 3. Сообщение имеет валидный ID
                         // 4. Все необходимые данные инициализированы
-                        if (!isMyMessage && messageId && data.sender_id && currentUserId && isDataLoaded) {
-                            console.log('💬 [NEW-MESSAGE] ✅ Will mark as read in 500ms');
-                            // Небольшая задержка для уверенности что сообщение отобразилось
-                            setTimeout(() => {
-                                // Повторная проверка перед отправкой (на случай изменения состояния)
-                                if (isConnected && currentUserId && isChatActive) {
-                                    console.log('💬 [NEW-MESSAGE] Calling markMessageAsRead now...');
-                                    markMessageAsRead(messageId, data.sender_id);
-                                } else {
-                                    console.warn('💬 [NEW-MESSAGE] ⚠️ State changed, skipping read receipt');
+                        if (!isMyMessage && messageId && data.sender_id) {
+                            if (actualCurrentUserId && actualIsDataLoaded) {
+                                console.log('💬 [NEW-MESSAGE] ✅ All conditions met, will mark as read with animation in 2000ms');
+                                console.log('💬 [NEW-MESSAGE] Validated data:', {
+                                    messageId,
+                                    senderId: data.sender_id,
+                                    actualCurrentUserId,
+                                    actualIsDataLoaded,
+                                    actualIsConnected,
+                                    actualIsChatActive
+                                });
+
+                                // Добавляем сообщение в список непрочитанных для визуальной индикации
+                                setUnreadMessages(prev => {
+                                    const newSet = new Set(prev);
+                                    newSet.add(messageId);
+                                    console.log('💬 [NEW-MESSAGE] ✅ Added to unread messages:', messageId);
+                                    console.log('💬 [NEW-MESSAGE] Total unread messages:', newSet.size);
+                                    console.log('💬 [NEW-MESSAGE] Unread IDs:', Array.from(newSet));
+                                    return newSet;
+                                });
+
+                                // Создаем анимацию для этого сообщения
+                                if (!unreadAnimations.current[messageId]) {
+                                    const AnimatedNative = require('react-native').Animated;
+                                    unreadAnimations.current[messageId] = new AnimatedNative.Value(1);
+                                    console.log('💬 [NEW-MESSAGE] ✅ Created animation for message:', messageId);
                                 }
-                            }, 500);
+
+                                // Через 500мс начинаем анимацию прочтения (сокращено с 2000мс)
+                                setTimeout(() => {
+                                    // Повторная проверка перед отправкой (используем актуальные значения из ref'ов)
+                                    const finalCurrentUserId = currentUserIdRef.current;
+                                    const finalIsConnected = isConnectedRef.current;
+                                    const finalIsChatActive = isChatActiveRef.current;
+                                    const finalIsDataLoaded = isDataLoadedRef.current;
+
+                                    // FALLBACK: проверяем wsIsConnected() если ref показывает false
+                                    const actuallyConnected = finalIsConnected || wsIsConnected();
+
+                                    console.log('💬 [NEW-MESSAGE] Final check before marking as read:', {
+                                        finalIsConnected,
+                                        wsIsConnectedResult: wsIsConnected(),
+                                        actuallyConnected,
+                                        finalCurrentUserId,
+                                        finalIsChatActive,
+                                        finalIsDataLoaded
+                                    });
+
+                                    if (actuallyConnected && finalCurrentUserId && finalIsChatActive && finalIsDataLoaded) {
+                                        console.log('💬 [NEW-MESSAGE] ✅ Final check passed, calling markMessageAsRead...');
+                                        markMessageAsRead(messageId, data.sender_id);
+                                        // Запускаем анимацию прочтения
+                                        animateMessageAsRead(messageId);
+                                    } else {
+                                        console.warn('💬 [NEW-MESSAGE] ⚠️ State changed, skipping read receipt:', {
+                                            finalIsConnected,
+                                            actuallyConnected,
+                                            wsIsConnectedResult: wsIsConnected(),
+                                            finalCurrentUserId,
+                                            finalIsChatActive,
+                                            finalIsDataLoaded
+                                        });
+                                    }
+                                }, 500); // Сокращено до 500мс для более быстрой реакции
+                            } else {
+                                // Инициализация еще не завершена - добавляем в очередь
+                                console.log('💬 [NEW-MESSAGE] ⚠️ Initialization not complete, adding to pending queue:', {
+                                    messageId,
+                                    senderId: data.sender_id,
+                                    actualCurrentUserId,
+                                    actualIsDataLoaded
+                                });
+                                pendingMessagesQueue.current.push({
+                                    messageId: messageId,
+                                    senderId: data.sender_id
+                                });
+                                console.log('💬 [NEW-MESSAGE] Pending queue size:', pendingMessagesQueue.current.length);
+                            }
                         } else {
                             console.log('💬 [NEW-MESSAGE] ⚠️ Will NOT mark as read. Reasons:', {
                                 isMyMessage,
                                 missingMessageId: !messageId,
                                 missingSenderId: !data.sender_id,
-                                noCurrentUserId: !currentUserId,
-                                dataNotLoaded: !isDataLoaded
+                                noCurrentUserId: !actualCurrentUserId,
+                                dataNotLoaded: !actualIsDataLoaded
                             });
                         }
 
@@ -1787,9 +2074,10 @@ export default function ChatScreen() {
         const actualFileSize = fileInfo.size;
         const fileSizeMB = actualFileSize / (1024 * 1024);
 
+        const timestamp = Math.floor(Date.now() / 1000);
+        const messageId = Date.now();
+
         try {
-            const timestamp = Math.floor(Date.now() / 1000);
-            const messageId = Date.now();
             const mediaHash = `doc_${messageId}_${actualFileSize}_${timestamp}`;
 
             // Создаем оптимистичное сообщение
@@ -2015,10 +2303,10 @@ export default function ChatScreen() {
             return;
         }
 
-        try {
-            const timestamp = Math.floor(Date.now() / 1000);
-            const messageId = Date.now();
+        const timestamp = Math.floor(Date.now() / 1000);
+        const messageId = Date.now();
 
+        try {
             // Генерируем хэш на основе метаданных файла (без чтения содержимого)
             const mediaHash = `file_${messageId}_${actualFileSize}_${timestamp}`;
             const mediaFileName = `${mediaHash}.${mediaType === 'image' ? 'jpg' : 'mp4'}`;
@@ -2462,11 +2750,22 @@ export default function ChatScreen() {
 
     // Получение истории сообщений с пагинацией
     const fetchChatHistory = async (pageNum: number = 1, limit: number = 15) => {
+        // Защита от параллельных загрузок
+        if (isInitialLoading || isLoadingMore) {
+            console.log('📜 [HISTORY] ⚠️ Already loading, skipping request');
+            return;
+        }
+
         try {
             const token = await getToken();
             if (!token) return;
 
             console.log('📜 [HISTORY] Loading chat history...', { pageNum, limit, roomId });
+
+            // Устанавливаем флаг загрузки
+            if (pageNum === 1) {
+                setIsInitialLoading(true);
+            }
 
             const response = await axios.get(
                 `${API_CONFIG.BASE_URL}/profile/api/chat_history/${roomId}/`,
@@ -2536,27 +2835,12 @@ export default function ChatScreen() {
                     });
                     setPage(1);
 
-                    // Помечаем непрочитанные сообщения как прочитанные
-                    // Отправляем только для последних 10 сообщений от другого пользователя
-                    const unreadMessages = processedMessages
-                        .filter(msg => msg.sender_id !== currentUserId && msg.sender_id)
-                        .slice(0, 10);
+                    console.log('📜 [HISTORY] Loaded', processedMessages.length, 'messages from history');
 
-                    if (unreadMessages.length > 0) {
-                        console.log('📖 [READ-RECEIPT] Marking', unreadMessages.length, 'history messages as read');
-
-                        // Отправляем с небольшой задержкой чтобы не перегружать WebSocket
-                        setTimeout(() => {
-                            unreadMessages.forEach((msg, index) => {
-                                setTimeout(() => {
-                                    markMessageAsRead(msg.id, msg.sender_id!);
-                                }, index * 100); // 100ms между каждым сообщением
-                            });
-                        }, 1000); // Начинаем через 1 секунду после загрузки
-                    }
+                    // Отметка как прочитанных теперь выполняется через отдельный useEffect
+                    // после полной инициализации чата (см. useEffect ниже)
 
                     // Ленивая загрузка: URL загружаются только при прокрутке к медиа
-                    console.log('📜 [HISTORY] Loaded', processedMessages.length, 'messages');
                     console.log('📜 [HISTORY] Media will be loaded lazily when visible');
 
                     // Подсчитываем медиа для статистики
@@ -2576,7 +2860,16 @@ export default function ChatScreen() {
                 }
 
                 // Проверяем, есть ли еще сообщения
-                setHasMore(processedMessages.length === limit);
+                // hasMore = true только если получили ровно столько, сколько запрашивали
+                const hasMoreMessages = processedMessages.length === limit;
+                setHasMore(hasMoreMessages);
+
+                console.log('📜 [HISTORY] Load complete:', {
+                    received: processedMessages.length,
+                    limit: limit,
+                    hasMore: hasMoreMessages,
+                    currentPage: pageNum
+                });
 
                 if (pageNum === 1) {
                     // Только при первой загрузке прокручиваем вниз
@@ -2591,23 +2884,44 @@ export default function ChatScreen() {
                 }
             }
         } catch (error) {
+            console.error('📜 [HISTORY] ❌ Error loading chat history:', error);
             if (axios.isAxiosError(error) && error.response?.status === 401) {
                 Alert.alert('Ошибка', 'Сессия истекла. Войдите снова.');
                 router.replace('/(auth)/login');
+            }
+        } finally {
+            // КРИТИЧНО: Всегда сбрасываем флаги загрузки
+            if (pageNum === 1) {
+                setIsInitialLoading(false);
             }
         }
     };
 
     // Загрузка дополнительных сообщений
     const loadMoreMessages = async () => {
-        if (!hasMore || isLoadingMore) return;
+        console.log('📜 [LOAD-MORE] Checking conditions:', {
+            hasMore,
+            isLoadingMore,
+            isInitialLoading,
+            currentPage: page
+        });
 
+        // КРИТИЧНО: Проверяем все условия
+        if (!hasMore || isLoadingMore || isInitialLoading) {
+            console.log('📜 [LOAD-MORE] ⚠️ Skipping load - conditions not met');
+            return;
+        }
+
+        console.log('📜 [LOAD-MORE] Starting to load page', page + 1);
         setIsLoadingMore(true);
         const nextPage = page + 1;
 
         try {
             await fetchChatHistory(nextPage, 15);
             setPage(nextPage);
+            console.log('📜 [LOAD-MORE] ✅ Successfully loaded page', nextPage);
+        } catch (error) {
+            console.error('📜 [LOAD-MORE] ❌ Error loading more messages:', error);
         } finally {
             setIsLoadingMore(false);
         }
@@ -2644,6 +2958,27 @@ export default function ChatScreen() {
     }, [appState]);
 
     // Инициализация чата
+    // Синхронизация ref'ов с состояниями для использования в WebSocket колбэках
+    useEffect(() => {
+        currentUserIdRef.current = currentUserId;
+        console.log('🔄 [REF-SYNC] Updated currentUserIdRef:', currentUserId);
+    }, [currentUserId]);
+
+    useEffect(() => {
+        isDataLoadedRef.current = isDataLoaded;
+        console.log('🔄 [REF-SYNC] Updated isDataLoadedRef:', isDataLoaded);
+    }, [isDataLoaded]);
+
+    useEffect(() => {
+        isConnectedRef.current = isConnected;
+        console.log('🔄 [REF-SYNC] Updated isConnectedRef:', isConnected);
+    }, [isConnected]);
+
+    useEffect(() => {
+        isChatActiveRef.current = isChatActive;
+        console.log('🔄 [REF-SYNC] Updated isChatActiveRef:', isChatActive);
+    }, [isChatActive]);
+
     // Отслеживание активности чата
     useEffect(() => {
         // Устанавливаем чат как активный при монтировании
@@ -2657,10 +2992,131 @@ export default function ChatScreen() {
         // При размонтировании помечаем чат как неактивный
         return () => {
             setIsChatActive(false);
+            // Очищаем кеш прочитанных сообщений
+            markedAsReadCache.current.clear();
             console.log('📖 [CHAT-ACTIVE] ========== CHAT UNMOUNTED ==========');
             console.log('📖 [CHAT-ACTIVE] Chat is now INACTIVE');
+            console.log('📖 [CHAT-ACTIVE] Cleared read receipt cache');
         };
     }, [roomId, currentUserId, isConnected]);
+
+    // Отдельный useEffect для массовой отметки сообщений из истории
+    // Срабатывает ОДИН РАЗ после полной инициализации
+    useEffect(() => {
+        // Проверяем что все данные загружены и подключение установлено
+        if (!isDataLoaded || !isConnected || !currentUserId || !isChatActive) {
+            return;
+        }
+
+        // Флаг чтобы выполнить только один раз
+        let hasMarkedHistory = false;
+
+        const markHistoryAsRead = () => {
+            if (hasMarkedHistory) return;
+            hasMarkedHistory = true;
+
+            console.log('📜 [AUTO-MARK] ========== AUTO-MARKING HISTORY AS READ ==========');
+            console.log('📜 [AUTO-MARK] Messages count:', messages.length);
+
+            // Фильтруем только чужие сообщения
+            const otherUserMessages = messages
+                .filter(msg => msg.sender_id && msg.sender_id !== currentUserId)
+                .map(msg => msg.id);
+
+            if (otherUserMessages.length > 0) {
+                console.log('📜 [AUTO-MARK] Found', otherUserMessages.length, 'messages from other user');
+
+                // Добавляем все в кеш
+                otherUserMessages.forEach(id => markedAsReadCache.current.add(id));
+
+                // Отправляем массовое подтверждение
+                try {
+                    const bulkReadData = {
+                        type: 'mark_multiple_as_read',
+                        message_ids: otherUserMessages,
+                        room_id: roomId,
+                        user_id: currentUserId
+                    };
+
+                    sendMessage(bulkReadData);
+                    console.log('📜 [AUTO-MARK] ✅ Sent bulk read receipt for', otherUserMessages.length, 'messages');
+                } catch (error) {
+                    console.error('📜 [AUTO-MARK] ❌ Error sending bulk read receipt:', error);
+                    // Убираем из кеша при ошибке
+                    otherUserMessages.forEach(id => markedAsReadCache.current.delete(id));
+                }
+            } else {
+                console.log('📜 [AUTO-MARK] No messages from other user to mark');
+            }
+        };
+
+        // Даем небольшую задержку чтобы все состояния обновились
+        const timeoutId = setTimeout(markHistoryAsRead, 1000);
+
+        return () => {
+            clearTimeout(timeoutId);
+        };
+    }, [isDataLoaded, isConnected, currentUserId, isChatActive]); // Срабатывает только при изменении этих флагов
+
+    // useEffect для обработки отложенных сообщений после инициализации
+    useEffect(() => {
+        // Проверяем что инициализация завершена и есть сообщения в очереди
+        if (!isDataLoaded || !isConnected || !currentUserId || !isChatActive) {
+            return;
+        }
+
+        if (pendingMessagesQueue.current.length === 0) {
+            return;
+        }
+
+        console.log('📨 [PENDING-QUEUE] ========== PROCESSING PENDING MESSAGES ==========');
+        console.log('📨 [PENDING-QUEUE] Queue size:', pendingMessagesQueue.current.length);
+        console.log('📨 [PENDING-QUEUE] Current state:', {
+            currentUserId,
+            isConnected,
+            isDataLoaded,
+            isChatActive
+        });
+
+        // Обрабатываем все отложенные сообщения
+        const pendingMessages = [...pendingMessagesQueue.current];
+        pendingMessagesQueue.current = []; // Очищаем очередь
+
+        pendingMessages.forEach(({ messageId, senderId }) => {
+            console.log('📨 [PENDING-QUEUE] Processing pending message:', messageId);
+
+            // Проверяем что это не мое сообщение
+            if (senderId !== currentUserId) {
+                // Добавляем в список непрочитанных для визуальной индикации
+                setUnreadMessages(prev => {
+                    const newSet = new Set(prev);
+                    newSet.add(messageId);
+                    console.log('📨 [PENDING-QUEUE] ✅ Added to unread messages:', messageId);
+                    return newSet;
+                });
+
+                // Создаем анимацию для этого сообщения
+                if (!unreadAnimations.current[messageId]) {
+                    const AnimatedNative = require('react-native').Animated;
+                    unreadAnimations.current[messageId] = new AnimatedNative.Value(1);
+                    console.log('📨 [PENDING-QUEUE] ✅ Created animation for message:', messageId);
+                }
+
+                // Через 2 секунды начинаем анимацию прочтения
+                setTimeout(() => {
+                    if (isConnected && currentUserId && isChatActive && isDataLoaded) {
+                        console.log('📨 [PENDING-QUEUE] ✅ Marking pending message as read:', messageId);
+                        markMessageAsRead(messageId, senderId);
+                        animateMessageAsRead(messageId);
+                    }
+                }, 2000);
+            } else {
+                console.log('📨 [PENDING-QUEUE] ⚠️ Skipping own message:', messageId);
+            }
+        });
+
+        console.log('📨 [PENDING-QUEUE] ✅ Processed', pendingMessages.length, 'pending messages');
+    }, [isDataLoaded, isConnected, currentUserId, isChatActive, markMessageAsRead, animateMessageAsRead]);
 
     // Отслеживание состояния приложения
     useEffect(() => {
@@ -2706,17 +3162,6 @@ export default function ChatScreen() {
         };
     }, [appState]);
 
-    // Автозапуск видео после открытия модального окна
-    useEffect(() => {
-        if (isVideoViewerVisible && selectedVideo && !isVideoPlaying && appState === 'active') {
-            const timer = setTimeout(() => {
-                forcePlayVideo();
-            }, 1000); // Задержка в 1 секунду для стабилизации модального окна
-
-            return () => clearTimeout(timer);
-        }
-    }, [isVideoViewerVisible, selectedVideo, appState]);
-
     useEffect(() => {
         if (!roomId) {
             router.back();
@@ -2724,36 +3169,78 @@ export default function ChatScreen() {
         }
 
         const initializeChat = async () => {
+            console.log('📜 [INIT] ========== INITIALIZING CHAT ==========');
+            console.log('📜 [INIT] Room ID:', roomId);
+
             setIsLoading(true);
             try {
+                // ШАГ 1: Сначала получаем данные текущего пользователя
                 const currentUser = await fetchCurrentUser();
-                const recipientInfo = await fetchRecipientInfo();
-                await fetchChatHistory();
+                console.log('📜 [INIT] Current user loaded:', currentUser?.id);
 
-                if (currentUser && recipientInfo) {
-                    setIsDataLoaded(true);
-
-                    // Подключаемся к WebSocket
-                    setTimeout(() => {
-                        connect();
-                    }, 100);
-                } else {
-                    Alert.alert('Ошибка', 'Не удалось загрузить необходимые данные');
+                if (!currentUser) {
+                    throw new Error('Failed to load current user');
                 }
 
+                // ШАГ 2: Получаем информацию о собеседнике
+                const recipientInfo = await fetchRecipientInfo();
+                console.log('📜 [INIT] Recipient loaded:', recipientInfo?.id);
+
+                if (!recipientInfo) {
+                    throw new Error('Failed to load recipient');
+                }
+
+                console.log('📜 [INIT] ✅ User data loaded successfully:', {
+                    currentUserId: currentUser.id,
+                    currentUsername: currentUser.username,
+                    recipientId: recipientInfo.id,
+                    recipientUsername: recipientInfo.username
+                });
+
+                // ШАГ 3: Загружаем историю чата
+                await fetchChatHistory(1, 15);
+                console.log('📜 [INIT] ✅ Chat history loaded');
+
+                // ШАГ 4: Помечаем данные как загруженные
+                setIsDataLoaded(true);
+                console.log('📜 [INIT] ✅ Data marked as loaded');
+
+                // ШАГ 5: КРИТИЧНО - Подключаемся к WebSocket только после полной инициализации
+                // Увеличиваем задержку чтобы React гарантированно обновил все состояния
+                setTimeout(() => {
+                    console.log('📜 [INIT] Connecting to WebSocket with initialized data:', {
+                        currentUserId: currentUser.id,
+                        recipientId: recipientInfo.id,
+                        isDataLoaded: true
+                    });
+
+                    // Дополнительная проверка перед подключением
+                    if (currentUser.id && recipientInfo.id) {
+                        connect();
+                        console.log('📜 [INIT] ✅ WebSocket connection initiated');
+                    } else {
+                        console.error('📜 [INIT] ❌ Cannot connect - user data not ready');
+                    }
+                }, 500);
+
+                console.log('📜 [INIT] ✅ Chat initialized successfully');
+
             } catch (error) {
+                console.error('📜 [INIT] ❌ Initialization error:', error);
                 Alert.alert('Ошибка', 'Не удалось загрузить чат');
             } finally {
                 setIsLoading(false);
             }
         };
 
+        // КРИТИЧНО: Вызываем инициализацию только один раз при монтировании
         initializeChat();
 
         return () => {
+            console.log('📜 [INIT] ========== CLEANING UP CHAT ==========');
             disconnect();
         };
-    }, [roomId]);
+    }, [roomId]); // ВАЖНО: Только roomId в зависимостях
 
     // Отправка сообщения
     const handleSend = () => {
@@ -2769,13 +3256,6 @@ export default function ChatScreen() {
 
         if (!messageText.trim() || !isConnected || !isDataLoaded || !recipient?.id || !currentUserId) {
             console.log('💬 [CHAT] ❌ Cannot send - missing requirements');
-            return;
-        }
-
-        // ТЕСТ: отправляем пинг перед сообщением
-        if (messageText.trim() === '/test') {
-            testServerConnection();
-            setMessageText('');
             return;
         }
 
@@ -3750,12 +4230,6 @@ export default function ChatScreen() {
             ...prev,
             [messageId]: { ...currentState, isExpanded: newExpandedState }
         }));
-
-        if (newExpandedState) {
-            setFullscreenVideoId(String(messageId));
-        } else {
-            setFullscreenVideoId(null);
-        }
     };
 
     // Улучшенная функция переключения полноэкранного режима
@@ -3794,7 +4268,7 @@ export default function ChatScreen() {
             }
         }
 
-        const videoSource = finalVideoUri?.startsWith('file://') ? 
+        const videoSource = finalVideoUri?.startsWith('file://') ?
                           (finalVideoUri.includes('cached_video_') ? 'cached' : 'local-gallery') :
                           finalVideoUri?.startsWith('http') ? 'server-url' :
                           finalVideoUri?.startsWith('data:') ? 'base64-data' : 'unknown';
@@ -3825,8 +4299,6 @@ export default function ChatScreen() {
                     isPlaying: false // Помечаем как остановленное
                 }
             }));
-            setIsAnyVideoFullscreen(true);
-            setFullscreenVideoId(String(messageId));
 
             console.log('🎥 [FULLSCREEN] Modal fullscreen mode activated:', {
                 videoSource: videoSource,
@@ -3846,8 +4318,6 @@ export default function ChatScreen() {
                     isExpanded: false
                 }
             }));
-            setIsAnyVideoFullscreen(false);
-            setFullscreenVideoId(null);
 
             console.log('🎥 [FULLSCREEN] Returned to normal video mode');
         }
@@ -3943,6 +4413,10 @@ export default function ChatScreen() {
         } else if (item.sender__username && currentUsername) {
             isMyMessage = item.sender__username === currentUsername;
         }
+
+        // Проверяем, является ли сообщение непрочитанным
+        const isUnread = unreadMessages.has(item.id);
+        const animatedValue = unreadAnimations.current[item.id];
 
         const renderMediaContent = () => {
             // Показываем индикатор загрузки если файл загружается
@@ -4692,33 +5166,33 @@ export default function ChatScreen() {
                 const progress = duration > 0 ? (position / duration) * 100 : 0;
 
                 return (
-                    <TouchableOpacity 
+                    <TouchableOpacity
                         style={styles.audioPlayerContainer}
                         onPress={() => playAudio(item)}
                         activeOpacity={0.7}
                     >
                         <View style={[styles.audioPlayButton, { backgroundColor: theme.primary }]}>
-                            <MaterialIcons 
-                                name={isPlaying ? "pause" : "play-arrow"} 
-                                size={24} 
-                                color="white" 
+                            <MaterialIcons
+                                name={isPlaying ? "pause" : "play-arrow"}
+                                size={24}
+                                color="white"
                             />
                         </View>
 
                         <View style={styles.audioWaveform}>
                             <View style={[styles.audioProgressBar, { backgroundColor: theme.border }]}>
-                                <View 
+                                <View
                                     style={[
-                                        styles.audioProgressFill, 
-                                        { 
+                                        styles.audioProgressFill,
+                                        {
                                             backgroundColor: theme.primary,
                                             width: `${progress}%`
                                         }
-                                    ]} 
+                                    ]}
                                 />
                             </View>
                             <Text style={[styles.audioDuration, { color: theme.textSecondary }]}>
-                                {duration > 0 
+                                {duration > 0
                                     ? `${Math.floor(position / 1000)}:${String(Math.floor((position % 1000) / 10)).padStart(2, '0')} / ${Math.floor(duration / 1000)}:${String(Math.floor((duration % 1000) / 10)).padStart(2, '0')}`
                                     : item.message.match(/\((\d+)с\)/)?.[1] ? `${item.message.match(/\((\d+)с\)/)?.[1]}с` : '0:00'
                                 }
@@ -4873,11 +5347,40 @@ export default function ChatScreen() {
             return null;
         };
 
+        // ИСПРАВЛЕНИЕ: Используем правильный Animated компонент из react-native
+        const AnimatedNative = require('react-native').Animated;
+        const AnimatedView = AnimatedNative.View;
+
+        // Создаем анимированный стиль для непрочитанных сообщений
+        // ВАЖНО: Проверяем что animatedValue существует перед использованием
+        const getBackgroundStyle = () => {
+            if (!isUnread || !animatedValue) {
+                // Обычный статичный стиль для прочитанных сообщений
+                return {
+                    backgroundColor: isMyMessage ? theme.primary : theme.surface
+                };
+            }
+
+            // Анимированный стиль для непрочитанных сообщений
+            return {
+                backgroundColor: animatedValue.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [
+                        isMyMessage ? theme.primary : theme.surface,
+                        'rgba(255, 215, 0, 0.3)' // Золотистый оттенок для непрочитанных
+                    ]
+                })
+            };
+        };
+
+        const backgroundStyle = getBackgroundStyle();
+
         return (
-            <View style={[
+            <AnimatedView style={[
                 styles.messageContainer,
                 isMyMessage ? styles.myMessage : styles.otherMessage,
-                item.mediaType ? styles.mediaMessage : null
+                item.mediaType ? styles.mediaMessage : null,
+                backgroundStyle
             ]}>
                 {!isMyMessage && (
                     <Text style={[styles.senderName, { color: theme.textSecondary }]}>{item.sender__username}</Text>
@@ -4902,7 +5405,7 @@ export default function ChatScreen() {
                 ]}>
                     {formatTimestamp(item.timestamp)}
                 </Text>
-            </View>
+            </AnimatedView>
         );
     };
 
@@ -5372,18 +5875,6 @@ export default function ChatScreen() {
                         setFullscreenModalVideoUri(null);
                         setSelectedVideo(null);
                         setSelectedMessageId(null);
-                        if (fullscreenVideoId) {
-                            setInlineVideoStates(prev => ({
-                                ...prev,
-                                [fullscreenVideoId]: {
-                                    ...prev[fullscreenVideoId],
-                                    isFullscreen: false,
-                                    isExpanded: false
-                                }
-                            }));
-                        }
-                        setIsAnyVideoFullscreen(false);
-                        setFullscreenVideoId(null);
                     }}
                 >
                     <View style={styles.fullscreenModalContainer}>
@@ -5394,18 +5885,6 @@ export default function ChatScreen() {
                                 setFullscreenModalVideoUri(null);
                                 setSelectedVideo(null);
                                 setSelectedMessageId(null);
-                                if (fullscreenVideoId) {
-                                    setInlineVideoStates(prev => ({
-                                        ...prev,
-                                        [fullscreenVideoId]: {
-                                            ...prev[fullscreenVideoId],
-                                            isFullscreen: false,
-                                            isExpanded: false
-                                        }
-                                    }));
-                                }
-                                setIsAnyVideoFullscreen(false);
-                                setFullscreenVideoId(null);
                             }}
                         >
                             <MaterialIcons name="close" size={32} color="white" />
@@ -5467,18 +5946,6 @@ export default function ChatScreen() {
                                                     onPress: () => {
                                                         setIsFullscreenModalVisible(false);
                                                         setFullscreenModalVideoUri(null);
-                                                        if (fullscreenVideoId) {
-                                                            setInlineVideoStates(prev => ({
-                                                                ...prev,
-                                                                [fullscreenVideoId]: {
-                                                                    ...prev[fullscreenVideoId],
-                                                                    isFullscreen: false,
-                                                                    isExpanded: false
-                                                                }
-                                                            }));
-                                                        }
-                                                        setIsAnyVideoFullscreen(false);
-                                                        setFullscreenVideoId(null);
                                                     }
                                                 },
                                                 {
@@ -5497,18 +5964,6 @@ export default function ChatScreen() {
                                                         } finally {
                                                             setIsFullscreenModalVisible(false);
                                                             setFullscreenModalVideoUri(null);
-                                                            if (fullscreenVideoId) {
-                                                                setInlineVideoStates(prev => ({
-                                                                    ...prev,
-                                                                    [fullscreenVideoId]: {
-                                                                        ...prev[fullscreenVideoId],
-                                                                        isFullscreen: false,
-                                                                        isExpanded: false
-                                                                    }
-                                                                }));
-                                                            }
-                                                            setIsAnyVideoFullscreen(false);
-                                                            setFullscreenVideoId(null);
                                                         }
                                                     }
                                                 }
@@ -5734,6 +6189,11 @@ const createStyles = (theme: any) => {
         borderBottomLeftRadius: 4,
         borderWidth: 1,
         borderColor: theme.border,
+    },
+    unreadMessage: {
+        backgroundColor: 'rgba(255, 215, 0, 0.15)', // Легкий золотистый фон
+        borderColor: 'rgba(255, 215, 0, 0.3)',
+        borderWidth: 2,
     },
     senderName: {
         fontSize: 10,

@@ -474,25 +474,25 @@ class FirebaseNotificationService {
       if (Platform.OS === 'android') {
         try {
           // Создаем группу уведомлений
-          await Notifications.setNotificationChannelGroupAsync('app-messages', {
-            name: 'Сообщения приложения',
+          await Notifications.setNotificationChannelGroupAsync('chat-messages', {
+            name: 'Сообщения чата',
+            description: 'Уведомления о новых сообщениях',
           });
 
-          // Создаем канал с привязкой к группе
-          await Notifications.setNotificationChannelAsync('urgent-messages', {
-            name: 'Срочные сообщения',
-            importance: Notifications.AndroidImportance.MAX, // Максимальная важность
+          // Создаем канал с привязкой к группе для ВСЕХ сообщений
+          await Notifications.setNotificationChannelAsync('messages', {
+            name: 'Сообщения',
+            importance: Notifications.AndroidImportance.HIGH,
             vibrationPattern: [0, 250, 250, 250],
-            lightColor: '#FF0000',
+            lightColor: '#FF231F7C',
             sound: 'default',
             enableVibrate: true,
             showBadge: true,
             lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-            bypassDnd: true, // Обход режима "Не беспокоить"
-            groupId: 'app-messages', // Привязываем к группе
+            groupId: 'chat-messages', // Привязываем к группе
           });
 
-          console.log('🔥 [FCM] ✅ Notification channel group created for Android');
+          console.log('🔥 [FCM] ✅ Notification channel with grouping created for Android');
         } catch (channelError) {
           console.error('🔥 [FCM] Failed to create notification channel:', channelError);
         }
@@ -512,60 +512,26 @@ class FirebaseNotificationService {
 
 
 
-        // Вызываем handlers НЕМЕДЛЕННО
+        // КРИТИЧНО: НЕ создаем локальные уведомления здесь!
+        // NotificationContext сам обработает создание уведомлений через буфер
+        // Это предотвращает дублирование уведомлений
+
+        console.log('🔥 [FCM] Firebase message received - forwarding to handlers');
+        console.log('🔥 [FCM] Handlers count:', this.messageHandlers.length);
+
+        // Вызываем handlers - они передадут данные в NotificationContext
         this.messageHandlers.forEach((handler, index) => {
           try {
+            console.log(`🔥 [FCM] Calling handler ${index + 1}`);
             handler(messageData);
           } catch (error: unknown) {
             console.error(`🔥 [FCM] ❌ Handler ${index + 1} failed:`, error);
           }
         });
 
-        // ПРИНУДИТЕЛЬНОЕ уведомление для активного приложения
-        const AppState = require('react-native').AppState;
-        const currentState = AppState.currentState;
-        console.log('🔥 [FCM] Current app state:', currentState);
-
-        if (currentState === 'active') {
-          try {
-            // Создаем локальное уведомление для активного приложения с группировкой
-            const notificationContent: any = {
-              title: messageData.title,
-              body: messageData.body,
-              data: {
-                ...messageData.data,
-                source: 'firebase_active',
-                timestamp: Date.now(),
-              },
-              sound: 'default',
-            };
-
-            // Android - добавляем group для автоматической группировки
-            if (Platform.OS === 'android') {
-              notificationContent.channelId = 'urgent-messages';
-              notificationContent.groupId = 'app-messages'; // Группируем все уведомления
-              notificationContent.groupSummary = false; // Это не summary уведомление
-            }
-
-            // iOS - добавляем threadIdentifier для группировки
-            if (Platform.OS === 'ios') {
-              notificationContent.threadIdentifier = 'app-messages'; // Группируем по thread
-              notificationContent.categoryIdentifier = 'message'; // Категория для действий
-            }
-
-            const activeNotificationId = await Notifications.scheduleNotificationAsync({
-              content: notificationContent,
-              trigger: null,
-            });
-
-            console.log('🔥 [FCM] ✅ Grouped notification created:', activeNotificationId);
-
-          } catch (error) {
-            console.error('🔥 [FCM] ❌ Active app notification failed:', error);
-          }
-        } else {
-          console.log('🔥 [FCM] App in background - Firebase system notification will be shown automatically');
-        }
+        // УВЕДОМЛЕНИЯ создаются в NotificationContext через буфер
+        // Firebase ТОЛЬКО получает сообщения и передает их handlers
+        console.log('🔥 [FCM] Message forwarded to NotificationContext for processing');
       });
 
         // ВАЖНО: Сохраняем unsubscribe функцию для очистки
