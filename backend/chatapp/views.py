@@ -87,9 +87,38 @@ def get_chat_history(request, room_id):
     if request.user != room.user1 and request.user != room.user2:
         return JsonResponse({'error': 'Unauthorized access'}, status=403)
 
-    messages = PrivateMessage.objects.filter(room=room).order_by('timestamp').values('sender__username','sender_id', 'message',
-                                                                                     'timestamp')
-    messages_list = [{**m, 'timestamp': int(m['timestamp'].timestamp())} for m in list(messages)]
+    from .models import UserDeletedMessage
+
+    # Получаем ID сообщений, которые пользователь удалил для себя
+    user_deleted_message_ids = UserDeletedMessage.objects.filter(
+        user=request.user
+    ).values_list('message_id', flat=True)
+
+    # Фильтруем сообщения: исключаем глобально удаленные и пользовательские удаления
+    messages = PrivateMessage.objects.filter(
+        room=room
+    ).exclude(
+        Q(is_deleted=True) |  # Глобально удаленные сообщения
+        Q(id__in=user_deleted_message_ids)  # Сообщения, удаленные пользователем для себя
+    ).order_by('timestamp').values(
+        'id', 'sender__username', 'sender_id', 'message', 'timestamp',
+        'media_type', 'media_hash', 'media_filename', 'media_size'
+    )
+
+    # Добавляем информацию о медиа для совместимости с фронтендом
+    messages_list = []
+    for m in messages:
+        message_data = {
+            **m, 
+            'timestamp': int(m['timestamp'].timestamp()),
+            # Добавляем поля для совместимости с фронтендом
+            'mediaType': m['media_type'] if m['media_type'] != 'text' else None,
+            'mediaHash': m['media_hash'],
+            'mediaFileName': m['media_filename'], 
+            'mediaSize': m['media_size'],
+        }
+        messages_list.append(message_data)
+
     return JsonResponse({'messages': messages_list})
 
 

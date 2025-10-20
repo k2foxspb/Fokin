@@ -190,6 +190,9 @@ def get_room_info(request, room_id):
 def delete_messages(request):
     """
     Помечает сообщения как удаленные (мягкое удаление)
+    Поддерживает два типа удаления:
+    - for_me: сообщение удаляется только для текущего пользователя
+    - for_everyone: сообщение удаляется для всех (только свои сообщения)
     """
     try:
         user = request.user
@@ -197,6 +200,7 @@ def delete_messages(request):
 
         message_ids = data.get('message_ids', [])
         room_id = data.get('room_id')
+        delete_type = data.get('delete_type', 'for_me')
 
         if not message_ids:
             return Response({
@@ -221,35 +225,69 @@ def delete_messages(request):
                 'error': 'Chat room not found or access denied'
             }, status=status.HTTP_403_FORBIDDEN)
 
-        # Получаем сообщения, которые принадлежат пользователю и еще не удалены
-        messages_to_delete = PrivateMessage.objects.filter(
-            id__in=message_ids,
-            room=room,
-            sender=user,  # Только свои сообщения можно удалять
-            is_deleted=False
-        )
-
-        if not messages_to_delete.exists():
-            return Response({
-                'success': False,
-                'error': 'No messages found or you can only delete your own messages'
-            }, status=status.HTTP_404_NOT_FOUND)
-
-        # Помечаем сообщения как удаленные
         from django.utils import timezone
-        updated_count = messages_to_delete.update(
-            is_deleted=True,
-            deleted_at=timezone.now(),
-            deleted_by=user
-        )
 
-        logger.info(f"User {user.username} deleted {updated_count} messages in room {room_id}")
+        if delete_type == 'for_everyone':
+            # Удаление для всех - можно удалять только свои сообщения
+            messages_to_delete = PrivateMessage.objects.filter(
+                id__in=message_ids,
+                room=room,
+                sender=user,  # Только свои сообщения
+                is_deleted=False
+            )
+
+            if not messages_to_delete.exists():
+                return Response({
+                    'success': False,
+                    'error': 'No messages found or you can only delete your own messages for everyone'
+                }, status=status.HTTP_404_NOT_FOUND)
+
+            # Помечаем сообщения как полностью удаленные
+            updated_count = messages_to_delete.update(
+                is_deleted=True,
+                deleted_at=timezone.now(),
+                deleted_by=user
+            )
+
+            logger.info(f"User {user.username} deleted {updated_count} messages for everyone in room {room_id}")
+
+        else:  # delete_type == 'for_me'
+            # Удаление только для себя - можно удалять любые сообщения в чате
+            messages_to_process = PrivateMessage.objects.filter(
+                id__in=message_ids,
+                room=room
+            )
+
+            if not messages_to_process.exists():
+                return Response({
+                    'success': False,
+                    'error': 'No messages found in this chat'
+                }, status=status.HTTP_404_NOT_FOUND)
+
+            # Для каждого сообщения создаем или обновляем запись об удалении для конкретного пользователя
+            from .models import MessageDeletion
+            deleted_count = 0
+
+            for message in messages_to_process:
+                deletion, created = MessageDeletion.objects.get_or_create(
+                    message=message,
+                    user=user,
+                    defaults={
+                        'deleted_at': timezone.now()
+                    }
+                )
+                if created:
+                    deleted_count += 1
+
+            logger.info(f"User {user.username} deleted {deleted_count} messages for self in room {room_id}")
+            updated_count = deleted_count
 
         return Response({
             'success': True,
             'message': f'{updated_count} messages marked as deleted',
             'deleted_count': updated_count,
-            'deleted_message_ids': list(messages_to_delete.values_list('id', flat=True))
+            'deleted_message_ids': message_ids,
+            'delete_type': delete_type
         })
 
     except Exception as e:

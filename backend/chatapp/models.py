@@ -159,3 +159,62 @@ class PrivateMessage(models.Model):
         то получателем считается второй пользователь комнаты.)
         """
         return self.room.get_other_participant(self.sender)
+
+
+class UserDeletedMessage(models.Model):
+    """
+    Модель для отслеживания пользовательских удалений сообщений.
+    Позволяет каждому пользователю скрывать сообщения только для себя.
+    """
+    user = models.ForeignKey(
+        CustomUser, 
+        on_delete=models.CASCADE, 
+        related_name='deleted_message_relations',
+        verbose_name='Пользователь'
+    )
+    message = models.ForeignKey(
+        PrivateMessage, 
+        on_delete=models.CASCADE, 
+        related_name='user_deletions',
+        verbose_name='Сообщение'
+    )
+    deleted_at = models.DateTimeField(auto_now_add=True, verbose_name='Время удаления')
+
+    class Meta:
+        unique_together = ('user', 'message')
+        indexes = [
+            models.Index(fields=['user', 'message']),
+        ]
+        verbose_name = 'Пользовательское удаление сообщения'
+        verbose_name_plural = 'Пользовательские удаления сообщений'
+
+    def __str__(self):
+        return f'{self.user.username} удалил сообщение {self.message.id}'
+
+
+class MessageDeletion(models.Model):
+    """
+    Модель для отслеживания удаления сообщений для конкретных пользователей.
+    Позволяет реализовать мягкое удаление "только для себя".
+    """
+    message = models.ForeignKey(
+        PrivateMessage, 
+        on_delete=models.CASCADE, 
+        related_name='deletions'
+    )
+    user = models.ForeignKey(
+        CustomUser, 
+        on_delete=models.CASCADE,
+        related_name='message_deletions'
+    )
+    deleted_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('message', 'user')
+        indexes = [
+            models.Index(fields=['message', 'user']),
+            models.Index(fields=['user', 'deleted_at']),
+        ]
+
+    def __str__(self):
+        return f'{self.user.username} deleted message {self.message.id}'
