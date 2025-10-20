@@ -92,7 +92,7 @@ def get_chat_history(request, room_id):
     # Получаем ID сообщений, которые пользователь удалил для себя
     user_deleted_message_ids = MessageDeletion.objects.filter(
         user=request.user
-    ).values_list('message_id', flat=True)
+    ).values_list('message__id', flat=True)  # ИСПРАВЛЕНО: message__id вместо message_id
 
     # Фильтруем сообщения: исключаем глобально удаленные и пользовательские удаления
     messages = PrivateMessage.objects.filter(
@@ -100,7 +100,7 @@ def get_chat_history(request, room_id):
     ).exclude(
         Q(is_deleted=True) |  # Глобально удаленные сообщения
         Q(id__in=user_deleted_message_ids)  # Сообщения, удаленные пользователем для себя
-    ).order_by('timestamp').values(
+    ).order_by('-timestamp').values(  # ИСПРАВЛЕНО: сортировка от новых к старым
         'id', 'sender__username', 'sender_id', 'message', 'timestamp',
         'media_type', 'media_hash', 'media_filename', 'media_size'
     )
