@@ -302,6 +302,10 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
                 await self.handle_media_message(data)
             elif message_type == 'mark_as_read':
                 await self.handle_mark_as_read(data)
+            elif message_type == 'mark_multiple_as_read':
+                await self.handle_mark_multiple_as_read(data)
+            elif message_type == 'messages_deleted_notification':
+                await self.handle_message_deletion_notification(data)
             else:
                 logger.warning(f"Unknown message type: {message_type}")
 
@@ -637,7 +641,8 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
                 media_hash=media_hash,
                 media_filename=media_filename,
                 media_size=media_size,
-                media_file=media_file
+                media_file=media_file,
+                is_deleted=False  # Явно указываем значение
             )
 
             logger.info(f"💾 [DB] ✅ Message saved with ID: {message.id}, media_file: {media_file.id if media_file else None}")
@@ -860,6 +865,119 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
 
         except Exception as e:
             logger.error(f"⚡ [PREFETCH] Error prefetching media URL to cache: {e}")
+
+    async def handle_mark_multiple_as_read(self, data):
+        """Обработка массовой пометки сообщений как прочитанных"""
+        message_ids = data.get('message_ids', [])
+        room_id = data.get('room_id')
+        user_id = data.get('user_id')
+
+        logger.info(f"📖 [BULK-READ] ========== PROCESSING BULK READ RECEIPT ==========")
+        logger.info(f"📖 [BULK-READ] Message IDs count: {len(message_ids)}")
+        logger.info(f"📖 [BULK-READ] Room ID: {room_id}")
+        logger.info(f"📖 [BULK-READ] User ID: {user_id}")
+
+        if not message_ids or not user_id:
+            logger.error(f"📖 [BULK-READ] ❌ Missing required data")
+            return
+
+        try:
+            # Помечаем сообщения как прочитанные в БД
+            success_count, sender_ids = await self.mark_multiple_messages_as_read_in_db(message_ids, user_id)
+
+            if success_count > 0:
+                logger.info(f"📖 [BULK-READ] ✅ {success_count} messages marked as read")
+
+                # Отправляем подтверждение текущему пользователю
+                await self.send(text_data=json.dumps({
+                    'type': 'bulk_read_receipt_confirmation',
+                    'message_ids': message_ids[:success_count],
+                    'success': True
+                }))
+
+                # Уведомляем отправителей что их сообщения прочитаны
+                for sender_id in sender_ids:
+                    if sender_id:
+                        await self.channel_layer.group_send(
+                            self.room_group_name,
+                            {
+                                'type': 'messages_read_by_recipient',
+                                'message_ids': [mid for mid in message_ids if mid],  # Фильтруем None
+                                'read_by_user_id': user_id
+                            }
+                        )
+                        logger.info(f"📖 [BULK-READ] ✅ Notified sender {sender_id}")
+
+            else:
+                logger.warning(f"📖 [BULK-READ] ⚠️ No messages marked as read")
+
+        except Exception as e:
+            logger.error(f"📖 [BULK-READ] ❌ Error: {e}")
+
+    async def handle_message_deletion_notification(self, data):
+        """Обработка уведомлений об удалении сообщений"""
+        try:
+            logger.info(f"🗑️ [DELETE-HANDLER] Processing deletion notification: {data}")
+
+            # Просто пересылаем уведомление всем участникам чата
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    'type': 'messages_deleted_notification',
+                    **data  # Пересылаем все данные как есть
+                }
+            )
+
+        except Exception as e:
+            logger.error(f"🗑️ [DELETE-HANDLER] ❌ Error: {e}")
+
+    @database_sync_to_async
+    def mark_multiple_messages_as_read_in_db(self, message_ids, reader_id):
+        """
+        Помечаем множество сообщений как прочитанные в базе данных
+        Возвращает (success_count: int, sender_ids: List[int])
+        """
+        try:
+            messages = PrivateMessage.objects.select_related('sender').filter(
+                id__in=message_ids,
+                recipient_id=reader_id,
+                read=False
+            )
+
+            sender_ids = set()
+            success_count = 0
+
+            for message in messages:
+                message.read = True
+                message.read_at = timezone.now()
+                message.save(update_fields=['read', 'read_at'])
+                sender_ids.add(message.sender_id)
+                success_count += 1
+
+            logger.info(f"📖 [BULK-DB] ✅ {success_count} messages marked as read in database")
+            return success_count, list(sender_ids)
+
+        except Exception as e:
+            logger.error(f"📖 [BULK-DB] ❌ Error marking messages as read: {e}")
+            return 0, []
+
+    async def messages_read_by_recipient(self, event):
+        """Обработчик уведомления о массовом прочтении сообщений получателем"""
+        await self.send(text_data=json.dumps({
+            'type': 'messages_read_by_recipient',
+            'message_ids': event['message_ids'],
+            'read_by_user_id': event['read_by_user_id']
+        }))
+
+    async def messages_deleted_notification(self, event):
+        """Обработчик уведомления об удалении сообщений"""
+        await self.send(text_data=json.dumps({
+            'type': 'messages_deleted_notification',
+            'message_ids': event.get('message_ids', []),
+            'deleted_by_user_id': event.get('deleted_by_user_id'),
+            'deleted_by_username': event.get('deleted_by_username'),
+            'delete_type': event.get('delete_type', 'for_me')
+        }))
 
     async def send_push_notification_if_needed(self, message_instance):
         """
