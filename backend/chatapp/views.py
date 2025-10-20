@@ -87,10 +87,10 @@ def get_chat_history(request, room_id):
     if request.user != room.user1 and request.user != room.user2:
         return JsonResponse({'error': 'Unauthorized access'}, status=403)
 
-    from .models import UserDeletedMessage
+    from .models import MessageDeletion
 
     # Получаем ID сообщений, которые пользователь удалил для себя
-    user_deleted_message_ids = UserDeletedMessage.objects.filter(
+    user_deleted_message_ids = MessageDeletion.objects.filter(
         user=request.user
     ).values_list('message_id', flat=True)
 
