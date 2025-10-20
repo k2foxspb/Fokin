@@ -172,6 +172,9 @@ class ChatHistoryView(generics.ListAPIView):
     serializer_class = MessageSerializer
 
     def get_queryset(self):
+        from django.db.models import Q
+        from chatapp.models import MessageDeletion
+
         room_id = self.kwargs.get('room_id')
         # Проверяем доступ к комнате
         try:
@@ -183,8 +186,17 @@ class ChatHistoryView(generics.ListAPIView):
             logging.getLogger(__name__).error(f"📜 [CHAT-HISTORY] Room {room_id} not found")
             return PrivateMessage.objects.none()
 
+        # Получаем ID сообщений, которые пользователь удалил для себя
+        user_deleted_message_ids = MessageDeletion.objects.filter(
+            user=self.request.user
+        ).values_list('message__id', flat=True)
+
+        # Фильтруем сообщения: исключаем глобально удаленные и пользовательские удаления
         return PrivateMessage.objects.filter(
             room_id=room_id
+        ).exclude(
+            Q(is_deleted=True) |  # Глобально удаленные сообщения
+            Q(id__in=user_deleted_message_ids)  # Сообщения, удаленные пользователем для себя
         ).select_related('sender').order_by('-timestamp')
 
     def list(self, request, *args, **kwargs):
