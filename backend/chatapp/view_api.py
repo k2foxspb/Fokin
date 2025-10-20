@@ -182,3 +182,79 @@ def get_room_info(request, room_id):
         })
     except PrivateChatRoom.DoesNotExist:
         return Response({'error': 'Room not found'}, status=404)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@csrf_exempt
+def delete_messages(request):
+    """
+    Помечает сообщения как удаленные (мягкое удаление)
+    """
+    try:
+        user = request.user
+        data = request.data
+
+        message_ids = data.get('message_ids', [])
+        room_id = data.get('room_id')
+
+        if not message_ids:
+            return Response({
+                'success': False,
+                'error': 'No message IDs provided'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        if not room_id:
+            return Response({
+                'success': False,
+                'error': 'Room ID is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Проверяем, что пользователь участник чата
+        try:
+            room = PrivateChatRoom.objects.get(
+                Q(id=room_id) & (Q(user1=user) | Q(user2=user))
+            )
+        except PrivateChatRoom.DoesNotExist:
+            return Response({
+                'success': False,
+                'error': 'Chat room not found or access denied'
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        # Получаем сообщения, которые принадлежат пользователю и еще не удалены
+        messages_to_delete = PrivateMessage.objects.filter(
+            id__in=message_ids,
+            room=room,
+            sender=user,  # Только свои сообщения можно удалять
+            is_deleted=False
+        )
+
+        if not messages_to_delete.exists():
+            return Response({
+                'success': False,
+                'error': 'No messages found or you can only delete your own messages'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        # Помечаем сообщения как удаленные
+        from django.utils import timezone
+        updated_count = messages_to_delete.update(
+            is_deleted=True,
+            deleted_at=timezone.now(),
+            deleted_by=user
+        )
+
+        logger.info(f"User {user.username} deleted {updated_count} messages in room {room_id}")
+
+        return Response({
+            'success': True,
+            'message': f'{updated_count} messages marked as deleted',
+            'deleted_count': updated_count,
+            'deleted_message_ids': list(messages_to_delete.values_list('id', flat=True))
+        })
+
+    except Exception as e:
+        logger.error(f"Error deleting messages: {str(e)}")
+        return Response({
+            'success': False,
+            'error': 'Internal server error'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

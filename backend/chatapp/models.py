@@ -113,7 +113,17 @@ class PrivateMessage(models.Model):
     media_hash = models.CharField(max_length=64, blank=True, null=True)
     media_filename = models.CharField(max_length=255, blank=True, null=True)
     media_size = models.BigIntegerField(blank=True, null=True)
-
+    # Поля для удаления сообщений
+    is_deleted = models.BooleanField(default=False, verbose_name='Помечено как удаленное')
+    deleted_at = models.DateTimeField(null=True, blank=True, verbose_name='Время удаления')
+    deleted_by = models.ForeignKey(
+        CustomUser, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name='deleted_messages',
+        verbose_name='Удалено пользователем'
+    )
     # Прямая связь с медиафайлом для быстрого доступа
     media_file = models.ForeignKey(
         'media_api.UploadedFile',

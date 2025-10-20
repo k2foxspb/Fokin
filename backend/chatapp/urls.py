@@ -4,7 +4,7 @@ from rest_framework.routers import DefaultRouter
 
 from .apps import ChatappConfig
 from .models import PrivateChatRoom
-from .view_api import ChatViewSet, get_room_info, save_push_token
+from .view_api import ChatViewSet, get_room_info, save_push_token, delete_messages
 from .views import IndexView, room_view, get_private_room, private_chat_view, get_chat_history, \
     user_dialog_list
 
@@ -23,6 +23,6 @@ urlpatterns = [
     path('dialogs/', user_dialog_list, name='user_dialogs'),
     path('api/room/<int:room_id>/info/', get_room_info, name='get_room_info'),
     path('api/save-push-token/', save_push_token, name='save_push_token'),
-
+    path('api/messages/delete/', delete_messages, name='delete_messages'),
 
 ]
