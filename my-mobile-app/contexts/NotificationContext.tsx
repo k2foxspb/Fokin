@@ -341,16 +341,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({c
                             firebaseService.addMessageHandler(messageHandler);
                             firebaseHandlerAdded.current = true;
                         }
-                        // Финальная проверка
-                        const finalStatus = await firebaseService.getStatus();
-                        console.log('🔥 [FCM] === FINAL STATUS CHECK ===', {
-                            hasPermission: finalStatus.hasPermission,
-                            isEnabled: finalStatus.isEnabled,
-                            tokenType: finalStatus.type,
-                        });
 
-                        // Вызываем тестовый метод для полной диагностики
-                        await firebaseService.testFirebaseConnection();
 
                     }, 2000); // Даем 2 секунды на полную инициализацию
 

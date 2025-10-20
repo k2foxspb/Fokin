@@ -288,13 +288,10 @@ class FirebaseNotificationService {
           authStatus === AuthorizationStatus.AUTHORIZED ||
           authStatus === AuthorizationStatus.PROVISIONAL;
 
-        console.log('🔥 [FCM] Firebase auth status:', authStatus, 'enabled:', enabled);
 
         if (enabled && Platform.OS === 'ios') {
           const isRegistered = await isDeviceRegisteredForRemoteMessages();
-          console.log('🔥 [FCM] iOS device registered for remote messages:', isRegistered);
           if (!isRegistered) {
-            console.log('🔥 [FCM] Registering iOS device for remote messages...');
             await registerDeviceForRemoteMessages();
           }
         }
@@ -325,7 +322,6 @@ class FirebaseNotificationService {
       const oldTokenType = await AsyncStorage.getItem('pushTokenType');
       if (oldTokenType === 'expo') {
         await AsyncStorage.removeItem('pushTokenType');
-        console.log('🔥 [FCM] Удален старый Expo токен из кэша');
       }
     } catch (error) {
       console.log('🔥 [FCM] Error cleaning old tokens:', error);
@@ -355,8 +351,6 @@ class FirebaseNotificationService {
         console.error('🔥 [FCM] ❌ Проверьте настройки Firebase:');
         return null;
       }
-
-      console.log('🔥 [FCM] ✅ Повторная инициализация успешна');
     }
 
     try {
@@ -364,7 +358,6 @@ class FirebaseNotificationService {
       if (Platform.OS === 'ios') {
         const isRegistered = await isDeviceRegisteredForRemoteMessages();
         if (!isRegistered) {
-          console.log('🔥 [FCM] Registering iOS device for remote messages...');
           await registerDeviceForRemoteMessages();
         }
       }
@@ -491,14 +484,11 @@ class FirebaseNotificationService {
             lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
             groupId: 'chat-messages', // Привязываем к группе
           });
-
-          console.log('🔥 [FCM] ✅ Notification channel with grouping created for Android');
         } catch (channelError) {
           console.error('🔥 [FCM] Failed to create notification channel:', channelError);
         }
       }
 
-      console.log('🔥 [FCM] Step 5: Setting up onMessage listener...');
 
       // КРИТИЧНО: Сохраняем ссылку на unsubscribe функцию
       try {
@@ -516,9 +506,6 @@ class FirebaseNotificationService {
         // NotificationContext сам обработает создание уведомлений через буфер
         // Это предотвращает дублирование уведомлений
 
-        console.log('🔥 [FCM] Firebase message received - forwarding to handlers');
-        console.log('🔥 [FCM] Handlers count:', this.messageHandlers.length);
-
         // Вызываем handlers - они передадут данные в NotificationContext
         this.messageHandlers.forEach((handler, index) => {
           try {
@@ -531,7 +518,6 @@ class FirebaseNotificationService {
 
         // УВЕДОМЛЕНИЯ создаются в NotificationContext через буфер
         // Firebase ТОЛЬКО получает сообщения и передает их handlers
-        console.log('🔥 [FCM] Message forwarded to NotificationContext for processing');
       });
 
         // ВАЖНО: Сохраняем unsubscribe функцию для очистки
@@ -571,7 +557,6 @@ class FirebaseNotificationService {
 
         // Обработка обновления токена
         messaging().onTokenRefresh(async (token: string) => {
-          console.log('🔥 [FCM] Token refreshed:', token.substring(0, 20) + '...');
           await AsyncStorage.setItem('fcmToken', token);
           await this.saveTokenToServer(token);
         });
@@ -758,11 +743,10 @@ class FirebaseNotificationService {
       }
 
       // Отложенная навигация обрабатывается в NotificationContext
-      console.log('🔥 [Firebase] Pending navigation will be handled by NotificationContext');
+     ;
 
       // В продакшене - дополнительная проверка
       if (!__DEV__) {
-        console.log('🔥 [PROD] === PRODUCTION VERIFICATION ===');
 
         // Сохраняем диагностическую информацию
         const diagnosticInfo = {

@@ -62,6 +62,23 @@ interface Message {
     serverFileUrl?: string;
     isLoadingServerUrl?: boolean;
     mediaUri?: string | null;
+    // Новые поля для мягкого удаления
+    deletedForUsers?: number[];
+    deletedAt?: number;
+    isDeletedForMe?: boolean;
+    isDeletedByOther?: boolean;
+    deletedByUsername?: string;
+    // Флаг процесса удаления
+    isDeleting?: boolean;
+    // Поля для оптимистичных сообщений
+    _isOptimistic?: boolean;
+    _optimisticId?: number;
+    // Поле для новых непрочитанных сообщений
+    _isNewUnread?: boolean;
+    // Поле для непрочитанных отправленных сообщений из истории
+    _isUnreadBySender?: boolean;
+    // Серверное поле статуса прочтения
+    is_read_by_recipient?: boolean;
 }
 
 interface User {
@@ -187,6 +204,9 @@ export default function ChatScreen() {
     // Состояние для отслеживания непрочитанных сообщений с анимацией
     const [unreadMessages, setUnreadMessages] = useState<Set<number>>(new Set());
     const unreadAnimations = useRef<{[key: number]: Animated.Value}>({});
+    // Состояние для отслеживания непрочитанных ОТПРАВЛЕННЫХ сообщений
+    const [unreadSentMessages, setUnreadSentMessages] = useState<Set<number>>(new Set());
+    const unreadSentAnimations = useRef<{[key: number]: Animated.Value}>({});
     // Очередь для сообщений, полученных до инициализации
     const pendingMessagesQueue = useRef<Array<{messageId: number, senderId: number}>>([]);
     // Ref'ы для актуальных значений состояний (для использования в WebSocket колбэках)
@@ -196,7 +216,7 @@ export default function ChatScreen() {
     const isChatActiveRef = useRef<boolean>(false);
     const [audioRecording, setAudioRecording] = useState<Audio.Recording | null>(null);
     const [recordingDuration, setRecordingDuration] = useState(0);
-    const [audioPermissionGranted, setAudioPermissionGranted] = useState(false);
+    const [setAudioPermissionGranted] = useState(false);
     const [playingAudioId, setPlayingAudioId] = useState<number | null>(null);
     const [audioPlaybackStates, setAudioPlaybackStates] = useState<{[key: number]: {
         isPlaying: boolean;
@@ -205,11 +225,15 @@ export default function ChatScreen() {
         sound: Audio.Sound | null;
     }}>({});
 
+    // Состояния для выделения сообщений
+    const [isSelectionMode, setIsSelectionMode] = useState(false);
+    const [selectedMessages, setSelectedMessages] = useState<Set<number>>(new Set());
+
     const flatListRef = useRef<FlatList>(null);
     const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
     const videoRef = useRef<any>(null);
     const inlineVideoRefs = useRef<{[key: string]: any}>({});
-    const prevPendingCount = useRef(0);
+
     const router = useRouter();
 
     const updateMessageSafely = (messageId: number | string, updates: Partial<Message>) => {
@@ -231,11 +255,11 @@ export default function ChatScreen() {
             console.log('✨ [ANIMATION] Created new animation value for message:', messageId);
         }
 
-        // Плавно убираем фоновую подсветку за 1.5 секунды
+        // Плавно убираем фоновую подсветку за 2 секунды
         const AnimatedNative = require('react-native').Animated;
         AnimatedNative.timing(unreadAnimations.current[messageId], {
             toValue: 0,
-            duration: 1500, // 1.5 секунды для плавного перехода
+            duration: 2000, // 2 секунды для плавного перехода
             useNativeDriver: false, // backgroundColor не поддерживает native driver
         }).start(() => {
             // После завершения анимации удаляем сообщение из непрочитанных
@@ -249,12 +273,72 @@ export default function ChatScreen() {
                     console.log('✨ [ANIMATION] Updated unread messages:', Array.from(newSet));
                     return newSet;
                 });
+
+                // Очищаем флаг нового непрочитанного сообщения
+                setMessages(prev => 
+                    prev.map(msg => 
+                        msg.id === messageId 
+                            ? { ...msg, _isNewUnread: false }
+                            : msg
+                    )
+                );
+
                 // Очищаем анимацию
                 delete unreadAnimations.current[messageId];
                 console.log('✨ [ANIMATION] Read animation completed for message:', messageId);
             }, 0);
         });
     }, []);
+
+    // Функция для анимированного перехода ОТПРАВЛЕННОГО сообщения в состояние "прочитано получателем"
+    // ВАЖНО: Поскольку сервер не предоставляет статус прочтения в истории, мы используем следующую стратегию:
+    // 1. При загрузке истории помечаем все свежие (до 48ч) отправленные сообщения как потенциально непрочитанные
+    // 2. При получении WebSocket уведомления 'message_read_by_recipient' запускаем эту анимацию
+    // 3. Новые отправленные сообщения всегда помечаются как непрочитанные до получения уведомления
+    const animateSentMessageAsRead = useCallback((messageId: number) => {
+        console.log('📤 [SENT-ANIMATION] Starting read animation for sent message:', messageId);
+        console.log('📤 [SENT-ANIMATION] Current unread sent messages:', Array.from(unreadSentMessages));
+
+        // Создаем анимацию затухания фона, если еще не создана
+        if (!unreadSentAnimations.current[messageId]) {
+            const AnimatedNative = require('react-native').Animated;
+            unreadSentAnimations.current[messageId] = new AnimatedNative.Value(1);
+            console.log('📤 [SENT-ANIMATION] Created new animation value for sent message:', messageId);
+        }
+
+        // Плавно убираем фоновую подсветку за 2 секунды
+        const AnimatedNative = require('react-native').Animated;
+        AnimatedNative.timing(unreadSentAnimations.current[messageId], {
+            toValue: 0,
+            duration: 2000, // 2 секунды для плавного перехода
+            useNativeDriver: false, // backgroundColor не поддерживает native driver
+        }).start(() => {
+            // После завершения анимации удаляем сообщение из непрочитанных отправленных
+            console.log('📤 [SENT-ANIMATION] Animation finished, removing from unread sent:', messageId);
+
+            setTimeout(() => {
+                setUnreadSentMessages(prev => {
+                    const newSet = new Set(prev);
+                    newSet.delete(messageId);
+                    console.log('📤 [SENT-ANIMATION] Updated unread sent messages:', Array.from(newSet));
+                    return newSet;
+                });
+
+                // Очищаем флаг непрочитанного отправленного сообщения из истории
+                setMessages(prev => 
+                    prev.map(msg => 
+                        msg.id === messageId 
+                            ? { ...msg, _isUnreadBySender: false, is_read_by_recipient: true }
+                            : msg
+                    )
+                );
+
+                // Очищаем анимацию
+                delete unreadSentAnimations.current[messageId];
+                console.log('📤 [SENT-ANIMATION] Sent message read animation completed for message:', messageId);
+            }, 0);
+        });
+    }, [unreadSentMessages]);
 
     // Функция для массовой отметки сообщений как прочитанных (для истории)
     const markMultipleMessagesAsRead = useCallback((messageIds: number[]) => {
@@ -415,18 +499,10 @@ export default function ChatScreen() {
             const refValue = isConnectedRef.current;
 
             if (wsConnected !== refValue) {
-                console.log('🔄 [CONNECTION-SYNC] WebSocket connection state mismatch detected:', {
-                    refValue: refValue,
-                    wsConnected: wsConnected,
-                    stateValue: isConnected
-                });
-
                 // Синхронизируем в обе стороны
                 if (wsConnected && !isConnected) {
-                    console.log('🔄 [CONNECTION-SYNC] ✅ Updating state: connected');
                     setIsConnected(true);
                 } else if (!wsConnected && isConnected) {
-                    console.log('🔄 [CONNECTION-SYNC] ⚠️ Updating state: disconnected');
                     setIsConnected(false);
                 }
             }
@@ -441,19 +517,12 @@ export default function ChatScreen() {
         return () => {
             clearInterval(intervalId);
         };
-    }, [isConnected, wsIsConnected]);
+    }, [isConnected]);
 
     const {connect, disconnect, sendMessage, isConnected: wsIsConnected, reconnect} = useWebSocket(
         `/${API_CONFIG.WS_PROTOCOL}/private/${roomId}/`,
         {
             onOpen: () => {
-                console.log('🌐 [WEBSOCKET] ========== CONNECTION OPENED ==========');
-                console.log('🌐 [WEBSOCKET] Setting isConnected to true');
-                console.log('🌐 [WEBSOCKET] Current refs:', {
-                    currentUserIdRef: currentUserIdRef.current,
-                    isDataLoadedRef: isDataLoadedRef.current,
-                    isConnectedRef: isConnectedRef.current
-                });
                 setIsConnected(true);
                 setReconnectAttempts(0);
                 setLastReconnectTime(0);
@@ -462,11 +531,17 @@ export default function ChatScreen() {
                 try {
                     const data = JSON.parse(event.data);
 
+                    // ОТЛАДКА: Логируем все входящие сообщения
+                    console.log('📡 [WEBSOCKET] ========== RECEIVED MESSAGE ==========');
+                    console.log('📡 [WEBSOCKET] Type:', data.type);
+                    console.log('📡 [WEBSOCKET] Data:', JSON.stringify(data, null, 2).substring(0, 500));
+
                     if (data.type === 'messages_by_sender_update') {
                         return;
                     }
 
                     if (data.error) {
+                        console.error('📡 [WEBSOCKET] ❌ Server error:', data.error);
                         Alert.alert('Ошибка', data.error);
                         return;
                     }
@@ -487,10 +562,129 @@ export default function ChatScreen() {
                         return;
                     }
 
-                    // Обработка сообщений чата (включая сообщения без типа)
-                    if (data.message && (!data.type || data.type === 'chat_message' || data.type === 'media_message')) {
+                    // Обработка уведомлений об удалении сообщений от других пользователей
+                    if (data.type === 'messages_deleted_notification') {
+                        console.log('🗑️ [DELETE-NOTIFICATION] Received deletion notification:', data);
+
+                        const { message_ids, deleted_by_user_id, deleted_by_username, delete_type } = data;
+                        const actualCurrentUserId = currentUserIdRef.current;
+
+                        if (message_ids && Array.isArray(message_ids)) {
+                            if (delete_type === 'for_everyone' && deleted_by_user_id !== actualCurrentUserId) {
+                                // Сообщения удалены для всех - убираем их из UI
+                                setMessages(prev => prev.filter(msg => !message_ids.includes(msg.id)));
+                                console.log('🗑️ [DELETE-NOTIFICATION] ✅ Messages deleted for everyone');
+                            } else if (delete_type === 'for_me' && deleted_by_user_id !== actualCurrentUserId) {
+                                // Собеседник удалил сообщения только у себя - показываем пометку
+                                setMessages(prev => prev.map(msg => {
+                                    if (message_ids.includes(msg.id)) {
+                                        return {
+                                            ...msg,
+                                            deletedForUsers: [...(msg.deletedForUsers || []), deleted_by_user_id],
+                                            isDeletedByOther: true,
+                                            deletedByUsername: deleted_by_username,
+                                            deletedAt: Date.now()
+                                        };
+                                    }
+                                    return msg;
+                                }));
+                                console.log('🗑️ [DELETE-NOTIFICATION] ✅ Messages marked as deleted by other user');
+                            }
+                        }
+                        return;
+                    }
+
+                    // Обработка уведомлений о мягком удалении сообщений (обратная совместимость)
+                    if (data.type === 'messages_deleted_by_user') {
+                        console.log('🗑️ [DELETE-NOTIFICATION] Received legacy deletion notification:', data);
+
+                        const { message_ids, deleted_by_user_id, deleted_by_username } = data;
+                        const actualCurrentUserId = currentUserIdRef.current;
+
+                        if (message_ids && Array.isArray(message_ids)) {
+                            setMessages(prev => prev.map(msg => {
+                                if (message_ids.includes(msg.id)) {
+                                    const updatedMsg = {
+                                        ...msg,
+                                        deletedForUsers: [...(msg.deletedForUsers || []), deleted_by_user_id]
+                                    };
+
+                                    // Если это не мое сообщение и его удалил собеседник
+                                    if (deleted_by_user_id !== actualCurrentUserId && msg.sender_id !== actualCurrentUserId) {
+                                        updatedMsg.isDeletedByOther = true;
+                                        updatedMsg.deletedByUsername = deleted_by_username;
+                                        updatedMsg.deletedAt = Date.now();
+                                    }
+
+                                    return updatedMsg;
+                                }
+                                return msg;
+                            }));
+                        }
+                        return;
+                    }
+
+                    // Обработка уведомлений о прочтении сообщений получателем
+                    if (data.type === 'message_read_by_recipient') {
+                        console.log('📖 [READ-NOTIFICATION] Received read notification from recipient:', data);
+
+                        const { message_id, read_by_user_id } = data;
+                        const actualCurrentUserId = currentUserIdRef.current;
+
+                        // Проверяем что это уведомление о прочтении нашего сообщения
+                        if (message_id && read_by_user_id !== actualCurrentUserId) {
+                            console.log('📖 [READ-NOTIFICATION] Our message was read by recipient:', {
+                                messageId: message_id,
+                                readByUserId: read_by_user_id,
+                                ourUserId: actualCurrentUserId
+                            });
+
+                            // Запускаем анимацию перехода к прочитанному состоянию
+                            animateSentMessageAsRead(message_id);
+                        }
+
+                        return;
+                    }
+
+                    // Обработка массовых уведомлений о прочтении
+                    if (data.type === 'messages_read_by_recipient') {
+                        console.log('📖 [BULK-READ-NOTIFICATION] Received bulk read notification:', data);
+
+                        const { message_ids, read_by_user_id } = data;
+                        const actualCurrentUserId = currentUserIdRef.current;
+
+                        if (message_ids && Array.isArray(message_ids) && read_by_user_id !== actualCurrentUserId) {
+                            console.log('📖 [BULK-READ-NOTIFICATION] Multiple messages read by recipient:', {
+                                count: message_ids.length,
+                                readByUserId: read_by_user_id,
+                                ourUserId: actualCurrentUserId
+                            });
+
+                            // Запускаем анимацию для каждого сообщения с небольшой задержкой
+                            message_ids.forEach((messageId, index) => {
+                                setTimeout(() => {
+                                    animateSentMessageAsRead(messageId);
+                                }, index * 100); // 100мс между анимациями для визуального эффекта
+                            });
+                        }
+
+                        return;
+                    }
+
+                    // Обработка сообщений чата (включая сообщения без типа) - РАСШИРЕННАЯ ПРОВЕРКА
+                    const isChatMessage = data.message !== undefined && 
+                        (!data.type || data.type === 'chat_message' || data.type === 'media_message' || data.type === 'message');
+
+                    const hasMessageData = data.id && (data.message !== undefined || data.mediaType);
+
+                    if (isChatMessage || hasMessageData) {
                         console.log('💬 [NEW-MESSAGE] ========== NEW MESSAGE RECEIVED ==========');
-                        console.log('💬 [NEW-MESSAGE] Data:', JSON.stringify(data, null, 2));
+                        console.log('💬 [NEW-MESSAGE] Message ID:', data.id);
+                        console.log('💬 [NEW-MESSAGE] Message text:', data.message?.substring(0, 50));
+                        console.log('💬 [NEW-MESSAGE] Message type:', data.type);
+                        console.log('💬 [NEW-MESSAGE] Sender:', data.sender__username);
+                        console.log('💬 [NEW-MESSAGE] Sender ID:', data.sender_id);
+                        console.log('💬 [NEW-MESSAGE] Full data:', JSON.stringify(data, null, 2));
 
                         // КРИТИЧНО: Используем ref'ы для актуальных значений
                         const actualCurrentUserId = currentUserIdRef.current;
@@ -551,7 +745,7 @@ export default function ChatScreen() {
                         // 4. Все необходимые данные инициализированы
                         if (!isMyMessage && messageId && data.sender_id) {
                             if (actualCurrentUserId && actualIsDataLoaded) {
-                                console.log('💬 [NEW-MESSAGE] ✅ All conditions met, will mark as read with animation in 2000ms');
+                                console.log('💬 [NEW-MESSAGE] ✅ All conditions met, will mark as read with animation');
                                 console.log('💬 [NEW-MESSAGE] Validated data:', {
                                     messageId,
                                     senderId: data.sender_id,
@@ -566,8 +760,6 @@ export default function ChatScreen() {
                                     const newSet = new Set(prev);
                                     newSet.add(messageId);
                                     console.log('💬 [NEW-MESSAGE] ✅ Added to unread messages:', messageId);
-                                    console.log('💬 [NEW-MESSAGE] Total unread messages:', newSet.size);
-                                    console.log('💬 [NEW-MESSAGE] Unread IDs:', Array.from(newSet));
                                     return newSet;
                                 });
 
@@ -578,7 +770,7 @@ export default function ChatScreen() {
                                     console.log('💬 [NEW-MESSAGE] ✅ Created animation for message:', messageId);
                                 }
 
-                                // Через 500мс начинаем анимацию прочтения (сокращено с 2000мс)
+                                // Через 1.5 секунды начинаем анимацию прочтения
                                 setTimeout(() => {
                                     // Повторная проверка перед отправкой (используем актуальные значения из ref'ов)
                                     const finalCurrentUserId = currentUserIdRef.current;
@@ -589,31 +781,17 @@ export default function ChatScreen() {
                                     // FALLBACK: проверяем wsIsConnected() если ref показывает false
                                     const actuallyConnected = finalIsConnected || wsIsConnected();
 
-                                    console.log('💬 [NEW-MESSAGE] Final check before marking as read:', {
-                                        finalIsConnected,
-                                        wsIsConnectedResult: wsIsConnected(),
-                                        actuallyConnected,
-                                        finalCurrentUserId,
-                                        finalIsChatActive,
-                                        finalIsDataLoaded
-                                    });
-
                                     if (actuallyConnected && finalCurrentUserId && finalIsChatActive && finalIsDataLoaded) {
                                         console.log('💬 [NEW-MESSAGE] ✅ Final check passed, calling markMessageAsRead...');
                                         markMessageAsRead(messageId, data.sender_id);
-                                        // Запускаем анимацию прочтения
-                                        animateMessageAsRead(messageId);
+                                        // Запускаем анимацию прочтения через дополнительные 0.5 секунды
+                                        setTimeout(() => {
+                                            animateMessageAsRead(messageId);
+                                        }, 500);
                                     } else {
-                                        console.warn('💬 [NEW-MESSAGE] ⚠️ State changed, skipping read receipt:', {
-                                            finalIsConnected,
-                                            actuallyConnected,
-                                            wsIsConnectedResult: wsIsConnected(),
-                                            finalCurrentUserId,
-                                            finalIsChatActive,
-                                            finalIsDataLoaded
-                                        });
+                                        console.warn('💬 [NEW-MESSAGE] ⚠️ State changed, skipping read receipt');
                                     }
-                                }, 500); // Сокращено до 500мс для более быстрой реакции
+                                }, 1500); // Показываем непрочитанное состояние 1.5 секунды
                             } else {
                                 // Инициализация еще не завершена - добавляем в очередь
                                 console.log('💬 [NEW-MESSAGE] ⚠️ Initialization not complete, adding to pending queue:', {
@@ -639,16 +817,32 @@ export default function ChatScreen() {
                         }
 
                         setMessages(prev => {
+                            // КРИТИЧНО: Сначала проверяем дубликаты по ID, хешу и содержимому
+                            const existingById = prev.find(msg => msg.id === messageId);
+                            const existingByHash = data.mediaHash ? 
+                                prev.find(msg => msg.mediaHash === data.mediaHash && msg.sender_id === data.sender_id) : 
+                                null;
+                            const existingByContent = !data.mediaHash ? 
+                                prev.find(msg => 
+                                    msg.message === data.message && 
+                                    msg.sender_id === data.sender_id && 
+                                    Math.abs(Number(msg.timestamp) - Number(data.timestamp)) < 30
+                                ) : 
+                                null;
+
+                            if (existingById || existingByHash || existingByContent) {
+                                console.log('💬 [DUPLICATE] Message already exists, skipping:', {
+                                    messageId,
+                                    existsById: !!existingById,
+                                    existsByHash: !!existingByHash,
+                                    existsByContent: !!existingByContent
+                                });
+                                return prev;
+                            }
+
                             // Если это мое сообщение, ищем оптимистичное сообщение для обновления
                             if (isMyMessage) {
-                                // Сначала проверяем, нет ли уже сообщения с серверным ID
-                                const existingServerMessage = prev.find(msg => msg.id === messageId);
-                                if (existingServerMessage) {
-                                    console.log('📷 [MEDIA] ⚠️ Message with server ID already exists, skipping:', messageId);
-                                    return prev;
-                                }
-
-                                // Ищем оптимистичное сообщение по хэшу медиа или контенту
+                                // Ищем оптимистичное сообщение по содержимому и времени
                                 let optimisticIndex = -1;
                                 const currentTime = Date.now();
 
@@ -663,17 +857,16 @@ export default function ChatScreen() {
 
                                         return isMatchingHash && isMyMessage && isOptimisticId && isNotServerMessage && hasUploadingState;
                                     });
-
                                 } else {
-                                    // Для текстовых сообщений ищем по содержимому и времени
+                                    // Для текстовых сообщений: поиск оптимистичного сообщения
                                     optimisticIndex = prev.findIndex(msg => {
-                                        const isMatchingMessage = msg.message === data.message;
+                                        const isOptimisticMessage = msg._isOptimistic === true;
                                         const isMyMessage = msg.sender_id === currentUserId;
-                                        const isRecentTimestamp = Math.abs(Number(msg.timestamp) - Number(data.timestamp)) < 60; // В пределах минуты
-                                        const isOptimisticId = typeof msg.id === 'number' && msg.id > currentTime - 120000;
+                                        const isMatchingMessage = msg.message?.trim() === data.message?.trim();
                                         const isNotServerMessage = msg.id !== messageId;
+                                        const isRecentMessage = typeof msg.id === 'number' && msg.id > currentTime - 300000; // 5 минут
 
-                                        return isMatchingMessage && isMyMessage && isRecentTimestamp && isOptimisticId && isNotServerMessage;
+                                        return isOptimisticMessage && isMyMessage && isMatchingMessage && isNotServerMessage && isRecentMessage;
                                     });
                                 }
 
@@ -682,72 +875,76 @@ export default function ChatScreen() {
                                     const updatedMessages = [...prev];
                                     const originalMessage = updatedMessages[optimisticIndex];
 
-                                        // КРИТИЧЕСКИ ВАЖНО: сохраняем локальный медиа URI
-                                        const preservedMediaUri = originalMessage.mediaUri;
-                                        const preservedMediaBase64 = originalMessage.mediaBase64;
-
-                                        updatedMessages[optimisticIndex] = {
-                                            ...originalMessage, // Сохраняем все исходные поля
-                                            id: messageId, // Используем серверный ID
-                                            message: data.message || originalMessage.message,
-                                            timestamp: data.timestamp || originalMessage.timestamp,
-                                            sender__username: data.sender__username || originalMessage.sender__username,
-                                            sender_id: data.sender_id || originalMessage.sender_id,
-                                            isUploading: false, // Загрузка завершена
-                                            uploadProgress: 100,
-                                            // Медиа поля - ПРИОРИТЕТ локальным данным
-                                            mediaType: originalMessage.mediaType || data.mediaType,
-                                            mediaBase64: preservedMediaBase64 || data.mediaBase64,
-                                            mediaHash: originalMessage.mediaHash || data.mediaHash,
-                                            mediaFileName: originalMessage.mediaFileName || data.mediaFileName,
-                                            mediaSize: originalMessage.mediaSize || data.mediaSize,
-                                            mediaUri: preservedMediaUri, // ВСЕГДА сохраняем локальный URI
-                                            // Дополнительные поля для отладки
-                                            _wasOptimistic: true,
-                                            _serverConfirmed: true,
-                                            _originalId: originalMessage.id
-                                        };
-                                        return updatedMessages;
-                                } else {
-                                    console.log('📷 [MEDIA] ⚠️ No optimistic message found, will create new message:', {
-                                        mediaHash: data.mediaHash?.substring(0, 16) + '...',
-                                        messageId: messageId,
-                                        searchedFor: 'optimistic with matching hash and uploading state'
+                                    console.log('📤 [OPTIMISTIC] ✅ FOUND AND UPDATING optimistic message:', {
+                                        originalId: originalMessage.id,
+                                        serverId: messageId,
+                                        optimisticId: originalMessage._optimisticId,
+                                        originalMessage: originalMessage.message?.substring(0, 50),
+                                        serverMessage: data.message?.substring(0, 50),
+                                        originalTimestamp: originalMessage.timestamp,
+                                        serverTimestamp: data.timestamp
                                     });
+
+                                    // КРИТИЧЕСКИ ВАЖНО: сохраняем локальный медиа URI
+                                    const preservedMediaUri = originalMessage.mediaUri;
+                                    const preservedMediaBase64 = originalMessage.mediaBase64;
+
+                                    updatedMessages[optimisticIndex] = {
+                                        ...originalMessage, // Сохраняем все исходные поля
+                                        id: messageId, // Используем серверный ID
+                                        message: data.message || originalMessage.message,
+                                        timestamp: data.timestamp || originalMessage.timestamp,
+                                        sender__username: data.sender__username || originalMessage.sender__username,
+                                        sender_id: data.sender_id || originalMessage.sender_id,
+                                        isUploading: false, // Загрузка завершена
+                                        uploadProgress: 100,
+                                        // Медиа поля - ПРИОРИТЕТ локальным данным
+                                        mediaType: originalMessage.mediaType || data.mediaType,
+                                        mediaBase64: preservedMediaBase64 || data.mediaBase64,
+                                        mediaHash: originalMessage.mediaHash || data.mediaHash,
+                                        mediaFileName: originalMessage.mediaFileName || data.mediaFileName,
+                                        mediaSize: originalMessage.mediaSize || data.mediaSize,
+                                        mediaUri: preservedMediaUri, // ВСЕГДА сохраняем локальный URI
+                                        // Удаляем оптимистичные поля
+                                        _isOptimistic: false,
+                                        _wasOptimistic: true,
+                                        _serverConfirmed: true,
+                                        _originalId: originalMessage.id
+                                    };
+
+                                    // ВАЖНО: Обновляем ID в списке непрочитанных отправленных сообщений
+                                    const oldOptimisticId = originalMessage._optimisticId || originalMessage.id;
+                                    setUnreadSentMessages(prevUnread => {
+                                        const newSet = new Set(prevUnread);
+                                        if (newSet.has(oldOptimisticId)) {
+                                            newSet.delete(oldOptimisticId);
+                                            newSet.add(messageId);
+                                            console.log('📤 [OPTIMISTIC] Updated unread sent messages ID:', oldOptimisticId, '->', messageId);
+                                        }
+                                        return newSet;
+                                    });
+
+                                    // Переносим анимацию на новый ID
+                                    if (unreadSentAnimations.current[oldOptimisticId]) {
+                                        unreadSentAnimations.current[messageId] = unreadSentAnimations.current[oldOptimisticId];
+                                        delete unreadSentAnimations.current[oldOptimisticId];
+                                        console.log('📤 [OPTIMISTIC] Transferred animation to server ID:', messageId);
+                                    }
+
+                                    return updatedMessages;
                                 }
-                            }
 
-                            // Проверяем, есть ли уже сообщение с таким серверным ID или хэшем
-                            const existingById = prev.find(msg => msg.id === messageId);
-                            const existingByHash = data.mediaHash ?
-                                prev.find(msg => msg.mediaHash === data.mediaHash && msg.sender_id === data.sender_id && !msg.isUploading) :
-                                null;
+                                // FALLBACK: Создаем новое сообщение если оптимистичное не найдено
+                                console.log('📤 [FALLBACK] Creating new message since optimistic not found');
 
-                            if (existingById || existingByHash) {
-                                console.log('📷 [MEDIA] Message already exists, skipping:', {
-                                    messageId: messageId,
-                                    existsById: !!existingById,
-                                    existsByHash: !!existingByHash,
-                                    mediaHash: data.mediaHash?.substring(0, 16) + '...'
-                                });
-                                return prev;
-                            } else {
-                                console.log('📷 [MEDIA] Adding new message from other user:', {
-                                    messageId: messageId,
-                                    sender: data.sender__username,
-                                    mediaType: data.mediaType,
-                                    mediaHash: data.mediaHash?.substring(0, 16) + '...'
-                                });
-
-                                // Добавляем новое сообщение (от другого пользователя)
                                 const isLargeFile = data.mediaSize ? (data.mediaSize / (1024 * 1024)) > 15 : false;
 
                                 const newMessage: Message = {
                                     id: messageId,
                                     message: data.message,
                                     timestamp: data.timestamp || Math.floor(Date.now() / 1000),
-                                    sender__username: data.sender__username,
-                                    sender_id: data.sender_id,
+                                    sender__username: data.sender__username || currentUsername,
+                                    sender_id: data.sender_id || currentUserId,
                                     mediaType: data.mediaType,
                                     mediaUri: null,
                                     mediaBase64: data.mediaBase64,
@@ -756,11 +953,46 @@ export default function ChatScreen() {
                                     mediaSize: data.mediaSize,
                                     isUploading: false,
                                     uploadProgress: 100,
-                                    // Для больших файлов без base64 помечаем как требующие загрузки
-                                    needsReload: isLargeFile && !data.mediaBase64
+                                    needsReload: isLargeFile && !data.mediaBase64,
+                                    _isOptimistic: false,
+                                    _wasOptimistic: false,
+                                    _serverConfirmed: true
                                 };
+
+                                console.log('📤 [FALLBACK] ✅ Created fallback message:', newMessage.id);
                                 return [newMessage, ...prev];
                             }
+
+                            // Добавляем новое сообщение от другого пользователя
+                            console.log('💬 [NEW-MESSAGE] Adding new message from other user:', {
+                                messageId: messageId,
+                                sender: data.sender__username,
+                                mediaType: data.mediaType,
+                                mediaHash: data.mediaHash?.substring(0, 16) + '...'
+                            });
+
+                            const isLargeFile = data.mediaSize ? (data.mediaSize / (1024 * 1024)) > 15 : false;
+
+                            const newMessage: Message = {
+                                id: messageId,
+                                message: data.message,
+                                timestamp: data.timestamp || Math.floor(Date.now() / 1000),
+                                sender__username: data.sender__username,
+                                sender_id: data.sender_id,
+                                mediaType: data.mediaType,
+                                mediaUri: null,
+                                mediaBase64: data.mediaBase64,
+                                mediaHash: data.mediaHash,
+                                mediaFileName: data.mediaFileName,
+                                mediaSize: data.mediaSize,
+                                isUploading: false,
+                                uploadProgress: 100,
+                                // Для больших файлов без base64 помечаем как требующие загрузки
+                                needsReload: isLargeFile && !data.mediaBase64,
+                                // НОВОЕ: Помечаем как непрочитанное для визуальной индикации
+                                _isNewUnread: !isMyMessage
+                            };
+                            return [newMessage, ...prev];
                         });
                         setTimeout(() => {
                             if (flatListRef.current) {
@@ -776,7 +1008,6 @@ export default function ChatScreen() {
                 }
             },
             onClose: () => {
-                console.log('🌐 [WEBSOCKET] Connection closed');
                 setIsConnected(false);
 
                 const now = Date.now();
@@ -845,7 +1076,7 @@ export default function ChatScreen() {
                 return null;
             }
 
-            console.log('📄 [API] Requesting media URL for message:', messageId);
+
 
             const response = await axios.get(
                 `${API_CONFIG.BASE_URL}/media-api/message/${messageId}/url/`,
@@ -892,10 +1123,8 @@ export default function ChatScreen() {
     // Запрос разрешения на использование микрофона
     const requestAudioPermission = async (): Promise<boolean> => {
         try {
-            console.log('🎤 [AUDIO-PERMISSION] Requesting audio recording permission...');
 
             const { status: existingStatus } = await Audio.getPermissionsAsync();
-            console.log('🎤 [AUDIO-PERMISSION] Current status:', existingStatus);
 
             if (existingStatus === 'granted') {
                 setAudioPermissionGranted(true);
@@ -903,7 +1132,6 @@ export default function ChatScreen() {
             }
 
             const { status } = await Audio.requestPermissionsAsync();
-            console.log('🎤 [AUDIO-PERMISSION] Request result:', status);
 
             if (status === 'granted') {
                 setAudioPermissionGranted(true);
@@ -952,10 +1180,8 @@ export default function ChatScreen() {
 
             // Запрашиваем разрешение
             const { status, canAskAgain } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-            console.log('📱 [PERMISSIONS] Request result:', { status, canAskAgain });
 
             if (status === 'granted') {
-                console.log('📱 [PERMISSIONS] ✅ Permission granted');
                 return true;
             }
 
@@ -1174,8 +1400,6 @@ export default function ChatScreen() {
             if (!finalizeResponse.data.success) {
                 throw new Error(finalizeResponse.data.message || 'Турбо финализация не удалась');
             }
-
-            console.log('🚀 [TURBO-UPLOAD] ⚡✅ Turbo upload completed successfully!');
             return finalizeResponse.data.file_url;
 
         } catch (error) {
@@ -1582,9 +1806,250 @@ export default function ChatScreen() {
         }
     };
 
-    // Выбор изображения
-    const pickImage = async () => {
+    // ---------- NEW: Delete a message ----------
+    /**
+     * Sends a delete request to the server and removes the message locally.
+     * Only the author of the message can delete it.
+     */
+    // ---------- NEW: Delete one or several messages ----------
+    /**
+     * Удаляет сообщение(я) для текущего пользователя (мягкое удаление).
+     * Собеседник видит сообщения с пометкой об удалении.
+     * Принимает один id или массив id.
+     */
+    const deleteMessage = async (messageIds: number | number[], deleteType: 'for_me' | 'for_everyone' = 'for_me') => {
+        const ids = Array.isArray(messageIds) ? messageIds : [messageIds];
+        if (!isConnected || !isDataLoaded || !recipient?.id || !currentUserId) {
+            Alert.alert('Ошибка', 'Невозможно удалить сообщение в данный момент');
+            return;
+        }
 
+        try {
+            // Показываем индикатор удаления (оптимистичное обновление UI)
+            setMessages(prev => prev.map(msg => {
+                if (ids.includes(Number(msg.id))) {
+                    return {
+                        ...msg,
+                        isDeleting: true
+                    };
+                }
+                return msg;
+            }));
+
+            console.log('🗑️ [DELETE] Starting delete process:', {
+                ids,
+                deleteType,
+                userId: currentUserId,
+                roomId
+            });
+
+            // ГЛАВНОЕ ИСПРАВЛЕНИЕ: Используем HTTP API для удаления
+            const token = await getToken();
+            if (!token) {
+                throw new Error('Нет токена авторизации');
+            }
+
+            const response = await axios.post(
+                `${API_CONFIG.BASE_URL}/chat/api/messages/delete/`,
+                {
+                    message_ids: ids,
+                    room_id: roomId,
+                    delete_type: deleteType
+                },
+                {
+                    headers: {
+                        'Authorization': `Token ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    timeout: 10000
+                }
+            );
+
+            console.log('🗑️ [DELETE] HTTP API response:', response.data);
+
+            if (response.data.success) {
+                // Удаляем сообщения из UI после успешного удаления на сервере
+                if (deleteType === 'for_me' || deleteType === 'for_everyone') {
+                    setMessages(prev => prev.filter(msg => !ids.includes(Number(msg.id))));
+                }
+
+                // Отправляем уведомление через WebSocket для других пользователей
+                if (deleteType === 'for_everyone') {
+                    const notificationPayload = {
+                        type: 'messages_deleted_notification',
+                        message_ids: ids,
+                        room_id: roomId,
+                        deleted_by_user_id: currentUserId,
+                        deleted_by_username: currentUsername,
+                        delete_type: deleteType
+                    };
+
+                    sendMessage(notificationPayload);
+                }
+
+                console.log('🗑️ [DELETE] ✅ Messages successfully deleted');
+            } else {
+                throw new Error(response.data.error || 'Сервер не подтвердил удаление');
+            }
+
+        } catch (error) {
+            console.error('🗑️ [DELETE] ❌ Error deleting messages:', error);
+
+            // Убираем индикатор удаления при ошибке
+            setMessages(prev => prev.map(msg => {
+                if (ids.includes(Number(msg.id))) {
+                    const { isDeleting, ...msgWithoutDeleting } = msg;
+                    return msgWithoutDeleting;
+                }
+                return msg;
+            }));
+
+            let errorMessage = 'Не удалось удалить сообщения';
+            if (axios.isAxiosError(error)) {
+                if (error.response?.status === 401) {
+                    errorMessage = 'Сессия истекла. Войдите снова';
+                    router.replace('/(auth)/login');
+                } else if (error.response?.status === 403) {
+                    errorMessage = 'Недостаточно прав для удаления';
+                } else if (error.response?.status === 404) {
+                    errorMessage = 'Сообщения не найдены';
+                } else if (error.response?.data?.error) {
+                    errorMessage = error.response.data.error;
+                }
+            } else if (error.message) {
+                errorMessage = error.message;
+            }
+
+            Alert.alert('Ошибка удаления', errorMessage);
+        }
+    };
+
+    // Функции для управления выделением сообщений
+    const toggleMessageSelection = (messageId: number) => {
+        setSelectedMessages(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(messageId)) {
+                newSet.delete(messageId);
+            } else {
+                newSet.add(messageId);
+            }
+
+            // Если больше нет выделенных сообщений, выходим из режима выделения
+            if (newSet.size === 0) {
+                setIsSelectionMode(false);
+            }
+
+            return newSet;
+        });
+    };
+
+    const enterSelectionMode = (messageId: number) => {
+        setIsSelectionMode(true);
+        setSelectedMessages(new Set([messageId]));
+    };
+
+    const exitSelectionMode = () => {
+        setIsSelectionMode(false);
+        setSelectedMessages(new Set());
+    };
+
+    const selectAllMessages = () => {
+        const allMessageIds = messages.map(msg => Number(msg.id));
+        setSelectedMessages(new Set(allMessageIds));
+    };
+
+    const deleteSelectedMessages = () => {
+        if (selectedMessages.size === 0) return;
+
+        // Проверяем, есть ли среди выбранных мои собственные сообщения
+        const selectedMessageObjects = messages.filter(msg => selectedMessages.has(Number(msg.id)));
+        const hasMyMessages = selectedMessageObjects.some(msg => msg.sender_id === currentUserId);
+        const hasOtherMessages = selectedMessageObjects.some(msg => msg.sender_id !== currentUserId);
+
+        if (hasMyMessages && hasOtherMessages) {
+            // Смешанный выбор - только удаление для себя
+            Alert.alert(
+                'Удалить сообщения',
+                `Удалить ${selectedMessages.size} сообщений из своей переписки? Собеседник будет видеть ваши сообщения с пометкой "удалено из переписки".`,
+                [
+                    { text: 'Отмена', style: 'cancel' },
+                    {
+                        text: 'Удалить у себя',
+                        style: 'destructive',
+                        onPress: () => {
+                            deleteMessage(Array.from(selectedMessages), 'for_me');
+                            exitSelectionMode();
+                        }
+                    }
+                ],
+                { cancelable: true }
+            );
+        } else if (hasMyMessages) {
+            // Только мои сообщения - можно удалить для всех
+            Alert.alert(
+                'Удалить сообщения',
+                `Выберите тип удаления для ${selectedMessages.size} ваших сообщений:`,
+                [
+                    { text: 'Отмена', style: 'cancel' },
+                    {
+                        text: 'Удалить у себя',
+                        onPress: () => {
+                            deleteMessage(Array.from(selectedMessages), 'for_me');
+                            exitSelectionMode();
+                        }
+                    },
+                    {
+                        text: 'Удалить у всех',
+                        style: 'destructive',
+                        onPress: () => {
+                            deleteMessage(Array.from(selectedMessages), 'for_everyone');
+                            exitSelectionMode();
+                        }
+                    }
+                ],
+                { cancelable: true }
+            );
+        } else {
+            // Только чужие сообщения - удаление для себя
+            Alert.alert(
+                'Удалить сообщения',
+                `Удалить ${selectedMessages.size} сообщений из своей переписки? Собеседник будет видеть свои сообщения с пометкой "удалено из переписки".`,
+                [
+                    { text: 'Отмена', style: 'cancel' },
+                    {
+                        text: 'Удалить у себя',
+                        style: 'destructive',
+                        onPress: () => {
+                            deleteMessage(Array.from(selectedMessages), 'for_me');
+                            exitSelectionMode();
+                        }
+                    }
+                ],
+                { cancelable: true }
+            );
+        }
+    };
+
+    const forwardSelectedMessages = () => {
+        if (selectedMessages.size === 0) return;
+
+        // Получаем выделенные сообщения
+        const messagesToForward = messages.filter(msg => selectedMessages.has(Number(msg.id)));
+
+        Alert.alert(
+            'Переслать сообщения',
+            `Функция пересылки ${selectedMessages.size} сообщений будет реализована позже`,
+            [{ text: 'OK' }]
+        );
+
+        // TODO: Реализовать логику пересылки
+        // Например, можно открыть список контактов или чатов для выбора получателя
+
+        exitSelectionMode();
+    };
+
+    // Выбор изображения (поддержка множественного выбора)
+    const pickImage = async () => {
         try {
             const hasPermission = await requestPermissions();
             if (!hasPermission) {
@@ -1592,22 +2057,28 @@ export default function ChatScreen() {
                 return;
             }
 
-            console.log('📷 [PICKER] Launching image library...');
+            console.log('📷 [PICKER] Launching image library with multiple selection...');
             const result = await ImagePicker.launchImageLibraryAsync({
                 mediaTypes: ['images'],
                 allowsEditing: false,
-                quality: 0.7, // Уменьшаем качество для ускорения без значительной потери
+                quality: 0.7,               // Уменьшаем качество для ускорения без значительной потери
                 base64: true,
-                exif: false, // Убираем EXIF данные для уменьшения размера
+                exif: false,
+                allowsMultipleSelection: true, // <‑‑ Включаем множественный выбор
+                selectionLimit: 0,
             });
 
             console.log('📷 [PICKER] Image picker result:', {
                 canceled: result.canceled,
-                assetsCount: result.assets?.length || 0
+                assetsCount: result.assets?.length || 0,
             });
 
-            if (!result.canceled && result.assets[0]) {
-                const asset = result.assets[0];
+            if (result.canceled || !result.assets?.length) {
+                return;
+            }
+
+            // Обрабатываем каждый выбранный файл последовательно
+            for (const asset of result.assets) {
                 console.log('📷 [PICKER] Asset details:', {
                     hasBase64: !!asset.base64,
                     base64Length: asset.base64?.length || 0,
@@ -1615,154 +2086,144 @@ export default function ChatScreen() {
                     width: asset.width,
                     height: asset.height,
                     fileSize: asset.fileSize,
-                    fileName: asset.fileName
+                    fileName: asset.fileName,
                 });
 
                 if (asset.base64) {
                     await sendMediaMessage(asset.base64, 'image');
                 } else {
-                    console.log('📷 [PICKER] ❌ No base64 data in asset, trying to convert from URI');
-
                     // Проверяем размер файла перед конвертацией
                     if (asset.fileSize) {
                         const fileSizeMB = asset.fileSize / (1024 * 1024);
                         console.log('📷 [PICKER] File size before conversion:', fileSizeMB.toFixed(1) + 'MB');
 
-                        // Для очень больших изображений уведомляем об ограничениях P2P
                         if (fileSizeMB > 100) {
-                            console.log('📷 [PICKER] Large image detected - P2P size limit');
                             Alert.alert(
                                 'Изображение слишком большое',
-                                `Размер: ${fileSizeMB.toFixed(1)}MB\nМаксимум для P2P передачи: 100MB\n\nДля передачи больших файлов используйте облачные хранилища.`,
+                                `Размер: ${fileSizeMB.toFixed(1)} MB\nМаксимум для P2P‑передачи: 100 MB`,
                                 [{ text: 'Понятно' }]
                             );
-                            return;
+                            continue; // переходим к следующему файлу
                         }
                     }
 
                     try {
-                        console.log('📷 [PICKER] Starting URI to base64 conversion...');
+                        console.log('📷 [PICKER] Converting URI to base64...');
                         const base64 = await convertToBase64(asset.uri);
-                        console.log('📷 [PICKER] Successfully converted URI to base64, length:', base64.length);
+                        console.log('📷 [PICKER] Base64 conversion successful, length:', base64.length);
                         await sendMediaMessage(base64, 'image');
                     } catch (convertError) {
-                        console.error('📷 [PICKER] ❌ Failed to convert URI to base64:', convertError);
+                        console.error('📷 [PICKER] ❌ Conversion error:', convertError);
+                        // Обрабатываем ошибки аналогично исходному коду
+                        const errMsg = convertError.toString();
 
-                        const errorMessage = convertError.toString();
-
-                        if (errorMessage.includes('OutOfMemoryError') || errorMessage.includes('allocation') || errorMessage.includes('memory')) {
+                        if (errMsg.includes('OutOfMemoryError') || errMsg.includes('allocation') || errMsg.includes('memory')) {
                             Alert.alert(
                                 'Недостаточно памяти',
-                                `Изображение слишком большое для обработки в памяти.\n\nРазмер: ${asset.fileSize ? Math.round(asset.fileSize / (1024 * 1024)) + 'MB' : 'неизвестно'}\n\nПопробуйте:\n• Выбрать изображение меньшего размера\n• Сжать изображение в другом приложении\n• Перезапустить приложение`,
+                                `Изображение слишком большое для обработки в памяти.\n\nРазмер: ${asset.fileSize ? Math.round(asset.fileSize / (1024 * 1024)) + 'MB' : 'неизвестно'}\n\nПопробуйте выбрать меньший файл или использовать прямую загрузку.`,
                                 [
-                                    { text: 'Понятно', style: 'default' },
+                                    { text: 'Понятно' },
                                     {
-                                        text: 'Попробовать прямую загрузку',
-                                        style: 'default',
-                                        onPress: async () => {
-                                            try {
-                                                console.log('📷 [PICKER] Trying direct upload after memory error...');
-                                                await sendMediaMessageDirect(asset.uri, 'image', asset.fileSize);
-                                            } catch (directError) {
-                                                console.error('📷 [PICKER] Direct upload also failed:', directError);
-                                                Alert.alert('Ошибка', 'Не удалось загрузить изображение. Попробуйте выбрать файл меньшего размера.');
-                                            }
-                                        }
-                                    }
-                                ]
-                            );
-                        } else if (errorMessage.includes('слишком большой') || errorMessage.includes('30MB')) {
-                            Alert.alert(
-                                'Файл слишком большой',
-                                `Размер изображения превышает лимит для обычной загрузки.\n\nРазмер: ${asset.fileSize ? Math.round(asset.fileSize / (1024 * 1024)) + 'MB' : 'неизвестно'}\nЛимит: 30MB\n\nИспользовать прямую загрузку?`,
-                                [
-                                    { text: 'Отмена', style: 'cancel' },
-                                    {
-                                        text: 'Загрузить напрямую',
-                                        style: 'default',
+                                        text: 'Прямая загрузка',
                                         onPress: async () => {
                                             try {
                                                 await sendMediaMessageDirect(asset.uri, 'image', asset.fileSize);
-                                            } catch (directError) {
-                                                console.error('📷 [PICKER] Direct upload failed:', directError);
-                                                Alert.alert('Ошибка', 'Не удалось загрузить изображение прямым способом.');
+                                            } catch (e) {
+                                                Alert.alert('Ошибка', 'Не удалось загрузить изображение напрямую.');
                                             }
-                                        }
-                                    }
+                                        },
+                                    },
                                 ]
                             );
                         } else {
-                            // Обычная ошибка конвертации
                             Alert.alert(
                                 'Ошибка обработки изображения',
-                                `Не удалось получить данные изображения.\n\nОшибка: ${convertError.message || 'Неизвестная ошибка'}\n\nПопробуйте:\n• Выбрать другое изображение\n• Перезапустить приложение\n• Проверить свободное место на устройстве`
+                                `Не удалось получить данные изображения.\n\n${errMsg}`,
+                                [{ text: 'OK' }]
                             );
                         }
                     }
                 }
-
             }
         } catch (error) {
-            console.error('📷 [PICKER] ❌ Error picking image:', error);
-            Alert.alert('Ошибка', 'Не удалось выбрать изображение');
+            console.error('📷 [PICKER] ❌ Error picking images:', error);
+            Alert.alert('Ошибка', 'Не удалось выбрать изображения');
         }
     };
 
-    // Выбор документов
+    // Выбор документов (поддержка множественного выбора)
     const pickDocument = async () => {
-        console.log('📄 [PICKER] Starting document picker...');
+        console.log('📄 [PICKER] Starting document picker (multiple)...');
         try {
             const result = await DocumentPicker.getDocumentAsync({
                 type: '*/*',
                 copyToCacheDirectory: true,
-                multiple: false,
+                multiple: true,               // <‑‑ Позволяем выбрать несколько файлов
             });
 
             console.log('📄 [PICKER] Document picker result:', {
                 canceled: result.canceled,
-                type: result.type
+                assetsCount: result.assets?.length || 0,
             });
 
-            if (!result.canceled && result.assets && result.assets[0]) {
-                const asset = result.assets[0];
+            if (result.canceled || !result.assets?.length) {
+                return;
+            }
+
+            for (const asset of result.assets) {
                 console.log('📄 [PICKER] Document details:', {
                     name: asset.name,
                     size: asset.size,
                     mimeType: asset.mimeType,
-                    uri: asset.uri
+                    uri: asset.uri,
                 });
 
-                // Проверяем размер файла (максимум 100MB для документов)
-                const maxSize = 100 * 1024 * 1024; // 100MB
+                // Ограничиваем размер до 100 MB на один документ
+                const maxSize = 100 * 1024 * 1024;
                 if (asset.size && asset.size > maxSize) {
                     Alert.alert(
                         'Файл слишком большой',
-                        `Размер: ${Math.round(asset.size / 1024 / 1024)}MB. Максимальный размер для документов: 100MB.`
+                        `Размер: ${Math.round(asset.size / 1024 / 1024)} MB. Максимум: 100 MB.`,
+                        [{ text: 'OK' }]
                     );
-                    return;
+                    continue; // переходим к следующему файлу
                 }
 
                 const fileSizeMB = asset.size ? asset.size / (1024 * 1024) : 0;
 
                 try {
                     if (fileSizeMB > 10) {
-                        // Для больших документов используем прямую загрузку
-                        console.log('📄 [PICKER] Using direct upload for large document');
-                        await sendDocumentDirect(asset.uri, asset.name || 'document', asset.mimeType || 'application/octet-stream', asset.size);
+                        // Большие документы – прямой аплоад
+                        console.log('📄 [PICKER] Direct upload for large document');
+                        await sendDocumentDirect(
+                            asset.uri,
+                            asset.name || `document_${Date.now()}`,
+                            asset.mimeType || 'application/octet-stream',
+                            asset.size
+                        );
                     } else {
-                        // Для небольших документов используем base64
+                        // Маленькие – через base64
                         console.log('📄 [PICKER] Converting document to base64...');
                         const base64 = await convertToBase64(asset.uri);
-                        await sendDocumentMessage(base64, asset.name || 'document', asset.mimeType || 'application/octet-stream', asset.size);
+                        await sendDocumentMessage(
+                            base64,
+                            asset.name || `document_${Date.now()}`,
+                            asset.mimeType || 'application/octet-stream',
+                            asset.size
+                        );
                     }
-                } catch (error) {
-                    console.error('📄 [PICKER] ❌ Document processing failed:', error);
-                    Alert.alert('Ошибка', 'Не удалось обработать документ. Попробуйте выбрать другой файл.');
+                } catch (fileError) {
+                    console.error('📄 [PICKER] ❌ Ошибка обработки документа:', fileError);
+                    Alert.alert(
+                        'Ошибка',
+                        `Не удалось обработать документ "${asset.name || 'без имени'}".`,
+                        [{ text: 'OK' }]
+                    );
                 }
             }
         } catch (error) {
-            console.error('📄 [PICKER] ❌ Error picking document:', error);
-            Alert.alert('Ошибка', 'Не удалось выбрать документ');
+            console.error('📄 [PICKER] ❌ Error picking documents:', error);
+            Alert.alert('Ошибка', 'Не удалось открыть диалог выбора документов');
         }
     };
 
@@ -1825,10 +2286,37 @@ export default function ChatScreen() {
             const result = await ImagePicker.launchImageLibraryAsync({
                 mediaTypes: ['videos'],
                 allowsEditing: false,
-                quality: 0.5, // Качество применяется к видео автоматически
+                quality: 0.5,
                 videoMaxDuration: 180,
-                allowsMultipleSelection: false,
+                allowsMultipleSelection: true, // Включаем множественный выбор
             });
+
+            if (!result.canceled && result.assets && result.assets.length > 0) {
+                for (const asset of result.assets) {
+                    try {
+                        const maxVideoSize = 600 * 1024 * 1024; // 300MB
+                        if (asset.fileSize && asset.fileSize > maxVideoSize) {
+                            Alert.alert(
+                                'Файл слишком большой',
+                                `Размер видео: ${Math.round(asset.fileSize / 1024 / 1024)}MB. Максимальный размер: 300MB.`
+                            );
+                            continue;
+                        }
+                        const maxDuration = 3000000; // 50 минут
+                        if (asset.duration && asset.duration > maxDuration) {
+                            Alert.alert(
+                                'Видео слишком длинное',
+                                `Длительность: ${Math.round(asset.duration / 1000)}сек. Максимальная длительность: 10 минут.`
+                            );
+                            continue;
+                        }
+                        await sendMediaMessageDirect(asset.uri, 'video', asset.fileSize);
+                    } catch (e) {
+                        console.error('❌ Ошибка загрузки видео', e);
+                        Alert.alert('Ошибка', 'Не удалось загрузить видео');
+                    }
+                }
+            }
 
             console.log('🎥 [PICKER] Picker result:', {
                 canceled: result.canceled,
@@ -1880,16 +2368,8 @@ export default function ChatScreen() {
 
                 try {
                     const fileSizeMB = asset.fileSize ? asset.fileSize / (1024 * 1024) : 0;
-
-                    console.log('🚀 [PICKER] Processing video for direct upload:', {
-                        sizeMB: fileSizeMB.toFixed(1),
-                        compatible: diagnosis.compatible,
-                        serverCompression: true
-                    });
-
-                    // Прямая загрузка без клиентского сжатия
                     // Сжатие выполняется на сервере через Celery для лучшей производительности
-                    console.log('🚀 [PICKER] Direct upload - server will handle compression');
+
                     await sendMediaMessageDirect(asset.uri, 'video', asset.fileSize);
 
                 } catch (conversionError) {
@@ -2270,10 +2750,6 @@ export default function ChatScreen() {
 
     // Отправка медиа сообщения напрямую через файл (без base64)
     const sendMediaMessageDirect = async (fileUri: string, mediaType: 'image' | 'video', fileSize?: number) => {
-        console.log('📤 [DIRECT] ========== SENDING MEDIA FILE DIRECT ==========');
-        console.log('📤 [DIRECT] File URI:', fileUri);
-        console.log('📤 [DIRECT] Media type:', mediaType);
-        console.log('📤 [DIRECT] File size:', fileSize);
 
         if (!isConnected || !isDataLoaded || !recipient?.id || !currentUserId) {
             console.log('📤 [DIRECT] ❌ Cannot send - missing requirements');
@@ -2759,9 +3235,6 @@ export default function ChatScreen() {
         try {
             const token = await getToken();
             if (!token) return;
-
-            console.log('📜 [HISTORY] Loading chat history...', { pageNum, limit, roomId });
-
             // Устанавливаем флаг загрузки
             if (pageNum === 1) {
                 setIsInitialLoading(true);
@@ -2781,42 +3254,69 @@ export default function ChatScreen() {
                 }
             );
 
-            console.log('📜 [HISTORY] Server response:', {
-                hasData: !!response.data,
-                hasMessages: !!(response.data && response.data.messages),
-                messagesCount: response.data?.messages?.length || 0
+            console.log('📜 [HISTORY-API] Response structure:', {
+                hasMessages: !!response.data?.messages,
+                messageCount: response.data?.messages?.length || 0,
+                firstMessageKeys: response.data?.messages?.[0] ? Object.keys(response.data.messages[0]) : [],
+                sampleReadFields: response.data?.messages?.[0] ? {
+                    is_read_by_recipient: response.data.messages[0].is_read_by_recipient,
+                    is_read: response.data.messages[0].is_read,
+                    read_by_recipient: response.data.messages[0].read_by_recipient,
+                    isRead: response.data.messages[0].isRead,
+                    read_status: response.data.messages[0].read_status,
+                } : null
             });
-
             if (response.data?.messages?.length > 0) {
-                console.log('📜 [HISTORY] Sample message from server:', response.data.messages[0]);
-
                 // Проверяем медиа-сообщения
                 const mediaMessages = response.data.messages.filter(msg =>
                     msg.mediaType || msg.media_type ||
                     msg.mediaHash || msg.media_hash
                 );
 
-                if (mediaMessages.length > 0) {
-                    console.log('📜 [HISTORY] Media messages in history:', {
-                        count: mediaMessages.length,
-                        sample: mediaMessages[0]
-                    });
-                }
             }
 
             if (response.data?.messages) {
-                const processedMessages = response.data.messages.map((msg: any) => ({
-                    ...msg,
-                    mediaType: msg.mediaType || msg.media_type || null,
-                    mediaHash: msg.mediaHash || msg.media_hash || null,
-                    mediaFileName: msg.mediaFileName || msg.media_filename || null,
-                    mediaSize: msg.mediaSize || msg.media_size || null,
-                    mediaBase64: null,
-                    // Redis кэширует URL - загрузится через API при просмотре
-                    serverFileUrl: null,
-                    isLoadingServerUrl: false,
-                    needsReload: false
-                }));
+                console.log('📜 [HISTORY] Processing', response.data.messages.length, 'messages from history');
+
+                const processedMessages = response.data.messages.map((msg: any) => {
+                    const isMyMessage = msg.sender_id === currentUserId;
+
+                    // НОВАЯ ЛОГИКА: Поскольку сервер не предоставляет статус прочтения,
+                    // считаем все отправленные сообщения потенциально непрочитанными.
+                    // Статус будет обновляться через WebSocket уведомления.
+
+                    // Определяем возраст сообщения (в часах)
+                    const messageTime = new Date(msg.timestamp * 1000);
+                    const now = new Date();
+                    const hoursAgo = (now.getTime() - messageTime.getTime()) / (1000 * 60 * 60);
+
+                    // Помечаем как непрочитанные только относительно свежие отправленные сообщения
+                    // (например, не старше 48 часов)
+                    const isUnreadBySender = isMyMessage && hoursAgo <= 48;
+
+                    console.log('📜 [HISTORY] Message processing:', {
+                        id: msg.id,
+                        isMyMessage,
+                        hoursAgo: Math.round(hoursAgo * 10) / 10,
+                        isUnreadBySender,
+                        messageTime: messageTime.toLocaleString()
+                    });
+
+                    return {
+                        ...msg,
+                        mediaType: msg.mediaType || msg.media_type || null,
+                        mediaHash: msg.mediaHash || msg.media_hash || null,
+                        mediaFileName: msg.mediaFileName || msg.media_filename || null,
+                        mediaSize: msg.mediaSize || msg.media_size || null,
+                        mediaBase64: null,
+                        // Redis кэширует URL - загрузится через API при просмотре
+                        serverFileUrl: null,
+                        isLoadingServerUrl: false,
+                        needsReload: false,
+                        // Помечаем свежие отправленные сообщения как потенциально непрочитанные
+                        _isUnreadBySender: isUnreadBySender
+                    };
+                });
 
                 if (pageNum === 1) {
                     // Первая загрузка - НЕ заменяем все сообщения, а мержим с существующими
@@ -2831,45 +3331,78 @@ export default function ChatScreen() {
 
                         // Объединяем новые сообщения с историей - новые сначала
                         const mergedMessages = [...existingNewMessages, ...historyMessages];
+
+                        // Инициализируем непрочитанные отправленные сообщения из истории
+                        const unreadSentFromHistory = historyMessages
+                            .filter(msg => msg._isUnreadBySender)
+                            .map(msg => msg.id);
+
+                        if (unreadSentFromHistory.length > 0) {
+                            console.log('📜 [HISTORY] Found unread sent messages from history:', unreadSentFromHistory.length);
+
+                            // Добавляем в состояние непрочитанных отправленных сообщений
+                            setUnreadSentMessages(prev => {
+                                const newSet = new Set([...prev, ...unreadSentFromHistory]);
+                                console.log('📜 [HISTORY] Updated unread sent messages:', Array.from(newSet));
+                                return newSet;
+                            });
+
+                            // Создаем анимации для непрочитанных отправленных сообщений
+                            unreadSentFromHistory.forEach(messageId => {
+                                if (!unreadSentAnimations.current[messageId]) {
+                                    const AnimatedNative = require('react-native').Animated;
+                                    unreadSentAnimations.current[messageId] = new AnimatedNative.Value(1);
+                                    console.log('📜 [HISTORY] Created animation for unread sent message:', messageId);
+                                }
+                            });
+                        }
+
                         return mergedMessages;
                     });
                     setPage(1);
-
-                    console.log('📜 [HISTORY] Loaded', processedMessages.length, 'messages from history');
-
                     // Отметка как прочитанных теперь выполняется через отдельный useEffect
                     // после полной инициализации чата (см. useEffect ниже)
 
                     // Ленивая загрузка: URL загружаются только при прокрутке к медиа
-                    console.log('📜 [HISTORY] Media will be loaded lazily when visible');
 
                     // Подсчитываем медиа для статистики
                     const imageCount = processedMessages.filter(msg => msg.mediaType === 'image').length;
                     const videoCount = processedMessages.filter(msg => msg.mediaType === 'video').length;
-
-                    if (imageCount > 0 || videoCount > 0) {
-                        console.log('📜 [HISTORY] Media summary:', {
-                            images: imageCount,
-                            videos: videoCount,
-                            lazyLoad: true
-                        });
-                    }
                 } else {
                     // Загрузка дополнительных сообщений - добавляем в конец (старые сообщения)
-                    setMessages(prev => [...prev, ...processedMessages]);
-                }
+                    setMessages(prev => {
+                        const updatedMessages = [...prev, ...processedMessages];
 
+                        // Инициализируем непрочитанные отправленные сообщения для дополнительных страниц
+                        const unreadSentFromPage = processedMessages
+                            .filter(msg => msg._isUnreadBySender)
+                            .map(msg => msg.id);
+
+                        if (unreadSentFromPage.length > 0) {
+                            console.log('📜 [HISTORY-PAGE] Found', unreadSentFromPage.length, 'potentially unread sent messages on page');
+
+                            // Добавляем в состояние непрочитанных отправленных сообщений
+                            setUnreadSentMessages(prev => {
+                                const newSet = new Set([...prev, ...unreadSentFromPage]);
+                                return newSet;
+                            });
+
+                            // Создаем анимации для непрочитанных отправленных сообщений
+                            unreadSentFromPage.forEach(messageId => {
+                                if (!unreadSentAnimations.current[messageId]) {
+                                    const AnimatedNative = require('react-native').Animated;
+                                    unreadSentAnimations.current[messageId] = new AnimatedNative.Value(1);
+                                }
+                            });
+                        }
+
+                        return updatedMessages;
+                    });
+                }
                 // Проверяем, есть ли еще сообщения
                 // hasMore = true только если получили ровно столько, сколько запрашивали
                 const hasMoreMessages = processedMessages.length === limit;
                 setHasMore(hasMoreMessages);
-
-                console.log('📜 [HISTORY] Load complete:', {
-                    received: processedMessages.length,
-                    limit: limit,
-                    hasMore: hasMoreMessages,
-                    currentPage: pageNum
-                });
 
                 if (pageNum === 1) {
                     // Только при первой загрузке прокручиваем вниз
@@ -2932,13 +3465,11 @@ export default function ChatScreen() {
         const setupAudioSession = async () => {
             // Настраиваем аудио только если приложение активно
             if (appState !== 'active') {
-                console.log('🎥 [AUDIO] Skipping audio setup - app not active:', appState);
                 setAudioSessionReady(false);
                 return;
             }
 
             try {
-                console.log('🎥 [AUDIO] Setting up audio session...');
                 await Audio.setAudioModeAsync({
                     allowsRecordingIOS: false,
                     staysActiveInBackground: false,
@@ -2947,7 +3478,6 @@ export default function ChatScreen() {
                     playThroughEarpieceAndroid: false
                 });
                 setAudioSessionReady(true);
-                console.log('🎥 [AUDIO] ✅ Audio session configured successfully');
             } catch (audioError) {
                 console.warn('🎥 [AUDIO] ❌ Failed to configure audio session:', audioError);
                 setAudioSessionReady(false);
@@ -2961,42 +3491,34 @@ export default function ChatScreen() {
     // Синхронизация ref'ов с состояниями для использования в WebSocket колбэках
     useEffect(() => {
         currentUserIdRef.current = currentUserId;
-        console.log('🔄 [REF-SYNC] Updated currentUserIdRef:', currentUserId);
     }, [currentUserId]);
 
     useEffect(() => {
         isDataLoadedRef.current = isDataLoaded;
-        console.log('🔄 [REF-SYNC] Updated isDataLoadedRef:', isDataLoaded);
     }, [isDataLoaded]);
 
     useEffect(() => {
         isConnectedRef.current = isConnected;
-        console.log('🔄 [REF-SYNC] Updated isConnectedRef:', isConnected);
     }, [isConnected]);
 
     useEffect(() => {
         isChatActiveRef.current = isChatActive;
-        console.log('🔄 [REF-SYNC] Updated isChatActiveRef:', isChatActive);
     }, [isChatActive]);
 
     // Отслеживание активности чата
     useEffect(() => {
         // Устанавливаем чат как активный при монтировании
         setIsChatActive(true);
-        console.log('📖 [CHAT-ACTIVE] ========== CHAT MOUNTED ==========');
-        console.log('📖 [CHAT-ACTIVE] Room ID:', roomId);
-        console.log('📖 [CHAT-ACTIVE] Current User ID:', currentUserId);
-        console.log('📖 [CHAT-ACTIVE] Is Connected:', isConnected);
-        console.log('📖 [CHAT-ACTIVE] Chat is now ACTIVE');
-
         // При размонтировании помечаем чат как неактивный
         return () => {
             setIsChatActive(false);
             // Очищаем кеш прочитанных сообщений
             markedAsReadCache.current.clear();
-            console.log('📖 [CHAT-ACTIVE] ========== CHAT UNMOUNTED ==========');
-            console.log('📖 [CHAT-ACTIVE] Chat is now INACTIVE');
-            console.log('📖 [CHAT-ACTIVE] Cleared read receipt cache');
+            // Очищаем анимации непрочитанных отправленных сообщений
+            Object.keys(unreadSentAnimations.current).forEach(key => {
+                delete unreadSentAnimations.current[Number(key)];
+            });
+            setUnreadSentMessages(new Set());
         };
     }, [roomId, currentUserId, isConnected]);
 
@@ -3014,18 +3536,12 @@ export default function ChatScreen() {
         const markHistoryAsRead = () => {
             if (hasMarkedHistory) return;
             hasMarkedHistory = true;
-
-            console.log('📜 [AUTO-MARK] ========== AUTO-MARKING HISTORY AS READ ==========');
-            console.log('📜 [AUTO-MARK] Messages count:', messages.length);
-
             // Фильтруем только чужие сообщения
             const otherUserMessages = messages
                 .filter(msg => msg.sender_id && msg.sender_id !== currentUserId)
                 .map(msg => msg.id);
 
             if (otherUserMessages.length > 0) {
-                console.log('📜 [AUTO-MARK] Found', otherUserMessages.length, 'messages from other user');
-
                 // Добавляем все в кеш
                 otherUserMessages.forEach(id => markedAsReadCache.current.add(id));
 
@@ -3039,7 +3555,7 @@ export default function ChatScreen() {
                     };
 
                     sendMessage(bulkReadData);
-                    console.log('📜 [AUTO-MARK] ✅ Sent bulk read receipt for', otherUserMessages.length, 'messages');
+
                 } catch (error) {
                     console.error('📜 [AUTO-MARK] ❌ Error sending bulk read receipt:', error);
                     // Убираем из кеша при ошибке
@@ -3068,30 +3584,17 @@ export default function ChatScreen() {
         if (pendingMessagesQueue.current.length === 0) {
             return;
         }
-
-        console.log('📨 [PENDING-QUEUE] ========== PROCESSING PENDING MESSAGES ==========');
-        console.log('📨 [PENDING-QUEUE] Queue size:', pendingMessagesQueue.current.length);
-        console.log('📨 [PENDING-QUEUE] Current state:', {
-            currentUserId,
-            isConnected,
-            isDataLoaded,
-            isChatActive
-        });
-
         // Обрабатываем все отложенные сообщения
         const pendingMessages = [...pendingMessagesQueue.current];
         pendingMessagesQueue.current = []; // Очищаем очередь
 
         pendingMessages.forEach(({ messageId, senderId }) => {
-            console.log('📨 [PENDING-QUEUE] Processing pending message:', messageId);
-
             // Проверяем что это не мое сообщение
             if (senderId !== currentUserId) {
                 // Добавляем в список непрочитанных для визуальной индикации
                 setUnreadMessages(prev => {
                     const newSet = new Set(prev);
                     newSet.add(messageId);
-                    console.log('📨 [PENDING-QUEUE] ✅ Added to unread messages:', messageId);
                     return newSet;
                 });
 
@@ -3099,7 +3602,7 @@ export default function ChatScreen() {
                 if (!unreadAnimations.current[messageId]) {
                     const AnimatedNative = require('react-native').Animated;
                     unreadAnimations.current[messageId] = new AnimatedNative.Value(1);
-                    console.log('📨 [PENDING-QUEUE] ✅ Created animation for message:', messageId);
+
                 }
 
                 // Через 2 секунды начинаем анимацию прочтения
@@ -3115,7 +3618,6 @@ export default function ChatScreen() {
             }
         });
 
-        console.log('📨 [PENDING-QUEUE] ✅ Processed', pendingMessages.length, 'pending messages');
     }, [isDataLoaded, isConnected, currentUserId, isChatActive, markMessageAsRead, animateMessageAsRead]);
 
     // Отслеживание состояния приложения
@@ -3127,7 +3629,6 @@ export default function ChatScreen() {
             // Обновляем состояние активности чата в зависимости от состояния приложения
             if (nextAppState === 'active') {
                 setIsChatActive(true);
-                console.log('📖 [CHAT-ACTIVE] Chat became active');
             } else {
                 setIsChatActive(false);
                 console.log('📖 [CHAT-ACTIVE] Chat became inactive');
@@ -3153,7 +3654,6 @@ export default function ChatScreen() {
             } else if (nextAppState !== 'active') {
                 // Отключаем аудио сессию в фоновом режиме
                 setAudioSessionReady(false);
-                console.log('🎥 [APP-STATE] App went to background - disabled audio session');
             }
         });
 
@@ -3169,14 +3669,11 @@ export default function ChatScreen() {
         }
 
         const initializeChat = async () => {
-            console.log('📜 [INIT] ========== INITIALIZING CHAT ==========');
-            console.log('📜 [INIT] Room ID:', roomId);
 
             setIsLoading(true);
             try {
                 // ШАГ 1: Сначала получаем данные текущего пользователя
                 const currentUser = await fetchCurrentUser();
-                console.log('📜 [INIT] Current user loaded:', currentUser?.id);
 
                 if (!currentUser) {
                     throw new Error('Failed to load current user');
@@ -3184,49 +3681,27 @@ export default function ChatScreen() {
 
                 // ШАГ 2: Получаем информацию о собеседнике
                 const recipientInfo = await fetchRecipientInfo();
-                console.log('📜 [INIT] Recipient loaded:', recipientInfo?.id);
 
                 if (!recipientInfo) {
                     throw new Error('Failed to load recipient');
                 }
-
-                console.log('📜 [INIT] ✅ User data loaded successfully:', {
-                    currentUserId: currentUser.id,
-                    currentUsername: currentUser.username,
-                    recipientId: recipientInfo.id,
-                    recipientUsername: recipientInfo.username
-                });
-
                 // ШАГ 3: Загружаем историю чата
                 await fetchChatHistory(1, 15);
-                console.log('📜 [INIT] ✅ Chat history loaded');
-
                 // ШАГ 4: Помечаем данные как загруженные
                 setIsDataLoaded(true);
-                console.log('📜 [INIT] ✅ Data marked as loaded');
-
                 // ШАГ 5: КРИТИЧНО - Подключаемся к WebSocket только после полной инициализации
                 // Увеличиваем задержку чтобы React гарантированно обновил все состояния
                 setTimeout(() => {
-                    console.log('📜 [INIT] Connecting to WebSocket with initialized data:', {
-                        currentUserId: currentUser.id,
-                        recipientId: recipientInfo.id,
-                        isDataLoaded: true
-                    });
-
                     // Дополнительная проверка перед подключением
                     if (currentUser.id && recipientInfo.id) {
                         connect();
-                        console.log('📜 [INIT] ✅ WebSocket connection initiated');
                     } else {
                         console.error('📜 [INIT] ❌ Cannot connect - user data not ready');
                     }
                 }, 500);
 
-                console.log('📜 [INIT] ✅ Chat initialized successfully');
 
             } catch (error) {
-                console.error('📜 [INIT] ❌ Initialization error:', error);
                 Alert.alert('Ошибка', 'Не удалось загрузить чат');
             } finally {
                 setIsLoading(false);
@@ -3237,52 +3712,140 @@ export default function ChatScreen() {
         initializeChat();
 
         return () => {
-            console.log('📜 [INIT] ========== CLEANING UP CHAT ==========');
             disconnect();
         };
     }, [roomId]); // ВАЖНО: Только roomId в зависимостях
 
     // Отправка сообщения
     const handleSend = () => {
-        console.log('💬 [CHAT] ========== SENDING MESSAGE ==========');
-        console.log('💬 [CHAT] Send conditions check:', {
-            hasText: !!messageText.trim(),
-            isConnected: isConnected,
-            isDataLoaded: isDataLoaded,
-            hasRecipient: !!recipient?.id,
-            hasCurrentUser: !!currentUserId,
-            messageLength: messageText.trim().length
-        });
-
         if (!messageText.trim() || !isConnected || !isDataLoaded || !recipient?.id || !currentUserId) {
             console.log('💬 [CHAT] ❌ Cannot send - missing requirements');
             return;
         }
-
         const timestamp = Math.floor(Date.now() / 1000);
+        const optimisticMessageId = Date.now(); // Временный ID для отслеживания
+        const messageContent = messageText.trim();
 
+        console.log('📤 [SEND] Sending message with optimistic ID:', optimisticMessageId);
+
+        // СНАЧАЛА создаем оптимистичное сообщение для немедленного отображения
+        const optimisticMessage: Message = {
+            id: optimisticMessageId,
+            message: messageContent,
+            timestamp: timestamp,
+            sender__username: currentUsername,
+            sender_id: currentUserId,
+            mediaType: undefined,
+            mediaUri: null,
+            mediaBase64: undefined,
+            mediaHash: undefined,
+            mediaFileName: undefined,
+            mediaSize: undefined,
+            isUploading: false,
+            uploadProgress: 100,
+            needsReload: false,
+            // Помечаем как оптимистичное сообщение
+            _isOptimistic: true,
+            _optimisticId: optimisticMessageId
+        };
+
+        // Добавляем оптимистичное сообщение в список немедленно
+        setMessages(prev => [optimisticMessage, ...prev]);
+
+        // Прокручиваем к новому сообщению
+        setTimeout(() => {
+            if (flatListRef.current) {
+                flatListRef.current.scrollToIndex({ index: 0, animated: true });
+            }
+        }, 100);
+
+        // Добавляем отправленное сообщение в список непрочитанных
+        setUnreadSentMessages(prev => {
+            const newSet = new Set(prev);
+            newSet.add(optimisticMessageId);
+            console.log('📤 [SEND] Added to unread sent messages:', optimisticMessageId);
+            return newSet;
+        });
+
+        // Создаем анимацию для отправленного сообщения
+        if (!unreadSentAnimations.current[optimisticMessageId]) {
+            const AnimatedNative = require('react-native').Animated;
+            unreadSentAnimations.current[optimisticMessageId] = new AnimatedNative.Value(1);
+            console.log('📤 [SEND] Created animation for sent message:', optimisticMessageId);
+        }
+
+        // Помечаем оптимистичное сообщение как непрочитанное
+        optimisticMessage._isUnreadBySender = true;
+
+        // Отправляем через WebSocket (убираем optimistic_id так как сервер может его не поддерживать)
         const messageData = {
-            type: 'chat_message', // Добавляем обязательное поле type
-            message: messageText.trim(),
+            type: 'chat_message',
+            message: messageContent,
             timestamp: timestamp,
             user1: currentUserId,
             user2: recipient.id
         };
 
-        console.log('💬 [CHAT] Message will be sent to room:', roomId);
-
         try {
             sendMessage(messageData);
-            console.log('💬 [CHAT] ✅ sendMessage called successfully');
             setMessageText('');
 
-            // Даем время на получение ответа от сервера
+            console.log('📤 [SEND] ✅ Message sent to server, waiting for confirmation...');
+
+            // Добавляем таймаут для проверки и возможной очистки оптимистичного сообщения
             setTimeout(() => {
-                console.log('💬 [CHAT] 🕐 5 seconds passed after sending - checking if message appeared...');
-            }, 5000);
+                setMessages(prevMessages => {
+                    const optimisticMessage = prevMessages.find(msg => 
+                        msg._isOptimistic && msg._optimisticId === optimisticMessageId
+                    );
+
+                    if (optimisticMessage) {
+                        console.log('📤 [TIMEOUT] ⚠️ Optimistic message still not confirmed after 60s:', optimisticMessageId);
+                        console.log('📤 [TIMEOUT] Message content:', optimisticMessage.message?.substring(0, 50));
+
+                        // Пробуем найти подтверждение среди других сообщений
+                        const confirmedMessage = prevMessages.find(msg => 
+                            !msg._isOptimistic && 
+                            msg.sender_id === currentUserId &&
+                            msg.message?.trim() === optimisticMessage.message?.trim() &&
+                            Math.abs(Number(msg.timestamp) - Number(optimisticMessage.timestamp)) < 300 // 5 минут
+                        );
+
+                        if (confirmedMessage) {
+                            console.log('📤 [TIMEOUT] ✅ Found confirmed version, removing optimistic');
+                            // Найдено подтвержденное сообщение - убираем оптимистичное
+                            setUnreadSentMessages(prev => {
+                                const newSet = new Set(prev);
+                                newSet.delete(optimisticMessageId);
+                                return newSet;
+                            });
+                            delete unreadSentAnimations.current[optimisticMessageId];
+                            return prevMessages.filter(msg => msg.id !== optimisticMessageId);
+                        } else {
+                            console.log('📤 [TIMEOUT] ⚠️ No confirmed version found, keeping optimistic message');
+                            // Не найдено подтверждение - оставляем оптимистичное сообщение
+                            return prevMessages;
+                        }
+                    }
+
+                    return prevMessages;
+                });
+            }, 60000); // 60 секунд на подтверждение
 
         } catch (error) {
-            console.error('💬 [CHAT] ❌ Error in sendMessage:', error);
+            console.error('📤 [SEND] ❌ Error sending message:', error);
+
+            // При ошибке убираем оптимистичное сообщение
+            setMessages(prev => prev.filter(msg => msg.id !== optimisticMessageId));
+
+            // И убираем из непрочитанных отправленных
+            setUnreadSentMessages(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(optimisticMessageId);
+                return newSet;
+            });
+            delete unreadSentAnimations.current[optimisticMessageId];
+
             Alert.alert('Ошибка', 'Не удалось отправить сообщение');
         }
     };
@@ -3300,6 +3863,51 @@ export default function ChatScreen() {
         const userStatus = recipient?.id && userStatuses.has(recipient.id)
             ? isOnline
             : recipient?.is_online === 'online';
+
+        if (isSelectionMode) {
+            // Панель действий при выделении сообщений
+            return (
+                <View style={styles.selectionHeader}>
+                    <TouchableOpacity
+                        style={styles.selectionBackButton}
+                        onPress={exitSelectionMode}
+                    >
+                        <MaterialIcons name="close" size={24} color={theme.primary} />
+                    </TouchableOpacity>
+
+                    <View style={styles.selectionInfo}>
+                        <Text style={[styles.selectionCount, { color: theme.text }]}>
+                            {selectedMessages.size} выбрано
+                        </Text>
+                    </View>
+
+                    <View style={styles.selectionActions}>
+                        {messages.length > 0 && selectedMessages.size < messages.length && (
+                            <TouchableOpacity
+                                style={styles.selectionActionButton}
+                                onPress={selectAllMessages}
+                            >
+                                <MaterialIcons name="select-all" size={24} color={theme.primary} />
+                            </TouchableOpacity>
+                        )}
+
+                        <TouchableOpacity
+                            style={styles.selectionActionButton}
+                            onPress={forwardSelectedMessages}
+                        >
+                            <MaterialIcons name="forward" size={24} color={theme.primary} />
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={styles.selectionActionButton}
+                            onPress={deleteSelectedMessages}
+                        >
+                            <MaterialIcons name="delete" size={24} color={theme.error || '#ff4444'} />
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            );
+        }
 
         return (
             <TouchableOpacity
@@ -3367,12 +3975,6 @@ export default function ChatScreen() {
         lastTranslateX.value = 0;
         lastTranslateY.value = 0;
         setZoomLevel(level);
-
-        console.log('🖼️ [IMAGE-ZOOM] Zoom level changed:', {
-            level,
-            targetScale,
-            cycle: level === 0 ? '1x' : level === 1 ? '1.5x' : '2.5x'
-        });
     }, [scale, translateX, translateY, lastScale, lastTranslateX, lastTranslateY]);
 
     // Функция для изменения уровня масштабирования при двойном тапе
@@ -3441,15 +4043,12 @@ export default function ChatScreen() {
         setSelectedImage(null);
         setIsImageViewerVisible(false);
         setLastImageTap(0);
-
-        console.log('🖼️ [IMAGE-VIEWER] Closing image viewer');
     };
 
     // Функция для получения пути к кешированному видео
     const getCachedVideoPath = (messageId: number): string => {
         return `${FileSystem.documentDirectory}cached_video_${messageId}.mp4`;
     };
-
     // Функция для проверки существования видео в кеше
     const checkVideoCacheExists = async (messageId: number): Promise<boolean> => {
         try {
@@ -3457,14 +4056,8 @@ export default function ChatScreen() {
             const fileInfo = await FileSystem.getInfoAsync(cachedPath);
 
             if (fileInfo.exists) {
-                console.log('📹 [VIDEO-CACHE] ✅ Cache file exists:', {
-                    messageId,
-                    size: fileInfo.size,
-                    path: cachedPath.substring(cachedPath.lastIndexOf('/') + 1)
-                });
                 return true;
             } else {
-                console.log('📹 [VIDEO-CACHE] ⚠️ Cache file does not exist:', messageId);
                 return false;
             }
         } catch (error) {
@@ -3476,11 +4069,6 @@ export default function ChatScreen() {
     // Функция для кеширования видео на устройстве
     const cacheVideoToDevice = async (videoUri: string, messageId: number): Promise<string | null> => {
         try {
-            console.log('📹 [VIDEO-CACHE] Starting video caching:', {
-                messageId,
-                sourceUri: videoUri.substring(0, 100)
-            });
-
             const cachedPath = getCachedVideoPath(messageId);
 
             // Проверяем, не закеширован ли уже файл
@@ -3492,7 +4080,6 @@ export default function ChatScreen() {
 
             // Загружаем видео с сервера и сохраняем локально
             if (videoUri.startsWith('http')) {
-                console.log('📹 [VIDEO-CACHE] Downloading video from server...');
 
                 const downloadResult = await FileSystem.downloadAsync(
                     videoUri,
@@ -3503,19 +4090,18 @@ export default function ChatScreen() {
                 );
 
                 if (downloadResult.status === 200) {
-                    console.log('📹 [VIDEO-CACHE] ✅ Video cached successfully:', cachedPath);
                     return cachedPath;
                 } else {
                     throw new Error(`Download failed with status ${downloadResult.status}`);
                 }
             } else if (videoUri.startsWith('file://')) {
                 // Копируем локальный файл в кеш
-                console.log('📹 [VIDEO-CACHE] Copying local video to cache...');
+
                 await FileSystem.copyAsync({
                     from: videoUri,
                     to: cachedPath
                 });
-                console.log('📹 [VIDEO-CACHE] ✅ Video copied to cache');
+
                 return cachedPath;
             } else {
                 console.warn('📹 [VIDEO-CACHE] ⚠️ Unsupported video URI format');
@@ -3536,8 +4122,6 @@ export default function ChatScreen() {
             const cacheExists = await checkVideoCacheExists(messageId);
             if (cacheExists) {
                 const cachedPath = getCachedVideoPath(messageId);
-                console.log('📹 [VIDEO-CACHE] ✅ Using cached video:', messageId);
-
                 // ВАЖНО: Обновляем сообщение чтобы не показывалась ошибка
                 updateMessageSafely(messageId, {
                     mediaUri: cachedPath,
@@ -3550,7 +4134,6 @@ export default function ChatScreen() {
             }
 
             // Если в кеше нет, получаем URI с сервера
-            console.log('📹 [VIDEO-CACHE] Video not in cache, fetching from server:', messageId);
             const serverUrl = message.serverFileUrl || await getMediaServerUrl(messageId);
 
             if (!serverUrl) {
@@ -3569,25 +4152,12 @@ export default function ChatScreen() {
 
     // Загрузка и открытие документа
     const downloadAndOpenDocument = async (message: Message) => {
-        console.log('📄 [DOC-DOWNLOAD] ========== OPENING DOCUMENT ==========');
-        console.log('📄 [DOC-DOWNLOAD] Message data:', {
-            id: message.id,
-            fileName: message.mediaFileName,
-            fileSize: message.mediaSize,
-            mediaType: message.mediaType,
-            hasServerUrl: !!message.serverFileUrl,
-            hasMediaUri: !!message.mediaUri,
-            serverUrl: message.serverFileUrl?.substring(0, 100),
-            mediaUri: message.mediaUri?.substring(0, 100)
-        });
-
         if (!message.serverFileUrl && !message.mediaUri) {
             console.log('📄 [DOC-DOWNLOAD] ❌ No URL available, requesting from API...');
 
             // Попытка загрузить URL через API если его нет
             const serverUrl = await getMediaServerUrl(message.id);
             if (serverUrl) {
-                console.log('📄 [DOC-DOWNLOAD] ✅ Got URL from API, updating message...');
                 updateMessageSafely(message.id, { serverFileUrl: serverUrl, mediaUri: serverUrl });
                 // Рекурсивно вызываем функцию с обновленным сообщением
                 setTimeout(() => {
@@ -3610,20 +4180,13 @@ export default function ChatScreen() {
         try {
             // Проверяем, не загружается ли уже документ
             if (downloadingDocuments[messageId]) {
-                console.log('📄 [DOC-DOWNLOAD] Document already downloading:', messageId);
+
                 return;
             }
 
             // Помечаем как загружающийся
             setDownloadingDocuments(prev => ({ ...prev, [messageId]: true }));
             setDocumentDownloadProgress(prev => ({ ...prev, [messageId]: 0 }));
-
-            console.log('📄 [DOC-DOWNLOAD] Starting document download:', {
-                messageId,
-                fileName,
-                hasServerUrl: !!message.serverFileUrl,
-                hasLocalUri: !!message.mediaUri
-            });
 
             let sourceUri = message.mediaUri || message.serverFileUrl;
             let localFilePath = '';
@@ -3637,14 +4200,10 @@ export default function ChatScreen() {
                 // Проверяем, не загружен ли уже файл
                 const fileInfo = await FileSystem.getInfoAsync(localFilePath);
                 if (fileInfo.exists) {
-                    console.log('📄 [DOC-DOWNLOAD] File already exists locally, opening...');
                     await openDocument(localFilePath, fileName);
                     setDownloadingDocuments(prev => ({ ...prev, [messageId]: false }));
                     return;
                 }
-
-                console.log('📄 [DOC-DOWNLOAD] Downloading from server...');
-
                 const downloadResult = await FileSystem.downloadAsync(
                     sourceUri,
                     localFilePath,
@@ -3654,7 +4213,6 @@ export default function ChatScreen() {
                 );
 
                 if (downloadResult.status === 200) {
-                    console.log('📄 [DOC-DOWNLOAD] ✅ Downloaded successfully');
                     localFilePath = downloadResult.uri;
                 } else {
                     throw new Error(`Download failed with status ${downloadResult.status}`);
@@ -4023,14 +4581,14 @@ export default function ChatScreen() {
 
     // Функция для остановки всех других видео
     const pauseAllOtherVideos = async (exceptMessageId: string | number) => {
-        console.log('🎥 [PAUSE-ALL] Pausing all videos except:', exceptMessageId);
+
 
         // Получаем все ID видео которые сейчас воспроизводятся
         const playingVideoIds = Object.keys(inlineVideoStates).filter(
             id => inlineVideoStates[id]?.isPlaying && String(id) !== String(exceptMessageId)
         );
 
-        console.log('🎥 [PAUSE-ALL] Found', playingVideoIds.length, 'playing videos to pause');
+
 
         // Останавливаем каждое видео
         for (const videoId of playingVideoIds) {
@@ -4038,7 +4596,6 @@ export default function ChatScreen() {
                 const videoRef = inlineVideoRefs.current[videoId];
                 if (videoRef) {
                     await videoRef.pauseAsync();
-                    console.log('🎥 [PAUSE-ALL] ✅ Paused video:', videoId);
 
                     // Обновляем состояние
                     setInlineVideoStates(prev => ({
@@ -4071,7 +4628,7 @@ export default function ChatScreen() {
             if (cacheExists) {
                 // Используем кешированную версию
                 const cachedPath = getCachedVideoPath(Number(messageId));
-                console.log('🎥 [INLINE] ✅ Using cached video:', cachedPath);
+
 
                 if (videoUri !== cachedPath) {
                     // Обновляем URI если он отличается
@@ -4081,8 +4638,6 @@ export default function ChatScreen() {
                     videoUri = cachedPath;
                 }
             } else if (!videoUri.startsWith('http')) {
-                console.log('🎥 [INLINE] Video not in cache and not HTTP, fetching and caching...');
-
                 // Получаем URI с кешированием
                 const cachedUri = await getVideoUriWithCache(message);
                 if (cachedUri) {
@@ -4122,13 +4677,6 @@ export default function ChatScreen() {
         try {
             const videoRef = inlineVideoRefs.current[messageId];
             if (videoRef) {
-                console.log('🎥 [INLINE] Toggling video playback:', {
-                    messageId,
-                    currentPlaying: currentState.isPlaying,
-                    newPlaying: newPlayingState,
-                    appState: appState
-                });
-
                 if (newPlayingState) {
                     // При запуске видео сначала останавливаем все другие видео
                     await pauseAllOtherVideos(messageId);
@@ -4138,7 +4686,6 @@ export default function ChatScreen() {
                         await videoRef.setIsMutedAsync(true); // Начинаем без звука
                         await videoRef.playAsync();
                     } else {
-                        console.warn('🎥 [INLINE] Cannot start video - app not active');
                         return;
                     }
                 } else {
@@ -4218,23 +4765,8 @@ export default function ChatScreen() {
         }
     };
 
-    const expandInlineVideo = (messageId: string | number, videoUri: string) => {
-        const currentState = inlineVideoStates[messageId] || {
-            isPlaying: false, isMuted: false, isExpanded: false, duration: 0, position: 0, isLoaded: false, isFullscreen: false
-        };
-
-        // Переключаем полноэкранный режим
-        const newExpandedState = !currentState.isExpanded;
-
-        setInlineVideoStates(prev => ({
-            ...prev,
-            [messageId]: { ...currentState, isExpanded: newExpandedState }
-        }));
-    };
 
     // Улучшенная функция переключения полноэкранного режима
-    // ВАЖНО: Полноэкранный режим использует тот же videoUri что и инлайн плеер
-    // Приоритет загрузки: 1) Кеш (file://cached) 2) Галерея (file://) 3) Сервер (http://) 4) Base64 (data:)
     const toggleVideoFullscreen = async (messageId: string | number, videoUri: string) => {
         const currentState = inlineVideoStates[messageId] || {
             isPlaying: false, isMuted: false, isExpanded: false, duration: 0, position: 0, isLoaded: false, isFullscreen: false
@@ -4268,54 +4800,45 @@ export default function ChatScreen() {
             }
         }
 
-        const videoSource = finalVideoUri?.startsWith('file://') ?
-                          (finalVideoUri.includes('cached_video_') ? 'cached' : 'local-gallery') :
-                          finalVideoUri?.startsWith('http') ? 'server-url' :
-                          finalVideoUri?.startsWith('data:') ? 'base64-data' : 'unknown';
-
         if (!currentState.isFullscreen) {
             // ОСТАНАВЛИВАЕМ поток видео в миниатюре перед открытием полноэкранного режима
             const videoRef = inlineVideoRefs.current[messageId];
             if (videoRef && currentState.isPlaying) {
                 try {
                     await videoRef.pauseAsync();
-
                 } catch (error) {
                     console.warn('🎥 [FULLSCREEN] Failed to stop inline video:', error);
                 }
             }
 
             // Включаем полноэкранный режим через модальное окно
-            // Используем кешированный URI (приоритет: кеш -> галерея -> сервер -> base64)
             setFullscreenModalVideoUri(finalVideoUri);
-            setSelectedVideo(finalVideoUri); // Сохраняем для кнопок управления
-            setSelectedMessageId(Number(messageId)); // Сохраняем ID сообщения
+            setSelectedVideo(finalVideoUri);
+            setSelectedMessageId(Number(messageId));
             setIsFullscreenModalVisible(true);
             setInlineVideoStates(prev => ({
                 ...prev,
                 [messageId]: {
                     ...currentState,
                     isFullscreen: true,
-                    isPlaying: false // Помечаем как остановленное
+                    isPlaying: false
                 }
             }));
-
-            console.log('🎥 [FULLSCREEN] Modal fullscreen mode activated:', {
-                videoSource: videoSource,
-                willAutoSave: videoSource === 'server-url',
-                messageId: messageId,
-                inlineStreamStopped: true
-            });
         } else {
-            // Выключаем полноэкранный режим
+            // ИСПРАВЛЕНИЕ: Правильный выход из полноэкранного режима
             setIsFullscreenModalVisible(false);
             setFullscreenModalVideoUri(null);
+            setSelectedVideo(null);
+            setSelectedMessageId(null);
+
+            // КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: Сбрасываем ВСЕ состояния к нормальным значениям
             setInlineVideoStates(prev => ({
                 ...prev,
                 [messageId]: {
                     ...currentState,
                     isFullscreen: false,
-                    isExpanded: false
+                    isExpanded: false,  // ВАЖНО: сбрасываем isExpanded
+                    isPlaying: false    // Останавливаем воспроизведение
                 }
             }));
 
@@ -4417,6 +4940,11 @@ export default function ChatScreen() {
         // Проверяем, является ли сообщение непрочитанным
         const isUnread = unreadMessages.has(item.id);
         const animatedValue = unreadAnimations.current[item.id];
+
+        // Проверяем, является ли отправленное сообщение непрочитанным получателем
+        // Учитываем как динамические непрочитанные, так и из истории
+        const isSentUnread = unreadSentMessages.has(item.id) || (isMyMessage && item._isUnreadBySender);
+        const sentAnimatedValue = unreadSentAnimations.current[item.id];
 
         const renderMediaContent = () => {
             // Показываем индикатор загрузки если файл загружается
@@ -4523,7 +5051,6 @@ export default function ChatScreen() {
                         return (
                             <LazyMedia
                                 onVisible={async () => {
-                                    console.log('🎨 [LAZY-LOAD] Image became visible, loading via API:', item.id);
 
                                     if (!item.isLoadingServerUrl && !item.serverFileUrl) {
                                         updateMessageSafely(item.id, { isLoadingServerUrl: true });
@@ -4535,7 +5062,6 @@ export default function ChatScreen() {
                                                 serverFileUrl: serverUrl,
                                                 isLoadingServerUrl: false
                                             });
-                                            console.log('🎨 [LAZY-LOAD] ✅ Image URL loaded via API');
                                         } else {
                                             updateMessageSafely(item.id, {
                                                 isLoadingServerUrl: false,
@@ -4603,13 +5129,11 @@ export default function ChatScreen() {
                         <LazyMedia
                             onVisible={async () => {
                                 // Предзагружаем URL видео когда превью становится видимым
-                                console.log('🎥 [LAZY-PREFETCH] Video preview visible, checking cache first:', item.id);
 
                                 // СНАЧАЛА ПРОВЕРЯЕМ КЕШ
                                 const cacheExists = await checkVideoCacheExists(item.id);
                                 if (cacheExists) {
                                     const cachedPath = getCachedVideoPath(item.id);
-                                    console.log('🎥 [LAZY-PREFETCH] ✅ Found in cache, using cached version');
                                     updateMessageSafely(item.id, {
                                         mediaUri: cachedPath,
                                         serverFileUrl: item.serverFileUrl || null,
@@ -4700,7 +5224,7 @@ export default function ChatScreen() {
                         <TouchableOpacity
                             style={styles.missingMediaContainer}
                             onPress={async () => {
-                                console.log('🎥 [RETRY] Retrying video load:', item.id);
+
 
                                 // Проверяем кеш перед повторной загрузкой
                                 const cacheExists = await checkVideoCacheExists(item.id);
@@ -4743,17 +5267,13 @@ export default function ChatScreen() {
                     isPlaying: false, isMuted: false, isExpanded: false, duration: 0, position: 0, isLoaded: false
                 };
 
-                // Определяем стиль контейнера в зависимости от режима отображения
+                // ИСПРАВЛЕНИЕ: Упрощенная логика без промежуточного expanded состояния
                 const containerStyle = videoState.isFullscreen
                     ? styles.deviceFullscreenVideoContainer
-                    : videoState.isExpanded
-                    ? styles.fullscreenVideoContainer
                     : styles.inlineVideoContainer;
 
                 const videoStyle = videoState.isFullscreen
                     ? styles.deviceFullscreenVideo
-                    : videoState.isExpanded
-                    ? styles.fullscreenVideo
                     : styles.inlineVideo;
 
                 return (
@@ -4984,65 +5504,21 @@ export default function ChatScreen() {
 
 
 
-                        {/* Контролы видео */}
-                        <View style={videoState.isExpanded ? styles.fullscreenVideoControls : styles.inlineVideoControls}>
-                            {/* Кнопка воспроизведения/паузы удалена, управление происходит через центральную кнопку в полноэкранном модальном плеере */}
-
-                            {/* Кнопка полноэкранного режима */}
-                            <TouchableOpacity
-                                style={styles.inlineVideoButton}
-                                onPress={() => toggleVideoFullscreen(messageId, videoUri)}
-                            >
-                                <MaterialIcons
-                                    name={videoState.isFullscreen ? "fullscreen-exit" : "fullscreen"}
-                                    size={videoState.isExpanded ? 28 : 20}
-                                    color="white"
-                                />
-                            </TouchableOpacity>
-
-                            {/* Дополнительные кнопки только в развернутом режиме */}
-                            {(videoState.isExpanded || videoState.isFullscreen) && (
-                                <>
-                                    {/* Кнопка звука */}
-                                    <TouchableOpacity
-                                        style={styles.inlineVideoButton}
-                                        onPress={() => toggleInlineVideoSound(messageId)}
-                                    >
-                                        <MaterialIcons
-                                            name={videoState.isMuted ? "volume-off" : "volume-up"}
-                                            size={videoState.isFullscreen ? 32 : 28}
-                                            color={audioSessionReady ? "white" : "rgba(255, 255, 255, 0.5)"}
-                                        />
-                                    </TouchableOpacity>
-
-                                    {/* Кнопка скачивания */}
-                                    <TouchableOpacity
-                                        style={styles.inlineVideoButton}
-                                        onPress={() => downloadVideo(videoUri, Number(messageId))}
-                                    >
-                                        <MaterialIcons
-                                            name="download"
-                                            size={videoState.isFullscreen ? 32 : 28}
-                                            color="white"
-                                        />
-                                    </TouchableOpacity>
-
-                                    {/* Кнопка открытия в браузере */}
-                                    {videoUri?.startsWith('http') && (
-                                        <TouchableOpacity
-                                            style={styles.inlineVideoButton}
-                                            onPress={() => openVideoInBrowser(videoUri)}
-                                        >
-                                            <MaterialIcons
-                                                name="open-in-browser"
-                                                size={videoState.isFullscreen ? 32 : 28}
-                                                color="rgba(255, 255, 255, 0.9)"
-                                            />
-                                        </TouchableOpacity>
-                                    )}
-                                </>
-                            )}
-                        </View>
+                        {/* Контролы видео - только для инлайн режима */}
+                        {!videoState.isFullscreen && (
+                            <View style={styles.inlineVideoControls}>
+                                <TouchableOpacity
+                                    style={styles.inlineVideoButton}
+                                    onPress={() => toggleVideoFullscreen(messageId, videoUri)}
+                                >
+                                    <MaterialIcons
+                                        name="fullscreen"
+                                        size={20}
+                                        color="white"
+                                    />
+                                </TouchableOpacity>
+                            </View>
+                        )}
 
                         {/* Прогресс-бар (перемещён под кнопки) */}
                         {videoState.isLoaded && videoState.duration > 0 && (
@@ -5091,19 +5567,6 @@ export default function ChatScreen() {
                             />
                         </TouchableOpacity>
 
-                        {/* Центрированная кнопка воспроизведения для полноэкранного режима */}
-                        {!videoState.isPlaying && videoState.isExpanded && (
-                            <TouchableOpacity
-                                style={styles.fullscreenPlayOverlay}
-                                onPress={() => toggleInlineVideo(messageId, videoUri)}
-                            >
-                                <MaterialIcons
-                                    name="play-circle-filled"
-                                    size={80}
-                                    color="rgba(255, 255, 255, 0.8)"
-                                />
-                            </TouchableOpacity>
-                        )}
 
                     </View>
                 );
@@ -5118,8 +5581,6 @@ export default function ChatScreen() {
                     return (
                         <LazyMedia
                             onVisible={async () => {
-                                console.log('🎤 [LAZY-LOAD] Audio became visible, loading via API:', item.id);
-
                                 if (!item.isLoadingServerUrl && !item.serverFileUrl) {
                                     updateMessageSafely(item.id, { isLoadingServerUrl: true });
 
@@ -5130,7 +5591,6 @@ export default function ChatScreen() {
                                             mediaUri: serverUrl,
                                             isLoadingServerUrl: false
                                         });
-                                        console.log('🎤 [LAZY-LOAD] ✅ Audio URL loaded');
                                     } else {
                                         updateMessageSafely(item.id, {
                                             isLoadingServerUrl: false,
@@ -5209,8 +5669,6 @@ export default function ChatScreen() {
                     return (
                         <LazyMedia
                             onVisible={async () => {
-                                console.log('📄 [LAZY-LOAD] Document became visible, loading via API:', item.id);
-
                                 if (!item.isLoadingServerUrl && !item.serverFileUrl) {
                                     updateMessageSafely(item.id, { isLoadingServerUrl: true });
 
@@ -5222,7 +5680,6 @@ export default function ChatScreen() {
                                             mediaUri: serverUrl,
                                             isLoadingServerUrl: false
                                         });
-                                        console.log('📄 [LAZY-LOAD] ✅ Document URL loaded via API');
                                     } else {
                                         updateMessageSafely(item.id, {
                                             isLoadingServerUrl: false,
@@ -5348,63 +5805,204 @@ export default function ChatScreen() {
         };
 
         // ИСПРАВЛЕНИЕ: Используем правильный Animated компонент из react-native
+        // ИСПРАВЛЕНИЕ: Используем исходную структуру с AnimatedView
         const AnimatedNative = require('react-native').Animated;
         const AnimatedView = AnimatedNative.View;
 
         // Создаем анимированный стиль для непрочитанных сообщений
-        // ВАЖНО: Проверяем что animatedValue существует перед использованием
         const getBackgroundStyle = () => {
-            if (!isUnread || !animatedValue) {
-                // Обычный статичный стиль для прочитанных сообщений
+            // Для моих сообщений, непрочитанных получателем
+            if (isMyMessage && isSentUnread && sentAnimatedValue) {
                 return {
-                    backgroundColor: isMyMessage ? theme.primary : theme.surface
+                    backgroundColor: sentAnimatedValue.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [
+                            theme.primary, // Обычный цвет после прочтения
+                            'rgba(255, 152, 0, 0.9)' // Яркий оранжевый для непрочитанных отправленных
+                        ]
+                    })
                 };
             }
 
-            // Анимированный стиль для непрочитанных сообщений
+            // Статичная индикация для непрочитанных отправленных сообщений без анимации
+            if (isMyMessage && isSentUnread && !sentAnimatedValue) {
+                return {
+                    backgroundColor: 'rgba(255, 152, 0, 0.9)' // Яркий оранжевый для непрочитанных отправленных
+                };
+            }
+
+            // Для полученных сообщений, которые я еще не прочитал
+            if (!isMyMessage && isUnread && animatedValue) {
+                return {
+                    backgroundColor: animatedValue.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [
+                            theme.surface, // Обычный цвет после прочтения
+                            'rgba(76, 175, 80, 0.8)' // Зеленый оттенок для непрочитанных полученных
+                        ]
+                    })
+                };
+            }
+
+            // Для новых непрочитанных сообщений без анимации
+            if (!isMyMessage && item._isNewUnread) {
+                return {
+                    backgroundColor: 'rgba(76, 175, 80, 0.8)' // Зеленый для новых непрочитанных
+                };
+            }
+
+            // Обычный статичный стиль для прочитанных сообщений
             return {
-                backgroundColor: animatedValue.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [
-                        isMyMessage ? theme.primary : theme.surface,
-                        'rgba(255, 215, 0, 0.3)' // Золотистый оттенок для непрочитанных
-                    ]
-                })
+                backgroundColor: isMyMessage ? theme.primary : theme.surface
             };
         };
 
         const backgroundStyle = getBackgroundStyle();
+        const isSelected = selectedMessages.has(Number(item.id));
+
+        // Создаем обработчики событий
+        const handlePress = () => {
+            if (isSelectionMode) {
+                toggleMessageSelection(Number(item.id));
+            }
+        };
+
+        const handleLongPress = () => {
+            if (isSelectionMode) {
+                toggleMessageSelection(Number(item.id));
+            } else if (isMyMessage) {
+                Alert.alert(
+                    'Действия с сообщением',
+                    'Выберите действие:',
+                    [
+                        { text: 'Отмена', style: 'cancel' },
+                        {
+                            text: 'Выделить',
+                            onPress: () => enterSelectionMode(Number(item.id))
+                        },
+                        {
+                            text: 'Удалить у себя',
+                            onPress: () => deleteMessage(Number(item.id), 'for_me')
+                        },
+                        {
+                            text: 'Удалить у всех',
+                            style: 'destructive',
+                            onPress: () => deleteMessage(Number(item.id), 'for_everyone')
+                        }
+                    ],
+                    { cancelable: true }
+                );
+            } else {
+                // Для чужих сообщений
+                Alert.alert(
+                    'Действия с сообщением',
+                    'Выберите действие:',
+                    [
+                        { text: 'Отмена', style: 'cancel' },
+                        {
+                            text: 'Выделить',
+                            onPress: () => enterSelectionMode(Number(item.id))
+                        },
+                        {
+                            text: 'Удалить из переписки',
+                            style: 'destructive',
+                            onPress: () => deleteMessage(Number(item.id), 'for_me')
+                        }
+                    ],
+                    { cancelable: true }
+                );
+            }
+        };
 
         return (
-            <AnimatedView style={[
-                styles.messageContainer,
-                isMyMessage ? styles.myMessage : styles.otherMessage,
-                item.mediaType ? styles.mediaMessage : null,
-                backgroundStyle
-            ]}>
-                {!isMyMessage && (
-                    <Text style={[styles.senderName, { color: theme.textSecondary }]}>{item.sender__username}</Text>
+            <AnimatedView
+                style={[
+                    styles.messageContainer,
+                    isMyMessage ? styles.myMessage : styles.otherMessage,
+                    item.mediaType ? styles.mediaMessage : null,
+                    backgroundStyle,
+                    isSelected ? styles.selectedMessage : null,
+                    item.isDeleting ? styles.deletingMessage : null
+                ]}
+            >
+                {/* Индикатор удаления */}
+                {item.isDeleting && (
+                    <View style={styles.deletingIndicator}>
+                        <ActivityIndicator size="small" color={theme.error || '#ff4444'} />
+                        <Text style={[styles.deletingText, { color: theme.error || '#ff4444' }]}>
+                            Удаление...
+                        </Text>
+                    </View>
                 )}
 
-                {renderMediaContent()}
+                {/* Индикатор выделения */}
+                {isSelectionMode && (
+                    <View style={styles.selectionIndicator}>
+                        <MaterialIcons
+                            name={isSelected ? "check-circle" : "radio-button-unchecked"}
+                            size={20}
+                            color={isSelected ? theme.primary : theme.placeholder}
+                        />
+                    </View>
+                )}
+
+                {!isMyMessage && (
+                    <TouchableOpacity
+                        onPress={handlePress}
+                        onLongPress={handleLongPress}
+                        delayLongPress={500}
+                        activeOpacity={1}
+                    >
+                        <Text style={[styles.senderName, { color: theme.textSecondary }]}>{item.sender__username}</Text>
+                    </TouchableOpacity>
+                )}
+
+                {/* Медиа контент - БЕЗ overlay для сохранения взаимодействия */}
+                <View style={item.mediaType ? styles.mediaContentWrapper : null}>
+                    {renderMediaContent()}
+                </View>
 
                 {/* Показываем текст только если это не медиа (фото/видео) или если есть реальное текстовое сообщение */}
                 {item.message && !item.message.match(/^(📷 Изображение|🎥 Видео)$/) && (
-                    <Text style={[
-                        styles.messageText,
-                        isMyMessage ? styles.myMessageText : styles.otherMessageText,
-                        item.mediaType ? styles.mediaMessageText : null
-                    ]}>
-                        {item.message}
-                    </Text>
+                    <TouchableOpacity
+                        onPress={handlePress}
+                        onLongPress={handleLongPress}
+                        delayLongPress={500}
+                        activeOpacity={1}
+                    >
+                        <Text style={[
+                            styles.messageText,
+                            isMyMessage ? styles.myMessageText : styles.otherMessageText,
+                            item.mediaType ? styles.mediaMessageText : null
+                        ]}>
+                            {item.message}
+                        </Text>
+                    </TouchableOpacity>
                 )}
 
-                <Text style={[
-                    styles.timestamp,
-                    isMyMessage ? styles.myTimestamp : styles.otherTimestamp
-                ]}>
-                    {formatTimestamp(item.timestamp)}
-                </Text>
+                {/* Показываем пометку об удалении для собеседника */}
+                {item.isDeletedByOther && !isMyMessage && (
+                    <View style={styles.deletionNotice}>
+                        <MaterialIcons name="visibility-off" size={14} color={theme.textSecondary} />
+                        <Text style={[styles.deletionNoticeText, { color: theme.textSecondary }]}>
+                            {item.deletedByUsername || 'Собеседник'} удалил это сообщение из своей переписки
+                        </Text>
+                    </View>
+                )}
+
+                <TouchableOpacity
+                    onPress={handlePress}
+                    onLongPress={handleLongPress}
+                    delayLongPress={500}
+                    activeOpacity={1}
+                >
+                    <Text style={[
+                        styles.timestamp,
+                        isMyMessage ? styles.myTimestamp : styles.otherTimestamp
+                    ]}>
+                        {formatTimestamp(item.timestamp)}
+                    </Text>
+                </TouchableOpacity>
             </AnimatedView>
         );
     };
@@ -5646,8 +6244,8 @@ export default function ChatScreen() {
                                 <TouchableOpacity
                                     style={styles.imageFullscreenDownloadButton}
                                     onPress={() => {
-                                        const messageId = messages.find(msg => 
-                                            (msg.serverFileUrl === selectedImage || 
+                                        const messageId = messages.find(msg =>
+                                            (msg.serverFileUrl === selectedImage ||
                                             (msg.mediaBase64 && `data:image/jpeg;base64,${msg.mediaBase64}` === selectedImage))
                                         )?.id;
                                         if (messageId) {
@@ -5667,14 +6265,6 @@ export default function ChatScreen() {
                                     </Text>
                                 </View>
                             )}
-
-                            {/* Подсказка для пользователя */}
-                            <View style={styles.imageHintContainer}>
-                                <Text style={styles.imageHintText}>
-                                    Двойной тап: 1x → 1.5x → 2.5x → 1x • Pinch для масштаба • Свайп для перемещения
-                                </Text>
-                            </View>
-
                             {/* Контент с жестами */}
                             <View style={styles.imageModalContent}>
                                 {selectedImage && (
@@ -5685,7 +6275,6 @@ export default function ChatScreen() {
                                                 style={[styles.fullScreenImage, animatedImageStyle]}
                                                 resizeMode="contain"
                                                 onLoad={() => {
-                                                    console.log('🖼️ [IMAGE-VIEWER] Image loaded for fullscreen view');
                                                 }}
                                                 onError={(error) => {
                                                     console.error('🖼️ [IMAGE-VIEWER] Image load error:', error);
@@ -5700,170 +6289,8 @@ export default function ChatScreen() {
                 </Modal>
 
                 {/* Полноэкранный видеоплеер */}
-                <Modal
-                    visible={isVideoViewerVisible}
-                    transparent={false}
-                    animationType="slide"
-                    onRequestClose={() => setIsVideoViewerVisible(false)}
-                >
-                    <View style={styles.videoViewerContainer}>
-                        {selectedVideo && (
-                            <Video
-                                ref={videoRef}
-                                source={{ uri: selectedVideo }}
-                                style={styles.fullScreenVideo}
-                                resizeMode={ResizeMode.CONTAIN}
-                                useNativeControls={true}
-                                shouldPlay={true}
-                                isLooping={false}
-                                isMuted={false}
-                                onLoad={(data) => {
-                                    console.log('🎥 [FULLSCREEN] Video loaded:', {
-                                        duration: data.durationMillis,
-                                        naturalSize: data.naturalSize,
-                                        uri: selectedVideo?.substring(selectedVideo.lastIndexOf('/') + 1)
-                                    });
 
-                                    console.log('🎥 [FULLSCREEN] Video ready with native controls');
-                                }}
-                                onError={(error) => {
-                                    console.error('🎥 [FULLSCREEN] ❌ Video decoder error:', {
-                                        error: error,
-                                        uri: selectedVideo?.substring(selectedVideo.lastIndexOf('/') + 1),
-                                        uriType: selectedVideo?.startsWith('data:') ? 'base64' :
-                                                 selectedVideo?.startsWith('http') ? 'url' : 'file',
-                                        fullUri: selectedVideo,
-                                        isCodecError: error?.error?.includes('MediaCodecRenderer') ||
-                                                     error?.error?.includes('Decoder')
-                                    });
 
-                                    const isCodecError = error?.error?.includes('MediaCodecRenderer') ||
-                                                       error?.error?.includes('Decoder init failed');
-
-                                    if (isCodecError) {
-                                        // Автоматически пытаемся открыть в браузере для HTTP видео
-                                        if (selectedVideo?.startsWith('http')) {
-                                            console.log('🎥 [AUTO-BROWSER] Auto-opening codec-problematic video in browser');
-                                            openVideoInBrowser(selectedVideo).then(() => {
-                                                setIsVideoViewerVisible(false);
-                                            }).catch((browserError) => {
-                                                console.error('🎥 [AUTO-BROWSER] Auto-browser failed:', browserError);
-
-                                                Alert.alert(
-                                                    'Проблема с кодеком видео',
-                                                    `Встроенный плеер не поддерживает кодеки этого видео.\n\n` +
-                                                    `Ошибка: ${error?.error?.split(':')[0] || 'Неизвестная ошибка декодера'}\n\n` +
-                                                    `Попробуйте открыть в браузере.`,
-                                                    [
-                                                        { text: 'Закрыть', onPress: () => setIsVideoViewerVisible(false) },
-                                                        {
-                                                            text: 'Открыть в браузере',
-                                                            onPress: async () => {
-                                                                try {
-                                                                    await openVideoInBrowser(selectedVideo);
-                                                                    setIsVideoViewerVisible(false);
-                                                                } catch (retryError) {
-                                                                    console.error('🎥 [RETRY-BROWSER] Browser retry failed:', retryError);
-                                                                    setIsVideoViewerVisible(false);
-                                                                }
-                                                            }
-                                                        }
-                                                    ]
-                                                );
-                                            });
-                                            return;
-                                        }
-
-                                        Alert.alert(
-                                            'Проблема с кодеком видео',
-                                            `Встроенный плеер не поддерживает кодеки этого видео.\n\n` +
-                                            `Ошибка: ${error?.error?.split(':')[0] || 'Неизвестная ошибка декодера'}\n\n` +
-                                            `${selectedVideo?.startsWith('http') ? 'Попробуем открыть в браузере.' : 'Попробуйте системный плеер.'}`,
-                                            [
-                                                { text: 'Закрыть', onPress: () => setIsVideoViewerVisible(false) },
-                                                selectedVideo?.startsWith('http') ? {
-                                                    text: 'Открыть в браузере',
-                                                    onPress: async () => {
-                                                        try {
-                                                            await openVideoInBrowser(selectedVideo);
-                                                            setIsVideoViewerVisible(false);
-                                                        } catch (retryError) {
-                                                            console.error('🎥 [MANUAL-BROWSER] Manual browser open failed:', retryError);
-                                                            setIsVideoViewerVisible(false);
-                                                        }
-                                                    }
-                                                } : {
-                                                    text: 'Системный плеер',
-                                                    onPress: async () => {
-                                                        try {
-                                                            await openInSystemPlayer(selectedVideo);
-                                                            setIsVideoViewerVisible(false);
-                                                        } catch (retryError) {
-                                                            console.error('🎥 [MANUAL-PLAYER] Manual player open failed:', retryError);
-                                                            setIsVideoViewerVisible(false);
-                                                        }
-                                                    }
-                                                }
-                                            ]
-                                        );
-                                    } else {
-                                        Alert.alert(
-                                            'Ошибка воспроизведения',
-                                            `Не удалось воспроизвести видео.\n\nТип: ${selectedVideo?.startsWith('data:') ? 'Base64' : selectedVideo?.startsWith('http') ? 'URL' : 'Файл'}\n\nОшибка: ${error?.error || 'Неизвестная ошибка'}`,
-                                            [
-                                                { text: 'Закрыть', onPress: () => setIsVideoViewerVisible(false) },
-                                                {
-                                                    text: 'Попробовать в браузере',
-                                                    onPress: async () => {
-                                                        try {
-                                                            if (selectedVideo?.startsWith('http')) {
-                                                                const { WebBrowser } = await import('expo-web-browser');
-                                                                await WebBrowser.openBrowserAsync(selectedVideo);
-                                                            } else {
-                                                                Alert.alert('Ошибка', 'Можно открыть только URL в браузере');
-                                                            }
-                                                        } catch (browserError) {
-                                                            console.error('Browser error:', browserError);
-                                                            Alert.alert('Ошибка', 'Не удалось открыть в браузере');
-                                                        }
-                                                        setIsVideoViewerVisible(false);
-                                                    }
-                                                }
-                                            ]
-                                        );
-                                    }
-                                }}
-                                onPlaybackStatusUpdate={(status) => {
-                                    if ('error' in status) {
-                                        console.error('🎥 [FULLSCREEN] Playback error:', status.error);
-                                        setVideoError(status.error || 'Ошибка воспроизведения');
-                                        setIsVideoPlaying(false);
-                                    } else if ('durationMillis' in status && status.isLoaded) {
-                                        // Отслеживаем изменения состояния воспроизведения
-                                        if (status.isPlaying !== isVideoPlaying) {
-                                            setIsVideoPlaying(status.isPlaying);
-                                        }
-
-                                        // Логируем важные изменения
-                                        if (status.isPlaying || status.positionMillis > 0) {
-                                            console.log('🎥 [FULLSCREEN] Playback status:', {
-                                                duration: Math.round(status.durationMillis / 1000) + 's',
-                                                position: Math.round(status.positionMillis / 1000) + 's',
-                                                isPlaying: status.isPlaying,
-                                                rate: status.rate
-                                            });
-                                        }
-                                    }
-                                }}
-                                onReadyForDisplay={(data) => {
-                                    console.log('🎥 [FULLSCREEN] Ready for display:', {
-                                        naturalSize: data.naturalSize
-                                    });
-                                }}
-                            />
-                        )}
-                    </View>
-                </Modal>
 
                 {/* Модальное окно для полноэкранного инлайн видео */}
                 <Modal
@@ -5875,6 +6302,22 @@ export default function ChatScreen() {
                         setFullscreenModalVideoUri(null);
                         setSelectedVideo(null);
                         setSelectedMessageId(null);
+
+                        // ИСПРАВЛЕНИЕ: Сбрасываем состояние видео при закрытии модального окна
+                        const activeVideoId = Object.keys(inlineVideoStates).find(id =>
+                            inlineVideoStates[id]?.isFullscreen
+                        );
+                        if (activeVideoId) {
+                            setInlineVideoStates(prev => ({
+                                ...prev,
+                                [activeVideoId]: {
+                                    ...prev[activeVideoId],
+                                    isFullscreen: false,
+                                    isExpanded: false,
+                                    isPlaying: false
+                                }
+                            }));
+                        }
                     }}
                 >
                     <View style={styles.fullscreenModalContainer}>
@@ -5885,6 +6328,22 @@ export default function ChatScreen() {
                                 setFullscreenModalVideoUri(null);
                                 setSelectedVideo(null);
                                 setSelectedMessageId(null);
+
+                                // ИСПРАВЛЕНИЕ: Сбрасываем состояние видео при закрытии
+                                const activeVideoId = Object.keys(inlineVideoStates).find(id =>
+                                    inlineVideoStates[id]?.isFullscreen
+                                );
+                                if (activeVideoId) {
+                                    setInlineVideoStates(prev => ({
+                                        ...prev,
+                                        [activeVideoId]: {
+                                            ...prev[activeVideoId],
+                                            isFullscreen: false,
+                                            isExpanded: false,
+                                            isPlaying: false
+                                        }
+                                    }));
+                                }
                             }}
                         >
                             <MaterialIcons name="close" size={32} color="white" />
@@ -5975,33 +6434,6 @@ export default function ChatScreen() {
                                 }}
                             />
                         )}
-
-                        {/* Кнопка принудительного воспроизведения */}
-                        {!isVideoPlaying && !videoError && (
-                            <TouchableOpacity
-                                style={styles.forcePlayButton}
-                                onPress={async () => {
-                                    if (!videoRef.current) return;
-                                    try {
-                                        if (isVideoPlaying) {
-                                            await videoRef.current.pauseAsync();
-                                            setIsVideoPlaying(false);
-                                        } else {
-                                            await videoRef.current.playAsync();
-                                            setIsVideoPlaying(true);
-                                        }
-                                    } catch (e) {
-                                        console.error('🎥 [FULLSCREEN] ❌ Error toggling playback from central button:', e);
-                                        Alert.alert('Ошибка', 'Не удалось изменить состояние воспроизведения');
-                                    }
-                                }}
-                            >
-
-                            </TouchableOpacity>
-                        )}
-
-
-
                         {/* Кнопка скачивания видео - рядом с кнопкой звука */}
                         <TouchableOpacity
                             style={styles.videoDownloadButtonFullscreen}
@@ -6012,8 +6444,8 @@ export default function ChatScreen() {
 
                                 let messageId = selectedMessageId;
                                 if (!messageId) {
-                                    const foundMessage = messages.find(msg => 
-                                        msg.serverFileUrl === selectedVideo || 
+                                    const foundMessage = messages.find(msg =>
+                                        msg.serverFileUrl === selectedVideo ||
                                         msg.mediaUri === selectedVideo ||
                                         (msg.mediaBase64 && `data:video/mp4;base64,${msg.mediaBase64}` === selectedVideo)
                                     );
@@ -6284,19 +6716,19 @@ const createStyles = (theme: any) => {
     },
     mediaContainer: {
         marginBottom: 8,
-        borderRadius: 1,
+        borderRadius: 0,
         overflow: 'hidden',
     },
     messageImage: {
         width: 200,
-        minHeight: 100,
+        minHeight: 150,
         maxHeight: 300,
-        borderRadius: 1,
+
     },
     messageVideo: {
         width: 200,
         height: 150,
-        borderRadius: 8,
+
     },
     mediaMessage: {
         maxWidth: '85%',
@@ -6599,46 +7031,6 @@ const createStyles = (theme: any) => {
         fontSize: 10,
         fontStyle: 'italic',
     },
-    forcePlayButton: {
-        position: 'absolute',
-        top: '50%',
-        left: '50%',
-        transform: [{ translateX: -32 }, { translateY: -50 }],
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 2,
-    },
-    forcePlayText: {
-        color: 'white',
-        fontSize: 16,
-        marginTop: 8,
-        textAlign: 'center',
-        backgroundColor: 'rgba(0, 0, 0, 0.5)',
-        paddingHorizontal: 12,
-        paddingVertical: 4,
-        borderRadius: 8,
-    },
-    forcePlaySubtext: {
-        color: 'rgba(255, 255, 255, 0.7)',
-        fontSize: 12,
-        marginTop: 4,
-        textAlign: 'center',
-        fontStyle: 'italic',
-    },
-    soundButton: {
-        position: 'absolute',
-        top: 50,
-        left: 20,
-        backgroundColor: 'rgba(0, 0, 0, 0.7)',
-        padding: 10,
-        borderRadius: 25,
-        zIndex: 1000,
-        elevation: 10,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.5,
-        shadowRadius: 4,
-    },
     videoErrorContainer: {
         position: 'absolute',
         top: '50%',
@@ -6687,20 +7079,6 @@ const createStyles = (theme: any) => {
         borderRadius: 4,
         backgroundColor: 'orange',
     },
-    browserButton: {
-        position: 'absolute',
-        top: 50,
-        left: 140,
-        backgroundColor: 'rgba(0, 123, 255, 0.8)',
-        padding: 10,
-        borderRadius: 25,
-        zIndex: 1000,
-        elevation: 10,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.5,
-        shadowRadius: 4,
-    },
     systemPlayerButton: {
         position: 'absolute',
         top: 50,
@@ -6733,17 +7111,7 @@ const createStyles = (theme: any) => {
         height: '100%',
         borderRadius: 8,
     },
-    fullscreenVideoContainer: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        zIndex: 1000,
-        backgroundColor: 'black',
-        marginBottom: 0,
-        borderRadius: 0,
-    },
+
     fullscreenVideo: {
         width: '100%',
         height: '100%',
@@ -6786,16 +7154,6 @@ const createStyles = (theme: any) => {
         borderRadius: 25,
         padding: 10,
     },
-    fullscreenModeControls: {
-        position: 'absolute',
-        bottom: 100,
-        right: 20,
-        flexDirection: 'row',
-        backgroundColor: 'rgba(0, 0, 0, 0.8)',
-        borderRadius: 25,
-        padding: 8,
-        zIndex: 2001, // Выше видео контейнера
-    },
     inlineVideoControls: {
         position: 'absolute',
         bottom: 6,
@@ -6806,16 +7164,6 @@ const createStyles = (theme: any) => {
         padding: 3,
         zIndex: 2,
         maxWidth: '90%', // Ограничиваем ширину контролов
-    },
-    fullscreenVideoControls: {
-        position: 'absolute',
-        bottom: 60,
-        right: 20,
-        flexDirection: 'row',
-        backgroundColor: 'rgba(0, 0, 0, 0.8)',
-        borderRadius: 25,
-        padding: 8,
-        zIndex: 2,
     },
     inlineVideoButton: {
         padding: 5,
@@ -6858,7 +7206,7 @@ const createStyles = (theme: any) => {
     videoTimeContainerSimple: {
         marginTop: 4,
         marginHorizontal: 6,
-        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+        backgroundColor: 'rgba(0, 0, 0, 0)',
         paddingHorizontal: 6,
         paddingVertical: 1,
         borderRadius: 3,
@@ -6869,28 +7217,13 @@ const createStyles = (theme: any) => {
         fontSize: 10,
         fontFamily: 'monospace',
     },
-    fullscreenPlayOverlay: {
-        position: 'absolute',
-        top: '50%',
-        left: '50%',
-        transform: [{ translateX: -40 }, { translateY: -40 }],
-        zIndex: 3,
-    },
-    fullscreenCloseButton: {
-        position: 'absolute',
-        top: 60,
-        right: 20,
-        backgroundColor: 'rgba(0, 0, 0, 0.7)',
-        borderRadius: 20,
-        padding: 8,
-        zIndex: 10, // Поверх всех элементов
-    },
+
     // Стили для превью видео (ленивая загрузка)
     videoPreviewContainer: {
         marginBottom: 8,
         borderRadius: 12,
         backgroundColor: theme.surface,
-        borderWidth: 0.5,           // почти незаметная граница
+        borderWidth: 0.3,           // почти незаметная граница
         borderColor: 'transparent', // полностью прозрачная
         borderStyle: 'solid',
         padding: 16,
@@ -6938,7 +7271,7 @@ const createStyles = (theme: any) => {
         justifyContent: 'center',
         minHeight: 110,
         maxWidth: '100%',
-        width: 250, // Соответствует ширине инлайн видео
+        width: 240, // Соответствует ширине инлайн видео
     },
     videoLoadingText: {
         fontSize: 14,
@@ -7037,6 +7370,87 @@ const createStyles = (theme: any) => {
     audioLoadingText: {
         fontSize: 14,
         marginLeft: 8,
+    },
+    // Стили для выделения сообщений
+    selectionHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
+        justifyContent: 'space-between',
+    },
+    selectionBackButton: {
+        padding: 8,
+    },
+    selectionInfo: {
+        flex: 1,
+        marginLeft: 8,
+    },
+    selectionCount: {
+        fontSize: 16,
+        fontWeight: 'bold',
+    },
+    selectionActions: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    selectionActionButton: {
+        padding: 8,
+        marginLeft: 4,
+    },
+    selectedMessage: {
+        backgroundColor: theme.primary ? `${theme.primary}20` : 'rgba(0, 123, 255, 0.1)',
+        borderColor: theme.primary,
+        borderWidth: 2,
+        transform: [{ scale: 0.98 }],
+    },
+    selectionIndicator: {
+        position: 'absolute',
+        top: 4,
+        left: 4,
+        zIndex: 10,
+        backgroundColor: 'rgba(255, 255, 255, 0.9)',
+        borderRadius: 12,
+        padding: 2,
+    },
+    mediaContentWrapper: {
+        position: 'relative',
+        // Медиа контент остается интерактивным
+    },
+    // Стили для пометки об удалении
+    deletionNotice: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: 4,
+        paddingTop: 4,
+        borderTopWidth: 1,
+        borderTopColor: 'rgba(128, 128, 128, 0.2)',
+    },
+    deletionNoticeText: {
+        fontSize: 11,
+        fontStyle: 'italic',
+        marginLeft: 4,
+        opacity: 0.7,
+    },
+    // Стили для процесса удаления
+    deletingMessage: {
+        opacity: 0.6,
+        backgroundColor: 'rgba(255, 68, 68, 0.1)',
+        borderColor: '#ff4444',
+        borderWidth: 1,
+    },
+    deletingIndicator: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 4,
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        backgroundColor: 'rgba(255, 68, 68, 0.1)',
+        borderRadius: 12,
+    },
+    deletingText: {
+        fontSize: 12,
+        fontStyle: 'italic',
+        marginLeft: 4,
     },
     });
 };

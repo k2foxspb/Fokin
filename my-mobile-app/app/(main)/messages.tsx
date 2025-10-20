@@ -95,7 +95,6 @@ export default function MessagesScreen() {
   // Обновляем список чатов при возвращении на экран
   useFocusEffect(
     useCallback(() => {
-      console.log('📱 [Messages] Screen focused, refreshing chat list');
       // Обновляем данные без показа лоадера
       fetchChats(false);
     }, [])
