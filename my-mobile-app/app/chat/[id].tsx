@@ -79,6 +79,9 @@ interface Message {
     _isUnreadBySender?: boolean;
     // Серверное поле статуса прочтения
     is_read_by_recipient?: boolean;
+    // Статус прочтения сообщения
+    read?: boolean;
+    read_at?: string;
 }
 
 interface User {
@@ -641,6 +644,26 @@ export default function ChatScreen() {
 
                             // Запускаем анимацию перехода к прочитанному состоянию
                             animateSentMessageAsRead(message_id);
+                        }
+
+                        return;
+                    }
+
+                    // Обработка обновления статуса сообщения
+                    if (data.type === 'message_status_update') {
+                        console.log('📖 [STATUS-UPDATE] Received message status update:', data);
+
+                        const { message_id, read, read_by_user_id } = data;
+
+                        if (message_id) {
+                            // Обновляем статус сообщения
+                            setMessages(prev => 
+                                prev.map(msg => 
+                                    msg.id === message_id 
+                                        ? { ...msg, read: read, read_at: read ? new Date().toISOString() : undefined }
+                                        : msg
+                                )
+                            );
                         }
 
                         return;
@@ -5812,7 +5835,7 @@ export default function ChatScreen() {
         // Создаем анимированный стиль для непрочитанных сообщений
         const getBackgroundStyle = () => {
             // Для моих сообщений, непрочитанных получателем
-            if (isMyMessage && isSentUnread && sentAnimatedValue) {
+            if (isMyMessage && (isSentUnread || !item.read) && sentAnimatedValue) {
                 return {
                     backgroundColor: sentAnimatedValue.interpolate({
                         inputRange: [0, 1],
@@ -5825,14 +5848,14 @@ export default function ChatScreen() {
             }
 
             // Статичная индикация для непрочитанных отправленных сообщений без анимации
-            if (isMyMessage && isSentUnread && !sentAnimatedValue) {
+            if (isMyMessage && (isSentUnread || !item.read) && !sentAnimatedValue) {
                 return {
                     backgroundColor: 'rgba(255, 152, 0, 0.9)' // Яркий оранжевый для непрочитанных отправленных
                 };
             }
 
             // Для полученных сообщений, которые я еще не прочитал
-            if (!isMyMessage && isUnread && animatedValue) {
+            if (!isMyMessage && (isUnread || !item.read) && animatedValue) {
                 return {
                     backgroundColor: animatedValue.interpolate({
                         inputRange: [0, 1],
@@ -5845,7 +5868,7 @@ export default function ChatScreen() {
             }
 
             // Для новых непрочитанных сообщений без анимации
-            if (!isMyMessage && item._isNewUnread) {
+            if (!isMyMessage && (item._isNewUnread || !item.read)) {
                 return {
                     backgroundColor: 'rgba(76, 175, 80, 0.8)' // Зеленый для новых непрочитанных
                 };
@@ -5996,12 +6019,24 @@ export default function ChatScreen() {
                     delayLongPress={500}
                     activeOpacity={1}
                 >
-                    <Text style={[
-                        styles.timestamp,
-                        isMyMessage ? styles.myTimestamp : styles.otherTimestamp
-                    ]}>
-                        {formatTimestamp(item.timestamp)}
-                    </Text>
+                    <View style={styles.messageFooter}>
+                        <Text style={[
+                            styles.timestamp,
+                            isMyMessage ? styles.myTimestamp : styles.otherTimestamp
+                        ]}>
+                            {formatTimestamp(item.timestamp)}
+                        </Text>
+                        {isMyMessage && (
+                            <View style={styles.readStatusContainer}>
+                                <MaterialIcons 
+                                    name={item.read ? "done-all" : "done"} 
+                                    size={16} 
+                                    color={item.read ? theme.success || '#4CAF50' : 'rgba(255, 255, 255, 0.6)'}
+                                    style={styles.readStatusIcon}
+                                />
+                            </View>
+                        )}
+                    </View>
                 </TouchableOpacity>
             </AnimatedView>
         );
@@ -7451,6 +7486,24 @@ const createStyles = (theme: any) => {
         fontSize: 12,
         fontStyle: 'italic',
         marginLeft: 4,
+    },
+    // Стили для статуса прочтения
+    messageFooter: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'flex-end',
+        marginTop: 2,
+    },
+    readStatusContainer: {
+        marginLeft: 4,
+    },
+    readStatusIcon: {
+        opacity: 0.8,
+    },
+    unreadMessageBorder: {
+        borderLeftWidth: 3,
+        borderLeftColor: theme.primary,
+        paddingLeft: 8,
     },
     });
 };

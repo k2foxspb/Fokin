@@ -439,6 +439,17 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
                         }
                     )
 
+                    # Отправляем обновление статуса сообщения
+                    await self.channel_layer.group_send(
+                        self.room_group_name,
+                        {
+                            'type': 'message_status_update',
+                            'message_id': message_id,
+                            'read': True,
+                            'read_by_user_id': user_id
+                        }
+                    )
+
                     # Также отправляем обновление счетчиков уведомлений
                     await self.send_notification_updates_for_read(sender_id)
 
@@ -475,7 +486,8 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
                 'sender_id': self.user.id,
                 'recipient_id': recipient_id,
                 'timestamp': int(message_instance.timestamp.timestamp()),
-                'id': message_instance.id
+                'id': message_instance.id,
+                'read': message_instance.read
             }
         )
 
@@ -517,7 +529,8 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
             'mediaType': message_instance.media_type,
             'mediaHash': message_instance.media_hash,
             'mediaFileName': message_instance.media_filename,
-            'mediaSize': message_instance.media_size
+            'mediaSize': message_instance.media_size,
+            'read': message_instance.read
         }
 
         # Добавляем base64 данные если есть
@@ -553,6 +566,7 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
         timestamp = event['timestamp']
         message_id = event.get('id', event.get('message_id'))
         sender_id = event.get('sender_id')
+        read_status = event.get('read', False)
 
         # Медиа данные
         media_type = event.get('mediaType')
@@ -572,7 +586,8 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
             'sender__username': sender,
             'timestamp': timestamp,
             'id': message_id,
-            'sender_id': sender_id
+            'sender_id': sender_id,
+            'read': read_status
         }
 
         # Добавляем медиа данные если есть
@@ -711,6 +726,15 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
             'type': 'message_read',
             'message_id': event['message_id'],
             'reader_id': event['reader_id']
+        }))
+
+    async def message_status_update(self, event):
+        """Обработчик обновления статуса отдельного сообщения"""
+        await self.send(text_data=json.dumps({
+            'type': 'message_status_update',
+            'message_id': event['message_id'],
+            'read': event['read'],
+            'read_by_user_id': event.get('read_by_user_id')
         }))
 
     @database_sync_to_async
@@ -967,6 +991,15 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
             'type': 'messages_read_by_recipient',
             'message_ids': event['message_ids'],
             'read_by_user_id': event['read_by_user_id']
+        }))
+
+    async def message_status_update(self, event):
+        """Обработчик обновления статуса отдельного сообщения"""
+        await self.send(text_data=json.dumps({
+            'type': 'message_status_update',
+            'message_id': event['message_id'],
+            'read': event['read'],
+            'read_by_user_id': event.get('read_by_user_id')
         }))
 
     async def messages_deleted_notification(self, event):
