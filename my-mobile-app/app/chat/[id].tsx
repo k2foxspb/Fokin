@@ -511,20 +511,48 @@ export default function ChatScreen() {
                         'Сообщение не найдено',
                         'Сообщение могло быть удалено или находится слишком далеко в истории.'
                     );
+                    setIsLoadingReplyMessage(false);
                     return;
                 }
 
-                // Ищем сообщение снова после загрузки
-                messageIndex = messages.findIndex(msg => msg.id === messageId);
+                // КРИТИЧНО: Ждем обновления состояния после загрузки истории
+                // React обновляет состояние асинхронно, поэтому нужны повторные попытки
+                console.log('🔍 [SCROLL] History loaded, waiting for state update...');
+
+                let attempts = 0;
+                const maxAttempts = 10;
+                const retryInterval = 200; // 200мс между попытками
+
+                while (attempts < maxAttempts) {
+                    await new Promise(resolve => setTimeout(resolve, retryInterval));
+
+                    // Используем колбэк setMessages чтобы получить актуальное состояние
+                    let foundIndex = -1;
+                    setMessages(currentMessages => {
+                        foundIndex = currentMessages.findIndex(msg => msg.id === messageId);
+                        console.log(`🔍 [SCROLL] Attempt ${attempts + 1}/${maxAttempts}: index = ${foundIndex}`);
+                        return currentMessages; // Не изменяем состояние
+                    });
+
+                    if (foundIndex !== -1) {
+                        messageIndex = foundIndex;
+                        console.log('🔍 [SCROLL] ✅ Message found after', attempts + 1, 'attempts');
+                        break;
+                    }
+
+                    attempts++;
+                }
 
                 if (messageIndex === -1) {
-                    // Даем время на обновление состояния
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                    messageIndex = messages.findIndex(msg => msg.id === messageId);
+                    console.error('🔍 [SCROLL] ❌ Message still not found after', maxAttempts, 'attempts');
+                    Alert.alert('Ошибка', 'Не удалось найти сообщение после загрузки');
+                    setIsLoadingReplyMessage(false);
+                    return;
                 }
             } catch (error) {
                 console.error('🔍 [SCROLL] ❌ Error loading history:', error);
                 Alert.alert('Ошибка', 'Не удалось загрузить сообщение');
+                setIsLoadingReplyMessage(false);
                 return;
             } finally {
                 setIsLoadingReplyMessage(false);
