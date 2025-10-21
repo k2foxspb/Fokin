@@ -362,10 +362,11 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
         user1_id = data.get('user1')
         user2_id = data.get('user2')
 
-        # Данные для реплая
+        # ИСПРАВЛЕНИЕ: Данные для реплая - обрабатываем все возможные варианты полей
         reply_to_message_id = data.get('reply_to_message_id')
-        reply_to_message_text = data.get('reply_to_message_text')
-        reply_to_sender_name = data.get('reply_to_sender_name')
+        # ВАЖНО: Поддерживаем оба варианта названий полей из фронтенда
+        reply_to_message_text = data.get('reply_to_message') or data.get('reply_to_message_text')
+        reply_to_sender_name = data.get('reply_to_sender') or data.get('reply_to_sender_name')
         reply_to_media_type = data.get('reply_to_media_type')
 
         # Определяем получателя (тот, кто не является отправителем)
@@ -374,7 +375,7 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
         logger.info(f"Processing text message: sender={self.user.id}, recipient={recipient_id}, message='{message_content[:50]}'")
 
         if reply_to_message_id:
-            logger.info(f"Text message is reply to: {reply_to_message_id}")
+            logger.info(f"Text message is reply to: {reply_to_message_id}, text='{reply_to_message_text[:30] if reply_to_message_text else 'empty'}', sender={reply_to_sender_name}")
 
         if message_content and recipient_id:
             try:
@@ -412,10 +413,11 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
         media_size = data.get('mediaSize')
         media_base64 = data.get('mediaBase64')
 
-        # Данные для реплая
+        # ИСПРАВЛЕНИЕ: Данные для реплая - обрабатываем все возможные варианты полей
         reply_to_message_id = data.get('reply_to_message_id')
-        reply_to_message_text = data.get('reply_to_message_text')
-        reply_to_sender_name = data.get('reply_to_sender_name')
+        # ВАЖНО: Поддерживаем оба варианта названий полей из фронтенда
+        reply_to_message_text = data.get('reply_to_message') or data.get('reply_to_message_text')
+        reply_to_sender_name = data.get('reply_to_sender') or data.get('reply_to_sender_name')
         reply_to_media_type = data.get('reply_to_media_type')
 
         # Определяем получателя
@@ -424,7 +426,7 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
         logger.info(f"📷 [CONSUMER] Media message details: type={media_type}, hash={media_hash}, size={media_size}, filename={media_filename}")
 
         if reply_to_message_id:
-            logger.info(f"📷 [CONSUMER] Media message is reply to: {reply_to_message_id}")
+            logger.info(f"📷 [CONSUMER] Media message is reply to: {reply_to_message_id}, text='{reply_to_message_text[:30] if reply_to_message_text else 'empty'}', sender={reply_to_sender_name}")
 
         if media_type and media_hash and recipient_id:
             try:
@@ -670,10 +672,10 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
         if media_type:
             logger.info(f"📡 [SEND] Sending media message to client: type={media_type}, hash={media_hash}")
         else:
-            logger.info(f"📡 [SEND] Sending text message to client: sender={sender}, message='{message[:50]}'")
+            logger.info(f"📡 [SEND] Sending text message to client: sender={sender}, message='{message[:50] if message else 'empty'}'")
 
         if reply_to_message_id:
-            logger.info(f"📡 [SEND] Message is reply to: {reply_to_message_id}")
+            logger.info(f"📡 [SEND] Message is reply to: {reply_to_message_id}, text='{reply_to_message_text[:30] if reply_to_message_text else 'empty'}', sender={reply_to_sender_name}")
 
         # Базовые данные сообщения
         response_data = {
@@ -685,14 +687,15 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
             'read': read_status
         }
 
-        # Добавляем данные реплая если есть
+        # ИСПРАВЛЕНИЕ: Добавляем данные реплая с правильными названиями полей для фронтенда
         if reply_to_message_id:
             response_data.update({
                 'reply_to_message_id': reply_to_message_id,
-                'reply_to_message_text': reply_to_message_text,
-                'reply_to_sender_name': reply_to_sender_name,
+                'reply_to_message': reply_to_message_text,  # ИСПРАВЛЕНО: правильное поле
+                'reply_to_sender': reply_to_sender_name,    # ИСПРАВЛЕНО: правильное поле
                 'reply_to_media_type': reply_to_media_type
             })
+            logger.info(f"📡 [SEND] Added reply data to response: id={reply_to_message_id}, text='{reply_to_message_text[:30] if reply_to_message_text else 'empty'}'")
 
         # Добавляем медиа данные если есть
         if media_type and media_hash:
