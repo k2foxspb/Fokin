@@ -16,6 +16,46 @@ from .push_notifications import PushNotificationService
 
 logger = logging.getLogger('chatapp.consumers')
 
+
+class GlobalConnectionTracker:
+    """
+    Глобальный трекер активных WebSocket соединений пользователей
+    В продакшене следует использовать Redis для масштабируемости
+    """
+    _connections = {}  # {user_id: set(channel_names)}
+
+    @classmethod
+    def add_connection(cls, user_id, channel_name, connection_type="unknown"):
+        """Добавляем соединение пользователя"""
+        if user_id not in cls._connections:
+            cls._connections[user_id] = set()
+        cls._connections[user_id].add(channel_name)
+        logger.info(f"🔌 [TRACKER] User {user_id} connected ({connection_type}). Active connections: {len(cls._connections[user_id])}")
+
+    @classmethod
+    def remove_connection(cls, user_id, channel_name, connection_type="unknown"):
+        """Удаляем соединение пользователя"""
+        if user_id in cls._connections:
+            cls._connections[user_id].discard(channel_name)
+            if not cls._connections[user_id]:  # Если у пользователя нет активных соединений
+                del cls._connections[user_id]
+                logger.info(f"🔌 [TRACKER] User {user_id} disconnected ({connection_type}). No active connections left.")
+                return True  # Пользователь полностью отключился
+            else:
+                logger.info(f"🔌 [TRACKER] User {user_id} disconnected ({connection_type}). Still has {len(cls._connections[user_id])} active connections.")
+                return False  # У пользователя еще есть активные соединения
+        return True  # Если пользователя не было в трекере, считаем что он отключился
+
+    @classmethod
+    def is_user_connected(cls, user_id):
+        """Проверяем, есть ли у пользователя активные соединения"""
+        return user_id in cls._connections and len(cls._connections[user_id]) > 0
+
+    @classmethod
+    def get_connection_count(cls, user_id):
+        """Получаем количество активных соединений пользователя"""
+        return len(cls._connections.get(user_id, set()))
+
 class BaseConsumerMixin:
     """Базовый миксин с общими методами для всех consumer'ов"""
 
@@ -43,6 +83,22 @@ class BaseConsumerMixin:
             logger.info(f"User {user_id} set to offline")
         except Exception as e:
             logger.error(f"Error setting user {user_id} offline: {e}")
+
+    def add_user_connection(self, user_id, connection_type="unknown"):
+        """Регистрируем соединение пользователя"""
+        GlobalConnectionTracker.add_connection(user_id, self.channel_name, connection_type)
+
+    async def remove_user_connection(self, user_id, connection_type="unknown"):
+        """Отменяем регистрацию соединения пользователя и проверяем нужно ли устанавливать статус оффлайн"""
+        user_fully_disconnected = GlobalConnectionTracker.remove_connection(user_id, self.channel_name, connection_type)
+
+        if user_fully_disconnected:
+            # Пользователь полностью отключился от всех WebSocket соединений
+            await self.set_user_offline(user_id)
+            await self.broadcast_user_status(user_id, 'offline')
+            logger.info(f"🔌 [TRACKER] User {user_id} fully disconnected - set to offline")
+        else:
+            logger.info(f"🔌 [TRACKER] User {user_id} still has active connections - keeping online")
 
     async def broadcast_user_status(self, user_id, status):
         """Отправляем обновление статуса всем заинтересованным пользователям"""
@@ -226,8 +282,9 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
             self.channel_name
         )
 
-        # Добавляем пользователя в список активных
+        # Добавляем пользователя в список активных и регистрируем соединение
         PrivateChatConsumer.connected_users.add(self.user.id)
+        self.add_user_connection(self.user.id, "PrivateChatConsumer")
 
         await self.accept()
 
@@ -263,9 +320,10 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
             return False
 
     async def disconnect(self, close_code):
-        # Удаляем пользователя из списка активных
+        # Удаляем пользователя из списка активных и отменяем регистрацию соединения
         if hasattr(self, 'user') and self.user:
             PrivateChatConsumer.connected_users.discard(self.user.id)
+            await self.remove_user_connection(self.user.id, "PrivateChatConsumer")
 
         if hasattr(self, 'room_group_name'):
             await self.channel_layer.group_discard(
@@ -1151,7 +1209,8 @@ class NotificationConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
 
                 logger.info(f"User {self.user_id} connected to notifications")
 
-                # НОВОЕ: Отправляем статус "онлайн" и уведомляем других пользователей
+                # Регистрируем соединение и устанавливаем статус онлайн
+                self.add_user_connection(self.user_id, "NotificationConsumer")
                 await self.set_user_online(self.user_id)
                 await self.broadcast_user_status(self.user_id, 'online')
 
@@ -1360,9 +1419,8 @@ class NotificationConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
             logger.info(f"User {self.user_id} disconnected from notifications")
 
         if self.user_id:
-            # ИСПРАВЛЕНО: Устанавливаем статус "оффлайн" и уведомляем других
-            await self.set_user_offline(self.user_id)
-            await self.broadcast_user_status(self.user_id, 'offline')
+            # Отменяем регистрацию соединения и устанавливаем статус оффлайн только если пользователь полностью отключился
+            await self.remove_user_connection(self.user_id, "NotificationConsumer")
 
     async def receive(self, text_data):
         try:
@@ -1550,6 +1608,9 @@ class ChatListConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
                     self.channel_name
                 )
 
+                # Регистрируем соединение
+                self.add_user_connection(self.user_id, "ChatListConsumer")
+
                 await self.accept()
             except Token.DoesNotExist:
                 await self.close()
@@ -1557,12 +1618,13 @@ class ChatListConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
             await self.close()
 
     async def disconnect(self, close_code):
-        # Отписываемся от группы обновлений списка чатов
+        # Отписываемся от группы обновлений списка чатов и отменяем регистрацию соединения
         if self.user_id:
             await self.channel_layer.group_discard(
                 f'chat_list_{self.user_id}',
                 self.channel_name
             )
+            await self.remove_user_connection(self.user_id, "ChatListConsumer")
 
     async def receive(self, text_data):
         try:
