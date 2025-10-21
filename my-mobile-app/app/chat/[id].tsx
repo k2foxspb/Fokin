@@ -205,6 +205,8 @@ interface Message {
     reply_to_message?: string;
     reply_to_sender?: string;
     reply_to_media_type?: string;
+    // Поле для временной подсветки при скролле
+    _highlighted?: boolean;
 }
 
 interface User {
@@ -386,6 +388,200 @@ export default function ChatScreen() {
             prev.map(msg => msg.id === messageId ? {...msg, ...updates} : msg)
         );
     };
+
+    // Состояние для индикации загрузки сообщения
+    const [isLoadingReplyMessage, setIsLoadingReplyMessage] = useState(false);
+
+    // Функция для загрузки дополнительных страниц истории до нахождения сообщения
+    const loadHistoryUntilMessage = async (targetMessageId: number): Promise<boolean> => {
+        console.log('🔍 [LOAD-HISTORY] Starting to load history until message:', targetMessageId);
+
+        let currentPage = page + 1;
+        const maxPages = 20; // Максимум 20 страниц (300 сообщений)
+        let found = false;
+
+        while (currentPage <= maxPages && !found) {
+            console.log('🔍 [LOAD-HISTORY] Loading page:', currentPage);
+
+            try {
+                const token = await getToken();
+                if (!token) {
+                    console.error('🔍 [LOAD-HISTORY] No token available');
+                    return false;
+                }
+
+                const response = await axios.get(
+                    `${API_CONFIG.BASE_URL}/profile/api/chat_history/${roomId}/`,
+                    {
+                        headers: {
+                            'Authorization': `Token ${token}`,
+                            'Content-Type': 'application/json',
+                        },
+                        params: {
+                            page: currentPage,
+                            limit: 15
+                        }
+                    }
+                );
+
+                if (response.data?.messages && response.data.messages.length > 0) {
+                    const processedMessages = response.data.messages.map((msg: any) => {
+                        const isMyMessage = msg.sender_id === currentUserId;
+                        const messageTime = new Date(msg.timestamp * 1000);
+                        const now = new Date();
+                        const hoursAgo = (now.getTime() - messageTime.getTime()) / (1000 * 60 * 60);
+                        const isUnreadBySender = isMyMessage && hoursAgo <= 48;
+
+                        const replyToMessageId = msg.reply_to_message_id || msg.replyToMessageId || null;
+                        const replyToMessage = msg.reply_to_message || msg.replyToMessage || msg.reply_message || null;
+                        const replyToSender = msg.reply_to_sender || msg.replyToSender || msg.reply_sender || null;
+                        const replyToMediaType = msg.reply_to_media_type || msg.replyToMediaType || msg.reply_media_type || null;
+
+                        return {
+                            ...msg,
+                            mediaType: msg.mediaType || msg.media_type || null,
+                            mediaHash: msg.mediaHash || msg.media_hash || null,
+                            mediaFileName: msg.mediaFileName || msg.media_filename || null,
+                            mediaSize: msg.mediaSize || msg.media_size || null,
+                            mediaBase64: null,
+                            serverFileUrl: null,
+                            isLoadingServerUrl: false,
+                            needsReload: false,
+                            _isUnreadBySender: isUnreadBySender,
+                            reply_to_message_id: replyToMessageId,
+                            reply_to_message: replyToMessage,
+                            reply_to_sender: replyToSender,
+                            reply_to_media_type: replyToMediaType
+                        };
+                    });
+
+                    // Добавляем новые сообщения в конец списка
+                    setMessages(prev => [...prev, ...processedMessages]);
+                    setPage(currentPage);
+
+                    // Проверяем, нашли ли целевое сообщение
+                    found = processedMessages.some((msg: any) => msg.id === targetMessageId);
+
+                    if (found) {
+                        console.log('🔍 [LOAD-HISTORY] ✅ Target message found on page:', currentPage);
+                        return true;
+                    }
+
+                    // Если страница неполная, значит достигнут конец истории
+                    if (processedMessages.length < 15) {
+                        console.log('🔍 [LOAD-HISTORY] Reached end of history without finding message');
+                        return false;
+                    }
+                } else {
+                    console.log('🔍 [LOAD-HISTORY] No more messages available');
+                    return false;
+                }
+
+                currentPage++;
+            } catch (error) {
+                console.error('🔍 [LOAD-HISTORY] ❌ Error loading page:', currentPage, error);
+                return false;
+            }
+        }
+
+        console.log('🔍 [LOAD-HISTORY] Reached max pages without finding message');
+        return false;
+    };
+
+    // Функция для прокрутки к конкретному сообщению
+    const scrollToMessage = useCallback(async (messageId: number) => {
+        console.log('🔍 [SCROLL] Attempting to scroll to message:', messageId);
+
+        // Сначала проверяем, загружено ли сообщение
+        let messageIndex = messages.findIndex(msg => msg.id === messageId);
+
+        if (messageIndex === -1) {
+            console.warn('🔍 [SCROLL] ⚠️ Message not found in current messages, attempting to load history...');
+
+            // Показываем индикатор загрузки
+            setIsLoadingReplyMessage(true);
+
+            try {
+                // Пытаемся загрузить историю до нахождения сообщения
+                const found = await loadHistoryUntilMessage(messageId);
+
+                if (!found) {
+                    console.error('🔍 [SCROLL] ❌ Message not found even after loading history');
+                    Alert.alert(
+                        'Сообщение не найдено',
+                        'Сообщение могло быть удалено или находится слишком далеко в истории.'
+                    );
+                    return;
+                }
+
+                // Ищем сообщение снова после загрузки
+                messageIndex = messages.findIndex(msg => msg.id === messageId);
+
+                if (messageIndex === -1) {
+                    // Даем время на обновление состояния
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    messageIndex = messages.findIndex(msg => msg.id === messageId);
+                }
+            } catch (error) {
+                console.error('🔍 [SCROLL] ❌ Error loading history:', error);
+                Alert.alert('Ошибка', 'Не удалось загрузить сообщение');
+                return;
+            } finally {
+                setIsLoadingReplyMessage(false);
+            }
+        }
+
+        if (messageIndex === -1) {
+            console.error('🔍 [SCROLL] ❌ Message still not found after all attempts');
+            return;
+        }
+
+        console.log('🔍 [SCROLL] Found message at index:', messageIndex);
+
+        try {
+            // Прокручиваем к сообщению
+            flatListRef.current?.scrollToIndex({
+                index: messageIndex,
+                animated: true,
+                viewPosition: 0.5 // Располагаем сообщение по центру экрана
+            });
+
+            // Добавляем временную подсветку для визуальной индикации
+            setTimeout(() => {
+                setMessages(prev =>
+                    prev.map(msg =>
+                        msg.id === messageId
+                            ? { ...msg, _highlighted: true }
+                            : msg
+                    )
+                );
+
+                // Убираем подсветку через 2 секунды
+                setTimeout(() => {
+                    setMessages(prev =>
+                        prev.map(msg =>
+                            msg.id === messageId
+                                ? { ...msg, _highlighted: false }
+                                : msg
+                        )
+                    );
+                }, 2000);
+            }, 300);
+
+            console.log('🔍 [SCROLL] ✅ Scrolled to message successfully');
+        } catch (error) {
+            console.error('🔍 [SCROLL] ❌ Error scrolling to message:', error);
+            // Fallback: пробуем прокрутить с offset
+            try {
+                flatListRef.current?.scrollToOffset({
+                    offset: messageIndex * 100, // Примерная высота сообщения
+                    animated: true
+                });
+            } catch (fallbackError) {
+                console.error('🔍 [SCROLL] ❌ Fallback scroll also failed:', fallbackError);
+            }
+        }
+    }, [messages, page, roomId, currentUserId]);
 
     // Функция для анимированного перехода сообщения в состояние "прочитано"
     const animateMessageAsRead = useCallback((messageId: number) => {
@@ -3283,8 +3479,15 @@ export default function ChatScreen() {
                         hoursAgo: Math.round(hoursAgo * 10) / 10,
                         isUnreadBySender,
                         isReceivedUnread,
-                        messageTime: messageTime.toLocaleString()
+                        messageTime: messageTime.toLocaleString(),
+                        hasReply: !!(msg.reply_to_message_id || msg.replyToMessageId)
                     });
+
+                    // ИСПРАВЛЕНИЕ: Унифицированная обработка полей реплая из API
+                    const replyToMessageId = msg.reply_to_message_id || msg.replyToMessageId || null;
+                    const replyToMessage = msg.reply_to_message || msg.replyToMessage || msg.reply_message || null;
+                    const replyToSender = msg.reply_to_sender || msg.replyToSender || msg.reply_sender || null;
+                    const replyToMediaType = msg.reply_to_media_type || msg.replyToMediaType || msg.reply_media_type || null;
 
                     return {
                         ...msg,
@@ -3298,8 +3501,12 @@ export default function ChatScreen() {
                         isLoadingServerUrl: false,
                         needsReload: false,
                         // Помечаем свежие отправленные сообщения как потенциально непрочитанные
-                        _isUnreadBySender: isUnreadBySender
-                        // ИСПРАВЛЕНИЕ: Убираем _isHistoryUnread - исторические сообщения не должны анимироваться
+                        _isUnreadBySender: isUnreadBySender,
+                        // ИСПРАВЛЕНИЕ: Добавляем поля реплая с обработкой всех вариантов названий
+                        reply_to_message_id: replyToMessageId,
+                        reply_to_message: replyToMessage,
+                        reply_to_sender: replyToSender,
+                        reply_to_media_type: replyToMediaType
                     };
                 });
 
@@ -3959,7 +4166,7 @@ export default function ChatScreen() {
 
         console.log('📤 [SEND] Sending message with optimistic ID:', optimisticMessageId);
         if (replyToMessage) {
-            console.log('📤 [SEND] Reply to message:', replyToMessage.id);
+            console.log('📤 [SEND] Reply to message:', replyToMessage.id, 'text:', replyToMessage.message?.substring(0, 50));
         }
 
         // СНАЧАЛА создаем оптимистичное сообщение для немедленного отображения
@@ -4016,19 +4223,27 @@ export default function ChatScreen() {
         // Помечаем оптимистичное сообщение как непрочитанное
         optimisticMessage._isUnreadBySender = true;
 
-        // Отправляем через WebSocket (убираем optimistic_id так как сервер может его не поддерживать)
+        // ИСПРАВЛЕНИЕ: Отправляем через WebSocket с правильными данными реплая
         const messageData = {
             type: 'chat_message',
             message: messageContent,
             timestamp: timestamp,
             user1: currentUserId,
             user2: recipient.id,
-            // Добавляем данные реплая если есть
+            // КРИТИЧНО: Передаём правильный текст сообщения, а не строку 'text'
             reply_to_message_id: replyToMessage?.id,
-            reply_to_message: replyToMessage?.message,
-            reply_to_sender: replyToMessage?.sender__username,
-            reply_to_media_type: replyToMessage?.mediaType
+            reply_to_message: replyToMessage?.message || null,  // ИСПРАВЛЕНО: текст сообщения
+            reply_to_sender: replyToMessage?.sender__username || null,  // ИСПРАВЛЕНО: имя отправителя
+            reply_to_media_type: replyToMessage?.mediaType || null
         };
+
+        console.log('📤 [SEND] Message data being sent:', {
+            type: messageData.type,
+            message: messageData.message.substring(0, 30),
+            hasReply: !!messageData.reply_to_message_id,
+            replyText: messageData.reply_to_message?.substring(0, 30),
+            replySender: messageData.reply_to_sender
+        });
 
         try {
             sendMessage(messageData);
@@ -6455,25 +6670,36 @@ export default function ChatScreen() {
 
                             {/* Отображение реплая */}
                             {item.reply_to_message_id && (
-                                <View style={[styles.replyContainer, {borderLeftColor: theme.primary}]}>
+                                <TouchableOpacity
+                                    style={[styles.replyContainer, {borderLeftColor: theme.primary}]}
+                                    onPress={() => {
+                                        console.log('💬 [REPLY-TAP] User tapped on reply, scrolling to:', item.reply_to_message_id);
+                                        scrollToMessage(item.reply_to_message_id);
+                                    }}
+                                    activeOpacity={0.7}
+                                >
                                     <View style={styles.replyHeader}>
                                         <MaterialIcons name="reply" size={16} color={theme.primary}/>
                                         <Text style={[styles.replySender, {color: theme.primary}]}>
-                                            {item.reply_to_sender}
+                                            {item.reply_to_sender || 'Пользователь'}
                                         </Text>
                                     </View>
                                     <Text
                                         style={[styles.replyMessage, {color: theme.textSecondary}]}
                                         numberOfLines={2}
                                     >
-                                        {item.reply_to_media_type ?
-                                            `${item.reply_to_media_type === 'image' ? '📷' :
-                                                item.reply_to_media_type === 'video' ? '🎥' :
-                                                    item.reply_to_media_type === 'audio' ? '🎤' :
-                                                        '📄'} ${item.reply_to_media_type}`
-                                            : item.reply_to_message}
+                                        {/* ИСПРАВЛЕНИЕ: Проверяем медиа тип, но игнорируем "text" */}
+                                        {item.reply_to_media_type && item.reply_to_media_type !== 'text' ? (
+                                            `${item.reply_to_media_type === 'image' ? '📷 Изображение' :
+                                                item.reply_to_media_type === 'video' ? '🎥 Видео' :
+                                                    item.reply_to_media_type === 'audio' ? '🎤 Аудио' :
+                                                        item.reply_to_media_type === 'file' ? '📄 Файл' :
+                                                            `📎 ${item.reply_to_media_type}`}`
+                                        ) : (
+                                            item.reply_to_message || 'Сообщение'
+                                        )}
                                     </Text>
-                                </View>
+                                </TouchableOpacity>
                             )}
 
                             {/* Медиа контент - БЕЗ overlay для сохранения взаимодействия */}
@@ -6581,6 +6807,23 @@ export default function ChatScreen() {
                         inverted
                         onEndReached={loadMoreMessages}
                         onEndReachedThreshold={0.1}
+                        onScrollToIndexFailed={(info) => {
+                            console.log('📜 [SCROLL-FAILED] Scroll to index failed:', info);
+                            // Пробуем прокрутить к ближайшему доступному индексу
+                            const offset = info.averageItemLength * info.index;
+                            flatListRef.current?.scrollToOffset({
+                                offset,
+                                animated: true,
+                            });
+                            // Затем пробуем снова прокрутить к целевому индексу
+                            setTimeout(() => {
+                                flatListRef.current?.scrollToIndex({
+                                    index: info.index,
+                                    animated: true,
+                                    viewPosition: 0.5,
+                                });
+                            }, 100);
+                        }}
                         ListFooterComponent={
                             isLoadingMore ? (
                                 <View style={styles.loadingMoreContainer}>
@@ -6609,6 +6852,16 @@ export default function ChatScreen() {
                         windowSize={7}
                         // Убираем getItemLayout - он вызывает мерцание с динамической высотой видео
                     />
+
+                    {/* Индикатор загрузки сообщения для реплая */}
+                    {isLoadingReplyMessage && (
+                        <View style={[styles.loadingReplyContainer, {backgroundColor: theme.surface, borderTopColor: theme.border}]}>
+                            <ActivityIndicator size="small" color={theme.primary} />
+                            <Text style={[styles.loadingReplyText, {color: theme.textSecondary}]}>
+                                Загрузка сообщения...
+                            </Text>
+                        </View>
+                    )}
 
                     {/* Панель реплая */}
                     {replyToMessage && (
@@ -8057,6 +8310,12 @@ export default function ChatScreen() {
                 borderLeftWidth: 3,
                 borderRadius: 6,
                 marginHorizontal: 4,
+                // Добавляем визуальную подсказку что это кликабельно
+                shadowColor: theme.primary,
+                shadowOffset: {width: 0, height: 1},
+                shadowOpacity: 0.1,
+                shadowRadius: 2,
+                elevation: 1,
             },
             replyHeader: {
                 flexDirection: 'row',
@@ -8119,6 +8378,19 @@ export default function ChatScreen() {
             },
             replyIndicatorIcon: {
                 opacity: 0.6,
+            },
+            // Стили для индикатора загрузки сообщения реплая
+            loadingReplyContainer: {
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                paddingVertical: 12,
+                paddingHorizontal: 16,
+                borderTopWidth: 1,
+            },
+            loadingReplyText: {
+                fontSize: 14,
+                marginLeft: 8,
             },
         });
     };
