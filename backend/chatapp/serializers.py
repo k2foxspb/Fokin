@@ -18,11 +18,24 @@ class MessageSerializer(serializers.ModelSerializer):
     mediaFileName = serializers.CharField(source='media_filename', read_only=True)
     mediaSize = serializers.IntegerField(source='media_size', read_only=True)
 
+    # ИСПРАВЛЕНИЕ: Поля для реплаев
+    reply_to_message_id = serializers.SerializerMethodField()
+    reply_to_message = serializers.CharField(source='reply_to_message_text', read_only=True)
+    reply_to_sender = serializers.CharField(source='reply_to_sender_name', read_only=True)
+    reply_to_media_type = serializers.CharField(read_only=True)
+
+    def get_reply_to_message_id(self, obj):
+        """Получаем ID сообщения, на которое был ответ"""
+        if obj.reply_to_message:
+            return obj.reply_to_message.id
+        return None
+
     class Meta:
         model = PrivateMessage
         fields = [
             'id', 'message', 'sender__username', 'timestamp', 'read', 'sender_id',
-            'mediaType', 'mediaHash', 'mediaFileName', 'mediaSize'
+            'mediaType', 'mediaHash', 'mediaFileName', 'mediaSize',
+            'reply_to_message_id', 'reply_to_message', 'reply_to_sender', 'reply_to_media_type'
         ]
 
 

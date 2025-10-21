@@ -208,8 +208,8 @@ class ChatHistoryView(generics.ListAPIView):
         logger.info(f"📜 [CHAT-HISTORY] User {request.user.id} requesting history for room {room_id}")
         logger.info(f"📜 [CHAT-HISTORY] Parameters: page={page}, limit={limit}")
 
-        # Получаем QuerySet
-        queryset = self.get_queryset()
+        # Получаем QuerySet с предзагрузкой связанных объектов
+        queryset = self.get_queryset().select_related('reply_to_message', 'reply_to_message__sender')
 
         if not queryset.exists():
             logger.warning(f"📜 [CHAT-HISTORY] No messages or access denied for room {room_id}")
@@ -235,50 +235,42 @@ class ChatHistoryView(generics.ListAPIView):
         serializer = self.get_serializer(page_obj, many=True)
         serialized_data = serializer.data
 
-        # ИСПРАВЛЕНИЕ: Явно добавляем поля реплаев для каждого сообщения
-        messages_with_replies = []
+        # Проверяем и логируем данные реплаев
         reply_count = 0
-
         for i, msg_data in enumerate(serialized_data):
             msg_obj = page_obj[i]
 
-            # Добавляем поля реплаев, если они есть
-            if hasattr(msg_obj, 'reply_to') and msg_obj.reply_to:
-                msg_data['reply_to_message_id'] = msg_obj.reply_to.id
-                msg_data['reply_to_message'] = msg_obj.reply_to.message if not msg_obj.reply_to.is_media_message else None
-                msg_data['reply_to_sender'] = msg_obj.reply_to.sender.username
-                msg_data['reply_to_media_type'] = msg_obj.reply_to.media_type if msg_obj.reply_to.is_media_message else None
+            # Логируем каждое сообщение с реплаем
+            if msg_obj.reply_to_message_id:
                 reply_count += 1
+                logger.info(f"📜 [REPLY] Message {msg_obj.id} -> reply_to={msg_obj.reply_to_message_id}")
+                logger.info(f"📜 [REPLY] Serialized data: {msg_data.get('reply_to_message_id')}, text='{msg_data.get('reply_to_message', 'NONE')[:30]}', sender='{msg_data.get('reply_to_sender', 'NONE')}'")
 
-                logger.debug(f"📜 [CHAT-HISTORY] Message {msg_obj.id} has reply to message {msg_obj.reply_to.id}")
-            else:
-                # Обеспечиваем консистентность структуры
-                msg_data['reply_to_message_id'] = None
-                msg_data['reply_to_message'] = None
-                msg_data['reply_to_sender'] = None
-                msg_data['reply_to_media_type'] = None
+                # Проверяем что reply_to_message_text не пустой
+                if msg_obj.reply_to_message_text:
+                    logger.info(f"📜 [REPLY] DB reply_to_message_text: '{msg_obj.reply_to_message_text[:50]}'")
+                else:
+                    logger.warning(f"📜 [REPLY] ⚠️ reply_to_message_text is empty for message {msg_obj.id}")
 
-            messages_with_replies.append(msg_data)
+                # Проверяем что reply_to_sender_name не пустой
+                if msg_obj.reply_to_sender_name:
+                    logger.info(f"📜 [REPLY] DB reply_to_sender_name: '{msg_obj.reply_to_sender_name}'")
+                else:
+                    logger.warning(f"📜 [REPLY] ⚠️ reply_to_sender_name is empty for message {msg_obj.id}")
 
         # Подсчитываем медиа-сообщения
         media_messages = [msg for msg in page_obj if msg.is_media_message]
         media_count = len(media_messages)
 
-        logger.info(f"📜 [CHAT-HISTORY] Returning {len(messages_with_replies)} messages, {media_count} with media, {reply_count} with replies")
+        logger.info(f"📜 [CHAT-HISTORY] Returning {len(serialized_data)} messages, {media_count} with media, {reply_count} with replies")
 
         # Логируем примеры медиа-сообщений
         if media_count > 0:
             for i, msg in enumerate(media_messages[:3]):
                 logger.info(f"📜 [CHAT-HISTORY] Media message {i+1}: ID={msg.id}, type={msg.media_type}, hash={msg.media_hash}")
 
-        # Логируем примеры реплаев
-        if reply_count > 0:
-            reply_messages = [msg for msg in page_obj if hasattr(msg, 'reply_to') and msg.reply_to]
-            for i, msg in enumerate(reply_messages[:3]):
-                logger.info(f"📜 [CHAT-HISTORY] Reply message {i+1}: ID={msg.id}, reply_to={msg.reply_to.id}, reply_sender={msg.reply_to.sender.username}")
-
         return Response({
-            'messages': messages_with_replies,
+            'messages': serialized_data,
             'has_more': page_obj.has_next(),
             'current_page': page,
             'total_pages': paginator.num_pages,
