@@ -134,11 +134,39 @@ class PrivateMessage(models.Model):
         verbose_name='Медиафайл'
     )
 
+    # Поля для реплаев (ответов на сообщения)
+    reply_to_message = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='replies',
+        verbose_name='Ответ на сообщение'
+    )
+    reply_to_message_text = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name='Текст сообщения, на которое отвечаем'
+    )
+    reply_to_sender_name = models.CharField(
+        max_length=150,
+        blank=True,
+        null=True,
+        verbose_name='Имя отправителя исходного сообщения'
+    )
+    reply_to_media_type = models.CharField(
+        max_length=10,
+        blank=True,
+        null=True,
+        verbose_name='Тип медиа исходного сообщения'
+    )
+
     class Meta:
         indexes = [
             models.Index(fields=['room', 'timestamp']),
             models.Index(fields=['media_hash']),
             models.Index(fields=['media_file']),
+            models.Index(fields=['reply_to_message']),
         ]
         ordering = ['timestamp']
 

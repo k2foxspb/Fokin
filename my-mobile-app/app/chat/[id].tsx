@@ -23,26 +23,144 @@ import Animated, {
     useSharedValue,
     useAnimatedStyle,
     withSpring,
-    runOnJS
+    runOnJS,
+    withTiming
 } from 'react-native-reanimated';
 import {useLocalSearchParams, useRouter} from 'expo-router';
 import {useWebSocket} from '../../hooks/useWebSocket';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {MaterialIcons} from '@expo/vector-icons';
-import { useTheme } from '../../contexts/ThemeContext';
-import { useNotifications } from '../../contexts/NotificationContext';
+import {useTheme} from '../../contexts/ThemeContext';
+import {useNotifications} from '../../contexts/NotificationContext';
 import DirectImage from '../../components/DirectImage';
 import LazyMedia from '../../components/LazyMedia';
 import {API_CONFIG} from '../../config';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
-import { Video, ResizeMode, Audio, AVPlaybackStatus } from 'expo-av';
+import {Video, ResizeMode, Audio, AVPlaybackStatus} from 'expo-av';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Sharing from 'expo-sharing';
 import * as WebBrowser from 'expo-web-browser';
 import * as IntentLauncher from 'expo-intent-launcher';
 import {useSafeAreaInsets} from "react-native-safe-area-context";
+
+// Интерфейс для фоновых загрузок
+interface BackgroundUpload {
+    id: string;
+    messageId: number;
+    roomId: string;
+    fileUri: string;
+    fileName: string;
+    mimeType: string;
+    fileSize: number;
+    mediaType: 'image' | 'video' | 'audio' | 'file';
+    status: 'pending' | 'uploading' | 'completed' | 'failed';
+    progress: number;
+    startTime: number;
+    serverUrl?: string;
+    error?: string;
+}
+
+// Менеджер фоновых загрузок
+class BackgroundUploadManager {
+    private static instance: BackgroundUploadManager;
+    private uploads: Map<string, BackgroundUpload> = new Map();
+    private listeners: Set<(uploads: BackgroundUpload[]) => void> = new Set();
+
+    static getInstance(): BackgroundUploadManager {
+        if (!BackgroundUploadManager.instance) {
+            BackgroundUploadManager.instance = new BackgroundUploadManager();
+        }
+        return BackgroundUploadManager.instance;
+    }
+
+    async saveUpload(upload: BackgroundUpload): Promise<void> {
+        this.uploads.set(upload.id, upload);
+        await this.persistUploads();
+        this.notifyListeners();
+    }
+
+    async updateUpload(id: string, updates: Partial<BackgroundUpload>): Promise<void> {
+        const upload = this.uploads.get(id);
+        if (upload) {
+            Object.assign(upload, updates);
+            await this.persistUploads();
+            this.notifyListeners();
+        }
+    }
+
+    async removeUpload(id: string): Promise<void> {
+        this.uploads.delete(id);
+        await this.persistUploads();
+        this.notifyListeners();
+    }
+
+    getUpload(id: string): BackgroundUpload | undefined {
+        return this.uploads.get(id);
+    }
+
+    getUploadsForRoom(roomId: string): BackgroundUpload[] {
+        return Array.from(this.uploads.values()).filter(upload => upload.roomId === roomId);
+    }
+
+    getAllUploads(): BackgroundUpload[] {
+        return Array.from(this.uploads.values());
+    }
+
+    addListener(listener: (uploads: BackgroundUpload[]) => void): void {
+        this.listeners.add(listener);
+    }
+
+    removeListener(listener: (uploads: BackgroundUpload[]) => void): void {
+        this.listeners.delete(listener);
+    }
+
+    private notifyListeners(): void {
+        const uploads = this.getAllUploads();
+        this.listeners.forEach(listener => listener(uploads));
+    }
+
+    private async persistUploads(): Promise<void> {
+        try {
+            const uploadsData = JSON.stringify(Array.from(this.uploads.entries()));
+            await AsyncStorage.setItem('backgroundUploads', uploadsData);
+        } catch (error) {
+            console.error('📤 [BACKGROUND] Failed to persist uploads:', error);
+        }
+    }
+
+    async loadUploads(): Promise<void> {
+        try {
+            const uploadsData = await AsyncStorage.getItem('backgroundUploads');
+            if (uploadsData) {
+                const uploadsArray = JSON.parse(uploadsData);
+                this.uploads = new Map(uploadsArray);
+                console.log('📤 [BACKGROUND] Loaded', this.uploads.size, 'uploads from storage');
+            }
+        } catch (error) {
+            console.error('📤 [BACKGROUND] Failed to load uploads:', error);
+        }
+    }
+
+    async cleanupOldUploads(): Promise<void> {
+        const now = Date.now();
+        const maxAge = 24 * 60 * 60 * 1000; // 24 часа
+        let cleaned = 0;
+
+        for (const [id, upload] of this.uploads.entries()) {
+            if (now - upload.startTime > maxAge && (upload.status === 'completed' || upload.status === 'failed')) {
+                this.uploads.delete(id);
+                cleaned++;
+            }
+        }
+
+        if (cleaned > 0) {
+            await this.persistUploads();
+            console.log('📤 [BACKGROUND] Cleaned up', cleaned, 'old uploads');
+        }
+    }
+}
 
 interface Message {
     id: number;
@@ -82,6 +200,11 @@ interface Message {
     // Статус прочтения сообщения
     read?: boolean;
     read_at?: string;
+    // Поля для реплаев
+    reply_to_message_id?: number;
+    reply_to_message?: string;
+    reply_to_sender?: string;
+    reply_to_media_type?: string;
 }
 
 interface User {
@@ -143,8 +266,8 @@ const formatTimestamp = (timestamp: number | string | undefined): string => {
 };
 
 export default function ChatScreen() {
-    const { theme } = useTheme();
-    const { userStatuses } = useNotifications();
+    const {theme} = useTheme();
+    const {userStatuses} = useNotifications();
     const insets = useSafeAreaInsets();
     const {id: roomId} = useLocalSearchParams();
     const [messages, setMessages] = useState<Message[]>([]);
@@ -182,66 +305,85 @@ export default function ChatScreen() {
     const [audioSessionReady, setAudioSessionReady] = useState(false);
     const [reconnectAttempts, setReconnectAttempts] = useState(0);
     const [lastReconnectTime, setLastReconnectTime] = useState(0);
-    const [inlineVideoStates, setInlineVideoStates] = useState<{[key: string]: {
-        isPlaying: boolean,
-        isMuted: boolean,
-        isExpanded: boolean,
-        duration: number,
-        position: number,
-        isLoaded: boolean,
-        isFullscreen: boolean
-    }}>({});
+    const [inlineVideoStates, setInlineVideoStates] = useState<{
+        [key: string]: {
+            isPlaying: boolean,
+            isMuted: boolean,
+            isExpanded: boolean,
+            duration: number,
+            position: number,
+            isLoaded: boolean,
+            isFullscreen: boolean,
+            isResetting?: boolean
+        }
+    }>({});
     const [fullscreenModalVideoUri, setFullscreenModalVideoUri] = useState<string | null>(null);
     const [isFullscreenModalVisible, setIsFullscreenModalVisible] = useState(false);
-    const [downloadingDocuments, setDownloadingDocuments] = useState<{[key: number]: boolean}>({});
-    const [documentDownloadProgress, setDocumentDownloadProgress] = useState<{[key: number]: number}>({});
+    const [downloadingDocuments, setDownloadingDocuments] = useState<{ [key: number]: boolean }>({});
+    const [documentDownloadProgress, setDocumentDownloadProgress] = useState<{ [key: number]: number }>({});
+
+    // Состояния для фоновых загрузок
+    const [backgroundUploads, setBackgroundUploads] = useState<BackgroundUpload[]>([]);
+    const backgroundUploadManager = BackgroundUploadManager.getInstance();
 
     // Состояния для записи аудио
     const [isRecordingAudio, setIsRecordingAudio] = useState(false);
 
     // Флаг для отслеживания активности компонента чата
-    const [isChatActive, setIsChatActive] = useState(true);
+    const [isChatActive, setIsChatActive] = useState(false); // ИСПРАВЛЕНИЕ: начинаем с false
+
+    // Флаг для отслеживания "холодного старта" чата (открытие из уведомления/другой части приложения)
+    const [isColdStart, setIsColdStart] = useState(true);
+
+    // Таймер для задержки активации чата
+    const chatActivationTimer = useRef<NodeJS.Timeout | null>(null);
 
     // Кеш для отслеживания уже помеченных сообщений (предотвращение дублирования)
     const markedAsReadCache = useRef<Set<number>>(new Set());
     // Состояние для отслеживания непрочитанных сообщений с анимацией
     const [unreadMessages, setUnreadMessages] = useState<Set<number>>(new Set());
-    const unreadAnimations = useRef<{[key: number]: Animated.Value}>({});
+    const unreadAnimations = useRef<{ [key: number]: Animated.Value }>({});
     // Состояние для отслеживания непрочитанных ОТПРАВЛЕННЫХ сообщений
     const [unreadSentMessages, setUnreadSentMessages] = useState<Set<number>>(new Set());
-    const unreadSentAnimations = useRef<{[key: number]: Animated.Value}>({});
+    const unreadSentAnimations = useRef<{ [key: number]: Animated.Value }>({});
     // Очередь для сообщений, полученных до инициализации
-    const pendingMessagesQueue = useRef<Array<{messageId: number, senderId: number}>>([]);
+    const pendingMessagesQueue = useRef<Array<{ messageId: number, senderId: number }>>([]);
     // Ref'ы для актуальных значений состояний (для использования в WebSocket колбэках)
     const currentUserIdRef = useRef<number | null>(null);
     const isDataLoadedRef = useRef<boolean>(false);
     const isConnectedRef = useRef<boolean>(false);
     const isChatActiveRef = useRef<boolean>(false);
+    const isColdStartRef = useRef<boolean>(true);
     const [audioRecording, setAudioRecording] = useState<Audio.Recording | null>(null);
     const [recordingDuration, setRecordingDuration] = useState(0);
-    const [setAudioPermissionGranted] = useState(false);
+    const [audioPermissionGranted, setAudioPermissionGranted] = useState(false);
     const [playingAudioId, setPlayingAudioId] = useState<number | null>(null);
-    const [audioPlaybackStates, setAudioPlaybackStates] = useState<{[key: number]: {
-        isPlaying: boolean;
-        position: number;
-        duration: number;
-        sound: Audio.Sound | null;
-    }}>({});
+    const [audioPlaybackStates, setAudioPlaybackStates] = useState<{
+        [key: number]: {
+            isPlaying: boolean;
+            position: number;
+            duration: number;
+            sound: Audio.Sound | null;
+        }
+    }>({});
 
     // Состояния для выделения сообщений
     const [isSelectionMode, setIsSelectionMode] = useState(false);
     const [selectedMessages, setSelectedMessages] = useState<Set<number>>(new Set());
 
+    // Состояния для реплаев
+    const [replyToMessage, setReplyToMessage] = useState<Message | null>(null);
+
     const flatListRef = useRef<FlatList>(null);
     const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
     const videoRef = useRef<any>(null);
-    const inlineVideoRefs = useRef<{[key: string]: any}>({});
+    const inlineVideoRefs = useRef<{ [key: string]: any }>({});
 
     const router = useRouter();
 
     const updateMessageSafely = (messageId: number | string, updates: Partial<Message>) => {
         setMessages(prev =>
-            prev.map(msg => msg.id === messageId ? { ...msg, ...updates } : msg)
+            prev.map(msg => msg.id === messageId ? {...msg, ...updates} : msg)
         );
     };
 
@@ -278,10 +420,10 @@ export default function ChatScreen() {
                 });
 
                 // Очищаем флаг нового непрочитанного сообщения
-                setMessages(prev => 
-                    prev.map(msg => 
-                        msg.id === messageId 
-                            ? { ...msg, _isNewUnread: false }
+                setMessages(prev =>
+                    prev.map(msg =>
+                        msg.id === messageId
+                            ? {...msg, _isNewUnread: false}
                             : msg
                     )
                 );
@@ -328,10 +470,10 @@ export default function ChatScreen() {
                 });
 
                 // Очищаем флаг непрочитанного отправленного сообщения из истории
-                setMessages(prev => 
-                    prev.map(msg => 
-                        msg.id === messageId 
-                            ? { ...msg, _isUnreadBySender: false, is_read_by_recipient: true }
+                setMessages(prev =>
+                    prev.map(msg =>
+                        msg.id === messageId
+                            ? {...msg, _isUnreadBySender: false, is_read_by_recipient: true}
                             : msg
                     )
                 );
@@ -569,7 +711,7 @@ export default function ChatScreen() {
                     if (data.type === 'messages_deleted_notification') {
                         console.log('🗑️ [DELETE-NOTIFICATION] Received deletion notification:', data);
 
-                        const { message_ids, deleted_by_user_id, deleted_by_username, delete_type } = data;
+                        const {message_ids, deleted_by_user_id, deleted_by_username, delete_type} = data;
                         const actualCurrentUserId = currentUserIdRef.current;
 
                         if (message_ids && Array.isArray(message_ids)) {
@@ -581,6 +723,11 @@ export default function ChatScreen() {
                                 // Собеседник удалил сообщения только у себя - показываем пометку
                                 setMessages(prev => prev.map(msg => {
                                     if (message_ids.includes(msg.id)) {
+                                        console.log('🗑️ [DELETE-NOTIFICATION] Marking message as deleted by other:', {
+                                            messageId: msg.id,
+                                            isMyMessage: msg.sender_id === actualCurrentUserId,
+                                            deletedBy: deleted_by_username
+                                        });
                                         return {
                                             ...msg,
                                             deletedForUsers: [...(msg.deletedForUsers || []), deleted_by_user_id],
@@ -601,7 +748,7 @@ export default function ChatScreen() {
                     if (data.type === 'messages_deleted_by_user') {
                         console.log('🗑️ [DELETE-NOTIFICATION] Received legacy deletion notification:', data);
 
-                        const { message_ids, deleted_by_user_id, deleted_by_username } = data;
+                        const {message_ids, deleted_by_user_id, deleted_by_username} = data;
                         const actualCurrentUserId = currentUserIdRef.current;
 
                         if (message_ids && Array.isArray(message_ids)) {
@@ -631,7 +778,7 @@ export default function ChatScreen() {
                     if (data.type === 'message_read_by_recipient') {
                         console.log('📖 [READ-NOTIFICATION] Received read notification from recipient:', data);
 
-                        const { message_id, read_by_user_id } = data;
+                        const {message_id, read_by_user_id} = data;
                         const actualCurrentUserId = currentUserIdRef.current;
 
                         // Проверяем что это уведомление о прочтении нашего сообщения
@@ -653,14 +800,14 @@ export default function ChatScreen() {
                     if (data.type === 'message_status_update') {
                         console.log('📖 [STATUS-UPDATE] Received message status update:', data);
 
-                        const { message_id, read, read_by_user_id } = data;
+                        const {message_id, read, read_by_user_id} = data;
 
                         if (message_id) {
                             // Обновляем статус сообщения
-                            setMessages(prev => 
-                                prev.map(msg => 
-                                    msg.id === message_id 
-                                        ? { ...msg, read: read, read_at: read ? new Date().toISOString() : undefined }
+                            setMessages(prev =>
+                                prev.map(msg =>
+                                    msg.id === message_id
+                                        ? {...msg, read: read, read_at: read ? new Date().toISOString() : undefined}
                                         : msg
                                 )
                             );
@@ -673,7 +820,7 @@ export default function ChatScreen() {
                     if (data.type === 'messages_read_by_recipient') {
                         console.log('📖 [BULK-READ-NOTIFICATION] Received bulk read notification:', data);
 
-                        const { message_ids, read_by_user_id } = data;
+                        const {message_ids, read_by_user_id} = data;
                         const actualCurrentUserId = currentUserIdRef.current;
 
                         if (message_ids && Array.isArray(message_ids) && read_by_user_id !== actualCurrentUserId) {
@@ -695,7 +842,7 @@ export default function ChatScreen() {
                     }
 
                     // Обработка сообщений чата (включая сообщения без типа) - РАСШИРЕННАЯ ПРОВЕРКА
-                    const isChatMessage = data.message !== undefined && 
+                    const isChatMessage = data.message !== undefined &&
                         (!data.type || data.type === 'chat_message' || data.type === 'media_message' || data.type === 'message');
 
                     const hasMessageData = data.id && (data.message !== undefined || data.mediaType);
@@ -761,96 +908,77 @@ export default function ChatScreen() {
                             senderId: data.sender_id
                         });
 
-                        // Автоматически помечаем сообщение как прочитанное, если:
-                        // 1. Это не мое сообщение
-                        // 2. Пользователь находится в чате
-                        // 3. Сообщение имеет валидный ID
-                        // 4. Все необходимые данные инициализированы
+                        // УЛУЧШЕННАЯ ЛОГИКА: Обработка новых сообщений с учетом холодного старта
                         if (!isMyMessage && messageId && data.sender_id) {
+                            const actualIsColdStart = isColdStartRef.current;
+
+                            console.log('💬 [NEW-MESSAGE] ========== PROCESSING NEW MESSAGE ==========');
+                            console.log('💬 [NEW-MESSAGE] Message ID:', messageId);
+                            console.log('💬 [NEW-MESSAGE] Chat Active:', actualIsChatActive);
+                            console.log('💬 [NEW-MESSAGE] Is Cold Start:', actualIsColdStart);
+                            console.log('💬 [NEW-MESSAGE] Data Loaded:', actualIsDataLoaded);
+
                             if (actualCurrentUserId && actualIsDataLoaded) {
-                                console.log('💬 [NEW-MESSAGE] ✅ All conditions met, will mark as read with animation');
-                                console.log('💬 [NEW-MESSAGE] Validated data:', {
-                                    messageId,
-                                    senderId: data.sender_id,
-                                    actualCurrentUserId,
-                                    actualIsDataLoaded,
-                                    actualIsConnected,
-                                    actualIsChatActive
-                                });
+                                // КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: Показываем анимацию даже при холодном старте
+                                // если чат активен (пользователь действительно смотрит на экран)
+                                const shouldShowAnimation = actualIsChatActive && (!actualIsColdStart || AppState.currentState === 'active');
 
-                                // Добавляем сообщение в список непрочитанных для визуальной индикации
-                                setUnreadMessages(prev => {
-                                    const newSet = new Set(prev);
-                                    newSet.add(messageId);
-                                    console.log('💬 [NEW-MESSAGE] ✅ Added to unread messages:', messageId);
-                                    return newSet;
-                                });
+                                console.log('💬 [NEW-MESSAGE] Should show animation:', shouldShowAnimation);
+                                console.log('💬 [NEW-MESSAGE] App State:', AppState.currentState);
 
-                                // Создаем анимацию для этого сообщения
-                                if (!unreadAnimations.current[messageId]) {
-                                    const AnimatedNative = require('react-native').Animated;
-                                    unreadAnimations.current[messageId] = new AnimatedNative.Value(1);
-                                    console.log('💬 [NEW-MESSAGE] ✅ Created animation for message:', messageId);
-                                }
+                                if (shouldShowAnimation) {
+                                    console.log('💬 [NEW-MESSAGE] ✅ Processing new message with animation');
 
-                                // Через 1.5 секунды начинаем анимацию прочтения
-                                setTimeout(() => {
-                                    // Повторная проверка перед отправкой (используем актуальные значения из ref'ов)
-                                    const finalCurrentUserId = currentUserIdRef.current;
-                                    const finalIsConnected = isConnectedRef.current;
-                                    const finalIsChatActive = isChatActiveRef.current;
-                                    const finalIsDataLoaded = isDataLoadedRef.current;
+                                    // Добавляем сообщение в список непрочитанных для визуальной индикации
+                                    setUnreadMessages(prev => {
+                                        const newSet = new Set(prev);
+                                        newSet.add(messageId);
+                                        console.log('💬 [NEW-MESSAGE] ✅ Added to unread messages:', messageId);
+                                        return newSet;
+                                    });
 
-                                    // FALLBACK: проверяем wsIsConnected() если ref показывает false
-                                    const actuallyConnected = finalIsConnected || wsIsConnected();
-
-                                    if (actuallyConnected && finalCurrentUserId && finalIsChatActive && finalIsDataLoaded) {
-                                        console.log('💬 [NEW-MESSAGE] ✅ Final check passed, calling markMessageAsRead...');
-                                        markMessageAsRead(messageId, data.sender_id);
-                                        // Запускаем анимацию прочтения через дополнительные 0.5 секунды
-                                        setTimeout(() => {
-                                            animateMessageAsRead(messageId);
-                                        }, 500);
-                                    } else {
-                                        console.warn('💬 [NEW-MESSAGE] ⚠️ State changed, skipping read receipt');
+                                    // Создаем анимацию для этого сообщения
+                                    if (!unreadAnimations.current[messageId]) {
+                                        const AnimatedNative = require('react-native').Animated;
+                                        unreadAnimations.current[messageId] = new AnimatedNative.Value(1);
+                                        console.log('💬 [NEW-MESSAGE] ✅ Created animation for message:', messageId);
                                     }
-                                }, 1500); // Показываем непрочитанное состояние 1.5 секунды
+
+                                    // УЛУЧШЕНИЕ: Адаптивная задержка - меньше для холодного старта
+                                    const animationDelay = actualIsColdStart ? 1000 : 2000; // 1с для холодного старта, 2с обычно
+
+                                    setTimeout(() => {
+                                        // Повторная проверка состояния с актуальными значениями
+                                        if (currentUserIdRef.current && isConnectedRef.current && isChatActiveRef.current) {
+                                            console.log('💬 [NEW-MESSAGE] ✅ Marking as read and starting animation after', animationDelay + 'ms');
+                                            markMessageAsRead(messageId, data.sender_id);
+                                            animateMessageAsRead(messageId);
+                                        }
+                                    }, animationDelay);
+                                } else {
+                                    // Если анимация не нужна - просто отмечаем как прочитанное
+                                    console.log('💬 [NEW-MESSAGE] No animation needed, marking as read immediately');
+                                    markMessageAsRead(messageId, data.sender_id);
+                                }
                             } else {
-                                // Инициализация еще не завершена - добавляем в очередь
-                                console.log('💬 [NEW-MESSAGE] ⚠️ Initialization not complete, adding to pending queue:', {
-                                    messageId,
-                                    senderId: data.sender_id,
-                                    actualCurrentUserId,
-                                    actualIsDataLoaded
-                                });
-                                pendingMessagesQueue.current.push({
-                                    messageId: messageId,
-                                    senderId: data.sender_id
-                                });
-                                console.log('💬 [NEW-MESSAGE] Pending queue size:', pendingMessagesQueue.current.length);
+                                console.log('💬 [NEW-MESSAGE] ⚠️ Not ready for processing, adding to pending queue');
+                                // Добавляем в очередь для обработки после инициализации
+                                pendingMessagesQueue.current.push({messageId, senderId: data.sender_id});
                             }
-                        } else {
-                            console.log('💬 [NEW-MESSAGE] ⚠️ Will NOT mark as read. Reasons:', {
-                                isMyMessage,
-                                missingMessageId: !messageId,
-                                missingSenderId: !data.sender_id,
-                                noCurrentUserId: !actualCurrentUserId,
-                                dataNotLoaded: !actualIsDataLoaded
-                            });
                         }
 
                         setMessages(prev => {
                             // КРИТИЧНО: Сначала проверяем дубликаты по ID, хешу и содержимому
                             const existingById = prev.find(msg => msg.id === messageId);
-                            const existingByHash = data.mediaHash ? 
-                                prev.find(msg => msg.mediaHash === data.mediaHash && msg.sender_id === data.sender_id) : 
+                            const existingByHash = data.mediaHash ?
+                                prev.find(msg => msg.mediaHash === data.mediaHash && msg.sender_id === data.sender_id) :
                                 null;
-                            const existingByContent = !data.mediaHash ? 
-                                prev.find(msg => 
-                                    msg.message === data.message && 
-                                    msg.sender_id === data.sender_id && 
+                            const existingByContent = !data.mediaHash ?
+                                prev.find(msg =>
+                                    msg.message === data.message &&
+                                    msg.sender_id === data.sender_id &&
                                     Math.abs(Number(msg.timestamp) - Number(data.timestamp)) < 30
-                                ) : 
+                                ) :
                                 null;
 
                             if (existingById || existingByHash || existingByContent) {
@@ -894,7 +1022,7 @@ export default function ChatScreen() {
                                 }
 
                                 if (optimisticIndex !== -1) {
-                                   // Обновляем оптимистичное сообщение данными с сервера
+                                    // Обновляем оптимистичное сообщение данными с сервера
                                     const updatedMessages = [...prev];
                                     const originalMessage = updatedMessages[optimisticIndex];
 
@@ -1100,7 +1228,6 @@ export default function ChatScreen() {
             }
 
 
-
             const response = await axios.get(
                 `${API_CONFIG.BASE_URL}/media-api/message/${messageId}/url/`,
                 {
@@ -1146,26 +1273,33 @@ export default function ChatScreen() {
     // Запрос разрешения на использование микрофона
     const requestAudioPermission = async (): Promise<boolean> => {
         try {
+            console.log('🎤 [AUDIO-PERMISSION] Requesting audio permission...');
 
-            const { status: existingStatus } = await Audio.getPermissionsAsync();
+            const {status: existingStatus} = await Audio.getPermissionsAsync();
+            console.log('🎤 [AUDIO-PERMISSION] Existing status:', existingStatus);
 
             if (existingStatus === 'granted') {
+                console.log('🎤 [AUDIO-PERMISSION] ✅ Permission already granted');
                 setAudioPermissionGranted(true);
                 return true;
             }
 
-            const { status } = await Audio.requestPermissionsAsync();
+            console.log('🎤 [AUDIO-PERMISSION] Requesting new permission...');
+            const {status} = await Audio.requestPermissionsAsync();
+            console.log('🎤 [AUDIO-PERMISSION] New permission status:', status);
 
             if (status === 'granted') {
+                console.log('🎤 [AUDIO-PERMISSION] ✅ Permission granted');
                 setAudioPermissionGranted(true);
                 return true;
             }
 
+            console.log('🎤 [AUDIO-PERMISSION] ❌ Permission denied');
             Alert.alert(
                 'Разрешение требуется',
                 'Для записи голосовых сообщений необходим доступ к микрофону. Пожалуйста, включите его в настройках.',
                 [
-                    { text: 'Отмена', style: 'cancel' },
+                    {text: 'Отмена', style: 'cancel'},
                     {
                         text: 'Открыть настройки',
                         onPress: async () => {
@@ -1193,7 +1327,7 @@ export default function ChatScreen() {
 
 
             // Проверяем текущий статус разрешений
-            const { status: currentStatus } = await ImagePicker.getMediaLibraryPermissionsAsync();
+            const {status: currentStatus} = await ImagePicker.getMediaLibraryPermissionsAsync();
             console.log('📱 [PERMISSIONS] Current status:', currentStatus);
 
             if (currentStatus === 'granted') {
@@ -1202,7 +1336,7 @@ export default function ChatScreen() {
             }
 
             // Запрашиваем разрешение
-            const { status, canAskAgain } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+            const {status, canAskAgain} = await ImagePicker.requestMediaLibraryPermissionsAsync();
 
             if (status === 'granted') {
                 return true;
@@ -1214,7 +1348,7 @@ export default function ChatScreen() {
                     'Разрешение требуется',
                     'Разрешение на доступ к медиабиблиотеке было отклонено. Пожалуйста, включите его в настройках приложения.',
                     [
-                        { text: 'Отмена', style: 'cancel' },
+                        {text: 'Отмена', style: 'cancel'},
                         {
                             text: 'Открыть настройки',
                             onPress: async () => {
@@ -1231,7 +1365,7 @@ export default function ChatScreen() {
                 Alert.alert(
                     'Разрешение требуется',
                     'Для выбора медиафайлов необходимо разрешение доступа к медиабиблиотеке.',
-                    [{ text: 'OK' }]
+                    [{text: 'OK'}]
                 );
             }
 
@@ -1259,19 +1393,10 @@ export default function ChatScreen() {
 
             const fileSizeInMB = fileInfo.size / (1024 * 1024);
 
-            // Ограничиваем размер файла для base64 конвертации (30MB для предотвращения OOM)
-            const maxSizeForBase64 = 30 * 1024 * 1024; // 30MB
-            if (fileInfo.size > maxSizeForBase64) {
-                throw new Error(`Файл слишком большой для base64 конвертации: ${fileSizeInMB.toFixed(1)}MB > 30MB. Используйте прямую загрузку.`);
-            }
-
-            // Дополнительная проверка доступной памяти для Android
-            if (Platform.OS === 'android' && fileInfo.size > 20 * 1024 * 1024) {
-                console.warn('📱 [CONVERT] Large file for Android, checking memory...');
-                // Для Android файлов больше 20MB используем более осторожный подход
-                if (fileSizeInMB > 25) {
-                    throw new Error(`Файл ${fileSizeInMB.toFixed(1)}MB слишком большой для base64 на Android. Используйте прямую загрузку.`);
-                }
+            // Ограничиваем размер файла для загрузки (800MB максимальный размер)
+            const maxSizeForUpload = 800 * 1024 * 1024; // 800MB
+            if (fileInfo.size > maxSizeForUpload) {
+                throw new Error(`Файл слишком большой: ${fileSizeInMB.toFixed(1)}MB > 800MB.`);
             }
 
             const base64 = await FileSystem.readAsStringAsync(uri, {
@@ -1284,153 +1409,6 @@ export default function ChatScreen() {
             throw error;
         }
     };
-
-
-    // Суперэкспресс чанковая загрузка для больших файлов
-    const uploadLargeFileChunkedOptimized = async (
-        fileUri: string,
-        mediaType: 'image' | 'video',
-        messageId: number,
-        onProgress?: (progress: number) => void
-    ): Promise<string> => {
-        try {
-            console.log('🚀 [TURBO-UPLOAD] Starting turbo chunk upload...', {
-                messageId,
-                mediaType,
-                fileUri: fileUri.substring(fileUri.lastIndexOf('/') + 1)
-            });
-
-            const token = await getToken();
-            if (!token) {
-                throw new Error('Нет токена авторизации');
-            }
-
-            const fileInfo = await FileSystem.getInfoAsync(fileUri);
-            if (!fileInfo.exists) {
-                throw new Error('Файл не найден');
-            }
-
-            const fileSize = fileInfo.size;
-            const fileSizeMB = fileSize / (1024 * 1024);
-
-            // ТУРБО РЕЖИМ: Максимальная скорость загрузки
-            let chunkSize = 1 * 1024 * 1024; // 1MB базовый размер для скорости
-            if (fileSizeMB > 20) chunkSize = 2 * 1024 * 1024; // 2MB для средних файлов
-            if (fileSizeMB > 50) chunkSize = 5 * 1024 * 1024; // 5MB для больших файлов
-            if (fileSizeMB > 100) chunkSize = 7 * 1024 * 1024; // 10MB для очень больших файлов
-
-            const totalChunks = Math.ceil(fileSize / chunkSize);
-
-            // МАКСИМАЛЬНЫЙ ПАРАЛЛЕЛИЗМ: До 6 одновременных загрузок
-            const maxParallel = Math.min(3, totalChunks, Math.ceil(fileSizeMB / 15)); // До 6 параллельных загрузок
-
-            console.log('🚀 [TURBO-UPLOAD] Turbo configuration:', {
-                chunkSize: (chunkSize / (1024 * 1024)).toFixed(1) + 'MB',
-                totalChunks,
-                maxParallel: maxParallel,
-                turboMode: true
-            });
-
-            if (onProgress) onProgress(5);
-
-            const endpoint = `${API_CONFIG.BASE_URL}/media-api/upload/chunked/`;
-            const uploadId = `turbo_${messageId}_${Date.now()}`;
-
-            // ТУРБО функция загрузки чанка с минимальным таймаутом
-            const uploadChunk = async (chunkIndex: number, start: number, end: number, retryCount = 0): Promise<void> => {
-                try {
-                    const actualLength = Math.min(chunkSize, end - start);
-                    const chunkData = await FileSystem.readAsStringAsync(fileUri, {
-                        encoding: FileSystem.EncodingType.Base64,
-                        position: start,
-                        length: actualLength
-                    });
-
-                    const formData = new FormData();
-                    formData.append('upload_id', uploadId);
-                    formData.append('chunk_index', chunkIndex.toString());
-                    formData.append('total_chunks', totalChunks.toString());
-                    formData.append('chunk_data', chunkData);
-                    formData.append('file_name', `media_${messageId}.${mediaType === 'image' ? 'jpg' : 'mp4'}`);
-                    formData.append('media_type', mediaType);
-
-                    await axios.post(endpoint, formData, {
-                        headers: {
-                            'Authorization': `Token ${token}`,
-                            'Content-Type': 'multipart/form-data',
-                        },
-                        timeout: 60000, // 60 секунд - больше для крупных чанков
-                    });
-
-                    console.log(`🚀 [TURBO-UPLOAD] ⚡ Chunk ${chunkIndex + 1}/${totalChunks} uploaded (${(actualLength / (1024 * 1024)).toFixed(1)}MB)`);
-                } catch (error) {
-                    if (retryCount < 1) { // Только одна повторная попытка в турбо режиме
-                        console.log(`🚀 [TURBO-UPLOAD] ⚠️ Quick retry chunk ${chunkIndex + 1}`);
-                        await new Promise(resolve => setTimeout(resolve, 500)); // Быстрая пауза
-                        return uploadChunk(chunkIndex, start, end, retryCount + 1);
-                    }
-                    throw new Error(`Turbo chunk ${chunkIndex} failed: ${error.message}`);
-                }
-            };
-
-            // ТУРБО загрузка: Максимальный параллелизм с батчами
-            let uploadedChunks = 0;
-            const batchSize = maxParallel;
-
-            for (let i = 0; i < totalChunks; i += batchSize) {
-                const chunkPromises = [];
-
-                for (let j = 0; j < batchSize && (i + j) < totalChunks; j++) {
-                    const chunkIndex = i + j;
-                    const start = chunkIndex * chunkSize;
-                    const end = Math.min(start + chunkSize, fileSize);
-
-                    chunkPromises.push(uploadChunk(chunkIndex, start, end));
-                }
-
-                // Параллельная загрузка батча
-                await Promise.all(chunkPromises);
-                uploadedChunks += chunkPromises.length;
-
-                // Исправляем расчет прогресса: 5% подготовка + 90% загрузка + 5% финализация
-                const uploadProgress = Math.round((uploadedChunks / totalChunks) * 90);
-                const totalProgress = Math.min(5 + uploadProgress, 95); // Максимум 95% до финализации
-                if (onProgress) onProgress(totalProgress);
-
-                console.log(`🚀 [TURBO-UPLOAD] ⚡ Batch completed: ${uploadedChunks}/${totalChunks} chunks`);
-            }
-
-            console.log('🚀 [TURBO-UPLOAD] ⚡ All chunks uploaded in turbo mode, finalizing...');
-            if (onProgress) onProgress(95);
-
-            // Финализация с коротким таймаутом
-            const finalizeResponse = await axios.post(`${API_CONFIG.BASE_URL}/media-api/upload/finalize/`, {
-                upload_id: uploadId,
-                file_name: `media_${messageId}.${mediaType === 'image' ? 'jpg' : 'mp4'}`,
-                media_type: mediaType,
-                is_public: true,
-                turbo_mode: true
-            }, {
-                headers: {
-                    'Authorization': `Token ${token}`,
-                    'Content-Type': 'application/json',
-                },
-                timeout: 30000 // 30 секунд для финализации
-            });
-
-            if (onProgress) onProgress(100);
-
-            if (!finalizeResponse.data.success) {
-                throw new Error(finalizeResponse.data.message || 'Турбо финализация не удалась');
-            }
-            return finalizeResponse.data.file_url;
-
-        } catch (error) {
-            console.error('🚀 [TURBO-UPLOAD] ❌ Turbo chunk upload failed:', error);
-            throw error;
-        }
-    };
-
 
 
     // Простая, но эффективная реализация хэширования для React Native
@@ -1515,7 +1493,7 @@ export default function ChatScreen() {
             });
 
             console.log('🎤 [RECORD] Creating new recording...');
-            const { recording } = await Audio.Recording.createAsync(
+            const {recording} = await Audio.Recording.createAsync(
                 Audio.RecordingOptionsPresets.HIGH_QUALITY
             );
 
@@ -1626,6 +1604,18 @@ export default function ChatScreen() {
         }
     };
 
+    // Функция для установки реплая
+    const setReply = (message: Message) => {
+        setReplyToMessage(message);
+        console.log('💬 [REPLY] Set reply to message:', message.id, message.message?.substring(0, 50));
+    };
+
+    // Функция для отмены реплая
+    const cancelReply = () => {
+        setReplyToMessage(null);
+        console.log('💬 [REPLY] Reply cancelled');
+    };
+
     // Отправка аудио сообщения
     const sendAudioMessage = async (audioUri: string, duration: number, fileSize?: number) => {
         if (!isConnected || !isDataLoaded || !recipient?.id || !currentUserId) {
@@ -1676,7 +1666,7 @@ export default function ChatScreen() {
             // Прокручиваем к новому сообщению
             setTimeout(() => {
                 if (flatListRef.current) {
-                    flatListRef.current.scrollToIndex({ index: 0, animated: true });
+                    flatListRef.current.scrollToIndex({index: 0, animated: true});
                 }
             }, 100);
 
@@ -1757,7 +1747,7 @@ export default function ChatScreen() {
                     setPlayingAudioId(null);
                     setAudioPlaybackStates(prev => ({
                         ...prev,
-                        [messageId]: { ...currentState, isPlaying: false }
+                        [messageId]: {...currentState, isPlaying: false}
                     }));
                 }
                 return;
@@ -1786,9 +1776,9 @@ export default function ChatScreen() {
             console.log('🎤 [PLAY] Loading sound from:', audioUri.substring(0, 100));
 
             // Создаем и загружаем звук
-            const { sound } = await Audio.Sound.createAsync(
-                { uri: audioUri },
-                { shouldPlay: true },
+            const {sound} = await Audio.Sound.createAsync(
+                {uri: audioUri},
+                {shouldPlay: true},
                 (status) => {
                     if (status.isLoaded) {
                         setAudioPlaybackStates(prev => ({
@@ -1921,7 +1911,7 @@ export default function ChatScreen() {
             // Убираем индикатор удаления при ошибке
             setMessages(prev => prev.map(msg => {
                 if (ids.includes(Number(msg.id))) {
-                    const { isDeleting, ...msgWithoutDeleting } = msg;
+                    const {isDeleting, ...msgWithoutDeleting} = msg;
                     return msgWithoutDeleting;
                 }
                 return msg;
@@ -1995,7 +1985,7 @@ export default function ChatScreen() {
                 'Удалить сообщения',
                 `Удалить ${selectedMessages.size} сообщений из своей переписки? Собеседник будет видеть ваши сообщения с пометкой "удалено из переписки".`,
                 [
-                    { text: 'Отмена', style: 'cancel' },
+                    {text: 'Отмена', style: 'cancel'},
                     {
                         text: 'Удалить у себя',
                         style: 'destructive',
@@ -2005,7 +1995,7 @@ export default function ChatScreen() {
                         }
                     }
                 ],
-                { cancelable: true }
+                {cancelable: true}
             );
         } else if (hasMyMessages) {
             // Только мои сообщения - можно удалить для всех
@@ -2013,7 +2003,7 @@ export default function ChatScreen() {
                 'Удалить сообщения',
                 `Выберите тип удаления для ${selectedMessages.size} ваших сообщений:`,
                 [
-                    { text: 'Отмена', style: 'cancel' },
+                    {text: 'Отмена', style: 'cancel'},
                     {
                         text: 'Удалить у себя',
                         onPress: () => {
@@ -2030,7 +2020,7 @@ export default function ChatScreen() {
                         }
                     }
                 ],
-                { cancelable: true }
+                {cancelable: true}
             );
         } else {
             // Только чужие сообщения - удаление для себя
@@ -2038,7 +2028,7 @@ export default function ChatScreen() {
                 'Удалить сообщения',
                 `Удалить ${selectedMessages.size} сообщений из своей переписки? Собеседник будет видеть свои сообщения с пометкой "удалено из переписки".`,
                 [
-                    { text: 'Отмена', style: 'cancel' },
+                    {text: 'Отмена', style: 'cancel'},
                     {
                         text: 'Удалить у себя',
                         style: 'destructive',
@@ -2048,7 +2038,7 @@ export default function ChatScreen() {
                         }
                     }
                 ],
-                { cancelable: true }
+                {cancelable: true}
             );
         }
     };
@@ -2062,7 +2052,7 @@ export default function ChatScreen() {
         Alert.alert(
             'Переслать сообщения',
             `Функция пересылки ${selectedMessages.size} сообщений будет реализована позже`,
-            [{ text: 'OK' }]
+            [{text: 'OK'}]
         );
 
         // TODO: Реализовать логику пересылки
@@ -2124,7 +2114,7 @@ export default function ChatScreen() {
                             Alert.alert(
                                 'Изображение слишком большое',
                                 `Размер: ${fileSizeMB.toFixed(1)} MB\nМаксимум для P2P‑передачи: 100 MB`,
-                                [{ text: 'Понятно' }]
+                                [{text: 'Понятно'}]
                             );
                             continue; // переходим к следующему файлу
                         }
@@ -2145,7 +2135,7 @@ export default function ChatScreen() {
                                 'Недостаточно памяти',
                                 `Изображение слишком большое для обработки в памяти.\n\nРазмер: ${asset.fileSize ? Math.round(asset.fileSize / (1024 * 1024)) + 'MB' : 'неизвестно'}\n\nПопробуйте выбрать меньший файл или использовать прямую загрузку.`,
                                 [
-                                    { text: 'Понятно' },
+                                    {text: 'Понятно'},
                                     {
                                         text: 'Прямая загрузка',
                                         onPress: async () => {
@@ -2162,7 +2152,7 @@ export default function ChatScreen() {
                             Alert.alert(
                                 'Ошибка обработки изображения',
                                 `Не удалось получить данные изображения.\n\n${errMsg}`,
-                                [{ text: 'OK' }]
+                                [{text: 'OK'}]
                             );
                         }
                     }
@@ -2207,7 +2197,7 @@ export default function ChatScreen() {
                     Alert.alert(
                         'Файл слишком большой',
                         `Размер: ${Math.round(asset.size / 1024 / 1024)} MB. Максимум: 100 MB.`,
-                        [{ text: 'OK' }]
+                        [{text: 'OK'}]
                     );
                     continue; // переходим к следующему файлу
                 }
@@ -2215,32 +2205,20 @@ export default function ChatScreen() {
                 const fileSizeMB = asset.size ? asset.size / (1024 * 1024) : 0;
 
                 try {
-                    if (fileSizeMB > 10) {
-                        // Большие документы – прямой аплоад
-                        console.log('📄 [PICKER] Direct upload for large document');
-                        await sendDocumentDirect(
-                            asset.uri,
-                            asset.name || `document_${Date.now()}`,
-                            asset.mimeType || 'application/octet-stream',
-                            asset.size
-                        );
-                    } else {
-                        // Маленькие – через base64
-                        console.log('📄 [PICKER] Converting document to base64...');
-                        const base64 = await convertToBase64(asset.uri);
-                        await sendDocumentMessage(
-                            base64,
-                            asset.name || `document_${Date.now()}`,
-                            asset.mimeType || 'application/octet-stream',
-                            asset.size
-                        );
-                    }
+                    // Все документы загружаются напрямую (без base64)
+                    console.log('📄 [PICKER] Direct upload for document');
+                    await sendDocumentDirect(
+                        asset.uri,
+                        asset.name || `document_${Date.now()}`,
+                        asset.mimeType || 'application/octet-stream',
+                        asset.size
+                    );
                 } catch (fileError) {
                     console.error('📄 [PICKER] ❌ Ошибка обработки документа:', fileError);
                     Alert.alert(
                         'Ошибка',
                         `Не удалось обработать документ "${asset.name || 'без имени'}".`,
-                        [{ text: 'OK' }]
+                        [{text: 'OK'}]
                     );
                 }
             }
@@ -2251,13 +2229,13 @@ export default function ChatScreen() {
     };
 
     // Диагностика видеофайла для проверки совместимости
-    const diagnoseVideo = async (videoUri: string): Promise<{compatible: boolean, info: any}> => {
+    const diagnoseVideo = async (videoUri: string): Promise<{ compatible: boolean, info: any }> => {
         try {
             console.log('🎥 [DIAGNOSE] Analyzing video compatibility:', videoUri.substring(videoUri.lastIndexOf('/') + 1));
 
             const fileInfo = await FileSystem.getInfoAsync(videoUri);
             if (!fileInfo.exists) {
-                return { compatible: false, info: { error: 'File does not exist' } };
+                return {compatible: false, info: {error: 'File does not exist'}};
             }
 
             const fileSizeMB = fileInfo.size / (1024 * 1024);
@@ -2265,7 +2243,7 @@ export default function ChatScreen() {
             // Простая эвристика на основе размера и расширения
             const isLargeFile = fileSizeMB > 100;
             const hasCompatibleExtension = videoUri.toLowerCase().includes('.mp4') ||
-                                         videoUri.toLowerCase().includes('.mov');
+                videoUri.toLowerCase().includes('.mov');
 
             const diagnostics = {
                 fileSize: fileInfo.size,
@@ -2284,12 +2262,13 @@ export default function ChatScreen() {
             };
         } catch (error) {
             console.error('🎥 [DIAGNOSE] Error diagnosing video:', error);
-            return { compatible: false, info: { error: error.message } };
+            return {compatible: false, info: {error: error.message}};
         }
     };
 
     // Выбор видео с диагностикой
     const pickVideo = async () => {
+        console.log('🎥 [PICKER] ========== STARTING VIDEO PICKER ==========');
 
         try {
             // Проверяем разрешения с более подробной обработкой
@@ -2299,12 +2278,12 @@ export default function ChatScreen() {
                 Alert.alert(
                     'Разрешение требуется',
                     'Для выбора видео необходимо разрешение доступа к медиабиблиотеке. Предоставьте разрешение в настройках приложения.',
-                    [{ text: 'OK' }]
+                    [{text: 'OK'}]
                 );
                 return;
             }
 
-
+            console.log('🎥 [PICKER] Launching video picker...');
 
             const result = await ImagePicker.launchImageLibraryAsync({
                 mediaTypes: ['videos'],
@@ -2314,118 +2293,85 @@ export default function ChatScreen() {
                 allowsMultipleSelection: true, // Включаем множественный выбор
             });
 
-            if (!result.canceled && result.assets && result.assets.length > 0) {
-                for (const asset of result.assets) {
-                    try {
-                        const maxVideoSize = 600 * 1024 * 1024; // 300MB
-                        if (asset.fileSize && asset.fileSize > maxVideoSize) {
-                            Alert.alert(
-                                'Файл слишком большой',
-                                `Размер видео: ${Math.round(asset.fileSize / 1024 / 1024)}MB. Максимальный размер: 300MB.`
-                            );
-                            continue;
-                        }
-                        const maxDuration = 3000000; // 50 минут
-                        if (asset.duration && asset.duration > maxDuration) {
-                            Alert.alert(
-                                'Видео слишком длинное',
-                                `Длительность: ${Math.round(asset.duration / 1000)}сек. Максимальная длительность: 10 минут.`
-                            );
-                            continue;
-                        }
-                        await sendMediaMessageDirect(asset.uri, 'video', asset.fileSize);
-                    } catch (e) {
-                        console.error('❌ Ошибка загрузки видео', e);
-                        Alert.alert('Ошибка', 'Не удалось загрузить видео');
-                    }
-                }
-            }
-
-            console.log('🎥 [PICKER] Picker result:', {
-                canceled: result.canceled,
-                hasAssets: !!result.assets
-            });
-
             console.log('🎥 [PICKER] Video picker result:', {
                 canceled: result.canceled,
                 assetsCount: result.assets?.length || 0
             });
 
-            if (!result.canceled && result.assets[0]) {
-                const asset = result.assets[0];
-                console.log('🎥 [PICKER] Video asset details:', {
-                    uri: asset.uri,
+            if (result.canceled || !result.assets?.length) {
+                console.log('🎥 [PICKER] User canceled or no assets selected');
+                return;
+            }
+
+            // Создаем Set для отслеживания уже обработанных файлов (дедупликация)
+            const processedUris = new Set<string>();
+            const processedSizes = new Set<string>();
+
+            console.log('🎥 [PICKER] Processing', result.assets.length, 'video assets...');
+
+            // Обрабатываем каждый выбранный видео файл
+            for (let i = 0; i < result.assets.length; i++) {
+                const asset = result.assets[i];
+                console.log(`🎥 [PICKER] Processing asset ${i + 1}/${result.assets.length}:`, {
+                    uri: asset.uri?.substring(asset.uri.lastIndexOf('/') + 1),
+                    fileSize: asset.fileSize,
                     duration: asset.duration,
                     width: asset.width,
-                    height: asset.height,
-                    fileSize: asset.fileSize,
-                    fileName: asset.fileName,
-                    mimeType: asset.mimeType
+                    height: asset.height
                 });
 
-                // Диагностируем видео на совместимость
-                const diagnosis = await diagnoseVideo(asset.uri);
-                console.log('🎥 [PICKER] Video diagnosis result:', diagnosis);
-
-                // Проверяем размер файла
-                const maxVideoSize = 600 * 1024 * 1024; // 300MB
-                if (asset.fileSize && asset.fileSize > maxVideoSize) {
-                    Alert.alert(
-                        'Файл слишком большой',
-                        `Размер видео: ${Math.round(asset.fileSize / 1024 / 1024)}MB. Максимальный размер: 300MB.`
-                    );
-                    return;
+                // ДЕДУПЛИКАЦИЯ: Проверяем дубликаты по URI и размеру
+                const uniqueKey = `${asset.uri}_${asset.fileSize}_${asset.duration}`;
+                if (processedUris.has(asset.uri) || processedSizes.has(uniqueKey)) {
+                    console.warn('🎥 [PICKER] ⚠️ Duplicate video detected, skipping:', {
+                        uri: asset.uri?.substring(asset.uri.lastIndexOf('/') + 1),
+                        fileSize: asset.fileSize
+                    });
+                    continue;
                 }
 
-                // Проверяем длительность видео
-                const maxDuration = 3000000; // 50 минут
-                if (asset.duration && asset.duration > maxDuration) {
-                    Alert.alert(
-                        'Видео слишком длинное',
-                        `Длительность: ${Math.round(asset.duration / 1000)}сек. Максимальная длительность: 10 минут.`
-                    );
-                    return;
-                }
-
-
+                // Добавляем в множества для отслеживания
+                processedUris.add(asset.uri);
+                processedSizes.add(uniqueKey);
 
                 try {
-                    const fileSizeMB = asset.fileSize ? asset.fileSize / (1024 * 1024) : 0;
-                    // Сжатие выполняется на сервере через Celery для лучшей производительности
+                    // Проверяем размер файла
+                    const maxVideoSize = 600 * 1024 * 1024; // 600MB
+                    if (asset.fileSize && asset.fileSize > maxVideoSize) {
+                        console.warn('🎥 [PICKER] File too large:', Math.round(asset.fileSize / 1024 / 1024) + 'MB');
+                        Alert.alert(
+                            'Файл слишком большой',
+                            `Размер видео: ${Math.round(asset.fileSize / 1024 / 1024)}MB. Максимальный размер: 600MB.`
+                        );
+                        continue;
+                    }
 
+                    // Проверяем длительность видео
+                    const maxDuration = 3000000; // 50 минут
+                    if (asset.duration && asset.duration > maxDuration) {
+                        console.warn('🎥 [PICKER] Video too long:', Math.round(asset.duration / 1000) + 's');
+                        Alert.alert(
+                            'Видео слишком длинное',
+                            `Длительность: ${Math.round(asset.duration / 1000)}сек. Максимальная длительность: 50 минут.`
+                        );
+                        continue;
+                    }
+
+                    console.log(`🎥 [PICKER] ✅ Asset ${i + 1} validation passed, uploading...`);
+
+                    // Загружаем видео
                     await sendMediaMessageDirect(asset.uri, 'video', asset.fileSize);
 
-                } catch (conversionError) {
-                    console.error('🎥 [PICKER] ❌ Video processing failed:', conversionError);
+                    console.log(`🎥 [PICKER] ✅ Asset ${i + 1} uploaded successfully`);
 
-                    // Проверяем, является ли это ошибкой памяти
-                    const errorMessage = conversionError.toString();
-                    if (errorMessage.includes('OutOfMemoryError') || errorMessage.includes('allocation')) {
-                        Alert.alert(
-                            'Не хватает памяти',
-                            `Видео размером ${Math.round(asset.fileSize / (1024 * 1024))}MB слишком большое для обработки в памяти.\n\nПопробуйте:\n• Выбрать более короткое видео\n• Сжать видео в другом приложении\n• Перезапустить приложение для очистки памяти`,
-                            [
-                                { text: 'Понятно', style: 'default' },
-                                {
-                                    text: 'Попробовать прямую загрузку',
-                                    style: 'default',
-                                    onPress: async () => {
-                                        try {
-                                            console.log('🎥 [PICKER] Trying direct upload after memory error...');
-                                            await sendMediaMessageDirect(asset.uri, 'video', asset.fileSize);
-                                        } catch (directError) {
-                                            console.error('🎥 [PICKER] Direct upload also failed:', directError);
-                                            Alert.alert('Ошибка', 'Не удалось загрузить файл прямым способом. Попробуйте выбрать файл меньшего размера.');
-                                        }
-                                    }
-                                }
-                            ]
-                        );
-                    } else {
-                        Alert.alert('Ошибка', 'Не удалось обработать видео. Попробуйте выбрать другой файл.');
-                    }
+                } catch (assetError) {
+                    console.error(`🎥 [PICKER] ❌ Error processing asset ${i + 1}:`, assetError);
+                    Alert.alert('Ошибка', `Не удалось загрузить видео ${i + 1}`);
                 }
             }
+
+            console.log('🎥 [PICKER] ✅ All video assets processed');
+
         } catch (error: any) {
             console.error('🎥 [PICKER] ❌ Error picking video:', error);
 
@@ -2451,7 +2397,7 @@ export default function ChatScreen() {
             Alert.alert(
                 'Ошибка выбора видео',
                 errorMessage + '\n\nПопробуйте:\n• Перезапустить приложение\n• Проверить разрешения в настройках\n• Выбрать другое видео',
-                [{ text: 'OK' }]
+                [{text: 'OK'}]
             );
         }
     };
@@ -2466,7 +2412,7 @@ export default function ChatScreen() {
         try {
             const timestamp = Math.floor(Date.now() / 1000);
             const messageId = Date.now();
-            const mediaHash = generateMediaHash(base64Data, { timestamp, messageId, senderId: currentUserId });
+            const mediaHash = generateMediaHash(base64Data, {timestamp, messageId, senderId: currentUserId});
 
             // Создаем оптимистичное сообщение
             const optimisticMessage: Message = {
@@ -2518,7 +2464,7 @@ export default function ChatScreen() {
             );
 
             // Удаляем временный файл
-            await FileSystem.deleteAsync(tempUri, { idempotent: true });
+            await FileSystem.deleteAsync(tempUri, {idempotent: true});
 
             // Обновляем сообщение с URL сервера
             setMessages(prev =>
@@ -2598,8 +2544,7 @@ export default function ChatScreen() {
                 mediaSize: actualFileSize,
                 mimeType: mimeType,
                 isUploading: true,
-                uploadProgress: 0,
-                uploadMethod: fileSizeMB > 50 ? 'chunk' : 'http'
+                uploadProgress: 0
             };
 
             setMessages(prev => [optimisticMessage, ...prev]);
@@ -2680,19 +2625,53 @@ export default function ChatScreen() {
         }
     };
 
-    // Универсальная функция загрузки файлов
+    // Универсальная функция загрузки файлов с поддержкой фонового режима
     const uploadFileGeneric = async (
         fileUri: string,
         fileName: string,
         mimeType: string,
         messageId: number,
-        onProgress?: (progress: number) => void
+        onProgress?: (progress: number) => void,
+        enableBackground: boolean = true
     ): Promise<string> => {
+        const uploadId = `upload_${messageId}_${Date.now()}`;
+
         try {
             const token = await getToken();
             if (!token) {
                 throw new Error('Нет токена авторизации');
             }
+
+            // Создаем запись о фоновой загрузке
+            if (enableBackground) {
+                const backgroundUpload: BackgroundUpload = {
+                    id: uploadId,
+                    messageId: messageId,
+                    roomId: String(roomId),
+                    fileUri: fileUri,
+                    fileName: fileName,
+                    mimeType: mimeType,
+                    fileSize: 0, // Будет обновлен ниже
+                    mediaType: mimeType.startsWith('image/') ? 'image' :
+                        mimeType.startsWith('video/') ? 'video' :
+                            mimeType.startsWith('audio/') ? 'audio' : 'file',
+                    status: 'pending',
+                    progress: 0,
+                    startTime: Date.now()
+                };
+
+                // Получаем размер файла
+                try {
+                    const fileInfo = await FileSystem.getInfoAsync(fileUri);
+                    backgroundUpload.fileSize = fileInfo.size;
+                } catch (sizeError) {
+                    console.warn('📤 [BACKGROUND] Could not get file size:', sizeError);
+                }
+
+                await backgroundUploadManager.saveUpload(backgroundUpload);
+                console.log('📤 [BACKGROUND] Created background upload:', uploadId);
+            }
+
             const formData = new FormData();
 
             // Определяем тип файла для правильного endpoint
@@ -2723,11 +2702,20 @@ export default function ChatScreen() {
                 originalMimeType: mimeType,
                 finalMimeType: finalMimeType,
                 endpoint: endpoint,
-                fileUri: fileUri.substring(fileUri.lastIndexOf('/') + 1)
+                fileUri: fileUri.substring(fileUri.lastIndexOf('/') + 1),
+                backgroundEnabled: enableBackground
             });
 
             // Добавляем публичный доступ для чатов
             formData.append('is_public', 'true');
+
+            // Обновляем статус на "загружается"
+            if (enableBackground) {
+                await backgroundUploadManager.updateUpload(uploadId, {
+                    status: 'uploading',
+                    progress: 5
+                });
+            }
 
             if (onProgress) {
                 onProgress(10);
@@ -2741,14 +2729,23 @@ export default function ChatScreen() {
                         'Authorization': `Token ${token}`,
                         'Content-Type': 'multipart/form-data',
                     },
-                    timeout: 600000, // 10 минут
+                    timeout: 1800000, // 30 минут для больших файлов
                     onUploadProgress: (progressEvent) => {
                         if (progressEvent.total) {
                             // Исправляем расчет: 10% начальная подготовка + 85% загрузка + 5% финализация
                             const uploadProgress = Math.round((progressEvent.loaded / progressEvent.total) * 85);
-                            const totalProgress = Math.min(1 + uploadProgress, 99); // Максимум 95% до финализации
+                            const totalProgress = Math.min(10 + uploadProgress, 95); // Максимум 95% до финализации
+
                             if (onProgress) {
                                 onProgress(totalProgress);
+                            }
+
+                            // Обновляем прогресс в фоновой загрузке
+                            if (enableBackground) {
+                                backgroundUploadManager.updateUpload(uploadId, {
+                                    progress: totalProgress
+                                }).catch(() => {
+                                }); // Игнорируем ошибки обновления прогресса
                             }
                         }
                     }
@@ -2763,16 +2760,41 @@ export default function ChatScreen() {
                 throw new Error(response.data.message || 'Загрузка не удалась');
             }
 
-            return response.data.file.file_url;
+            const fileUrl = response.data.file.file_url;
+
+            // Помечаем загрузку как завершенную
+            if (enableBackground) {
+                await backgroundUploadManager.updateUpload(uploadId, {
+                    status: 'completed',
+                    progress: 100,
+                    serverUrl: fileUrl
+                });
+                console.log('📤 [BACKGROUND] Upload completed:', uploadId);
+            }
+
+            return fileUrl;
 
         } catch (error) {
-            console.error('Ошибка загрузки файла:', error);
+            console.error('📤 [UPLOAD] Error uploading file:', error);
+
+            // Помечаем загрузку как неудачную
+            if (enableBackground) {
+                await backgroundUploadManager.updateUpload(uploadId, {
+                    status: 'failed',
+                    error: error.message || 'Unknown error'
+                });
+            }
+
             throw error;
         }
     };
 
     // Отправка медиа сообщения напрямую через файл (без base64)
     const sendMediaMessageDirect = async (fileUri: string, mediaType: 'image' | 'video', fileSize?: number) => {
+        console.log('📤 [DIRECT] ========== STARTING MEDIA UPLOAD ==========');
+        console.log('📤 [DIRECT] URI:', fileUri?.substring(fileUri.lastIndexOf('/') + 1));
+        console.log('📤 [DIRECT] Type:', mediaType);
+        console.log('📤 [DIRECT] Size:', fileSize);
 
         if (!isConnected || !isDataLoaded || !recipient?.id || !currentUserId) {
             console.log('📤 [DIRECT] ❌ Cannot send - missing requirements');
@@ -2783,6 +2805,7 @@ export default function ChatScreen() {
         // Проверяем файл
         const fileInfo = await FileSystem.getInfoAsync(fileUri);
         if (!fileInfo.exists) {
+            console.log('📤 [DIRECT] ❌ File does not exist:', fileUri);
             Alert.alert('Ошибка', 'Файл не найден');
             return;
         }
@@ -2798,7 +2821,29 @@ export default function ChatScreen() {
 
         // Проверяем размер
         if (fileSizeMB > 2048) { // 2GB лимит
+            console.log('📤 [DIRECT] ❌ File too large:', fileSizeMB.toFixed(1) + 'MB');
             Alert.alert('Файл слишком большой', `Размер: ${fileSizeMB.toFixed(1)}MB. Максимум: 2048MB`);
+            return;
+        }
+
+        // ДЕДУПЛИКАЦИЯ: Создаем уникальный ключ файла для проверки дубликатов
+        const fileUniqueKey = `${fileUri}_${actualFileSize}_${mediaType}`;
+
+        // Проверяем, нет ли уже сообщения с таким же файлом в процессе загрузки
+        const isDuplicate = messages.some(msg =>
+            msg.mediaUri === fileUri &&
+            msg.mediaSize === actualFileSize &&
+            msg.mediaType === mediaType &&
+            msg.isUploading === true
+        );
+
+        if (isDuplicate) {
+            console.warn('📤 [DIRECT] ⚠️ Duplicate upload detected, skipping:', {
+                fileUri: fileUri?.substring(fileUri.lastIndexOf('/') + 1),
+                mediaType,
+                actualFileSize
+            });
+            Alert.alert('Внимание', 'Этот файл уже загружается');
             return;
         }
 
@@ -2813,7 +2858,8 @@ export default function ChatScreen() {
             console.log('📤 [DIRECT] Generated metadata:', {
                 messageId: messageId,
                 mediaHash: mediaHash,
-                mediaFileName: mediaFileName
+                mediaFileName: mediaFileName,
+                uniqueKey: fileUniqueKey
             });
 
             // Создаем оптимистичное сообщение
@@ -2830,162 +2876,71 @@ export default function ChatScreen() {
                 mediaFileName: mediaFileName,
                 mediaSize: actualFileSize,
                 isUploading: true,
-                uploadProgress: 0,
-                uploadMethod: fileSizeMB > 100 ? 'chunk' : 'http'
+                uploadProgress: 0
             };
 
-            // Добавляем сообщение в UI
-            setMessages(prev => [optimisticMessage, ...prev]);
+            console.log('📤 [DIRECT] Creating optimistic message:', messageId);
+
+            // Добавляем сообщение в UI с дополнительной проверкой дубликатов
+            setMessages(prev => {
+                // Финальная проверка на дубликаты перед добавлением
+                const existingMessage = prev.find(msg =>
+                    msg.mediaUri === fileUri &&
+                    msg.mediaSize === actualFileSize &&
+                    msg.mediaType === mediaType
+                );
+
+                if (existingMessage) {
+                    console.warn('📤 [DIRECT] ⚠️ Message with same media already exists, not adding duplicate');
+                    return prev;
+                }
+
+                console.log('📤 [DIRECT] ✅ Adding optimistic message to UI');
+                return [optimisticMessage, ...prev];
+            });
 
             // Прокручиваем к новому сообщению
             setTimeout(() => {
                 if (flatListRef.current) {
-                    flatListRef.current.scrollToIndex({ index: 0, animated: true });
+                    flatListRef.current.scrollToIndex({index: 0, animated: true});
                 }
             }, 100);
 
-            // Выбираем метод загрузки
+            // Единый метод загрузки для всех файлов
             let uploadSuccess = false;
             let serverFileUrl = '';
 
-            if (fileSizeMB > 100) {
-                // Chunk upload для больших файлов
-                console.log('📤 [DIRECT] Using chunk upload for large file');
+            console.log('📤 [DIRECT] Using unified upload for all files');
 
-                try {
-                    serverFileUrl = await uploadLargeFileChunkedOptimized(
-                        fileUri,
-                        mediaType,
-                        messageId,
-                        (progress) => {
-                            setMessages(prev =>
-                                prev.map(msg => {
-                                    if (msg.id === messageId) {
-                                        return {
-                                            ...msg,
-                                            uploadProgress: progress,
-                                            message: `🚀 Загрузка ${mediaType === 'image' ? 'изображения' : 'видео'}... ${progress}%`
-                                        };
-                                    }
-                                    return msg;
-                                })
-                            );
-                        }
-                    );
-                    uploadSuccess = true;
-                    console.log('📤 [DIRECT] Chunk upload successful');
-                } catch (chunkError) {
-                    console.error('📤 [DIRECT] Chunk upload failed:', chunkError);
+            try {
+                const fileName = `media_${messageId}.${mediaType === 'image' ? 'jpg' : 'mp4'}`;
+                const mimeType = mediaType === 'image' ? 'image/jpeg' : 'video/mp4';
 
-                    // Если chunk upload не поддерживается, пробуем multipart
-                    const errorMessage = chunkError.message || chunkError.toString();
-                    if (errorMessage.includes('CHUNK_NOT_SUPPORTED') ||
-                        (axios.isAxiosError(chunkError) && chunkError.response?.status === 404)) {
-
-                        console.log('📤 [DIRECT] Chunk upload not supported, trying multipart...');
-
-                        try {
-                            const fileName = `media_${messageId}.${mediaType === 'image' ? 'jpg' : 'mp4'}`;
-                            const mimeType = mediaType === 'image' ? 'image/jpeg' : 'video/mp4';
-
-                            serverFileUrl = await uploadFileGeneric(
-                                fileUri,
-                                fileName,
-                                mimeType,
-                                messageId,
-                                (progress) => {
-                                    setMessages(prev =>
-                                        prev.map(msg => {
-                                            if (msg.id === messageId) {
-                                                return {
-                                                    ...msg,
-                                                    uploadProgress: progress,
-                                                    message: `📤 Загрузка ${mediaType === 'image' ? 'изображения' : 'видео'}... ${progress}%`
-                                                };
-                                            }
-                                            return msg;
-                                        })
-                                    );
+                serverFileUrl = await uploadFileGeneric(
+                    fileUri,
+                    fileName,
+                    mimeType,
+                    messageId,
+                    (progress) => {
+                        setMessages(prev =>
+                            prev.map(msg => {
+                                if (msg.id === messageId) {
+                                    return {
+                                        ...msg,
+                                        uploadProgress: progress,
+                                        message: `📤 Загрузка ${mediaType === 'image' ? 'изображения' : 'видео'}... ${progress}%`
+                                    };
                                 }
-                            );
-                            uploadSuccess = true;
-                            console.log('📤 [DIRECT] Fallback generic upload successful');
-                        } catch (genericError) {
-                            console.error('📤 [DIRECT] Fallback generic also failed:', genericError);
-                        }
+                                return msg;
+                            })
+                        );
                     }
-                }
-            } else {
-                // HTTP multipart upload для средних файлов
-                console.log('📤 [DIRECT] Using HTTP multipart upload');
-
-                try {
-                    const fileName = `media_${messageId}.${mediaType === 'image' ? 'jpg' : 'mp4'}`;
-                    const mimeType = mediaType === 'image' ? 'image/jpeg' : 'video/mp4';
-
-                    serverFileUrl = await uploadFileGeneric(
-                        fileUri,
-                        fileName,
-                        mimeType,
-                        messageId,
-                        (progress) => {
-                            setMessages(prev =>
-                                prev.map(msg => {
-                                    if (msg.id === messageId) {
-                                        return {
-                                            ...msg,
-                                            uploadProgress: progress,
-                                            message: `📤 Загрузка ${mediaType === 'image' ? 'изображения' : 'видео'}... ${progress}%`
-                                        };
-                                    }
-                                    return msg;
-                                })
-                            );
-                        }
-                    );
-                    uploadSuccess = true;
-                    console.log('📤 [DIRECT] HTTP upload successful');
-                } catch (httpError) {
-                    console.error('📤 [DIRECT] HTTP upload failed:', httpError);
-
-                    // Если multipart не поддерживается, пробуем конвертировать в base64
-                    const errorMessage = httpError.message || httpError.toString();
-                    if (errorMessage.includes('MULTIPART_NOT_SUPPORTED') ||
-                        (axios.isAxiosError(httpError) && httpError.response?.status === 404)) {
-
-                        console.log('📤 [DIRECT] Multipart not supported, trying base64 conversion...');
-
-                        if (fileSizeMB <= 30) { // Только для файлов <= 30MB
-                            try {
-                                setMessages(prev =>
-                                    prev.map(msg => {
-                                        if (msg.id === messageId) {
-                                            return {
-                                                ...msg,
-                                                message: `🔄 Конвертация в base64...`,
-                                                uploadProgress: 20
-                                            };
-                                        }
-                                        return msg;
-                                    })
-                                );
-
-                                const base64 = await convertToBase64(fileUri);
-                                await sendMediaMessage(base64, mediaType);
-
-                                // Удаляем оригинальное сообщение, так как sendMediaMessage создает новое
-                                setMessages(prev => prev.filter(msg => msg.id !== messageId));
-
-                                console.log('📤 [DIRECT] ✅ Base64 fallback successful');
-                                return; // Выходим из функции
-                            } catch (base64Error) {
-                                console.error('📤 [DIRECT] Base64 fallback failed:', base64Error);
-                            }
-                        } else {
-                            console.log('📤 [DIRECT] File too large for base64 fallback:', fileSizeMB + 'MB');
-                        }
-                    }
-                }
+                );
+                uploadSuccess = true;
+                console.log('📤 [DIRECT] Upload successful');
+            } catch (uploadError) {
+                console.error('📤 [DIRECT] Upload failed:', uploadError);
+                uploadSuccess = false;
             }
 
             if (uploadSuccess && serverFileUrl) {
@@ -3077,7 +3032,7 @@ export default function ChatScreen() {
         try {
             const timestamp = Math.floor(Date.now() / 1000);
             const messageId = Date.now();
-            const mediaHash = generateMediaHash(base64Data, { timestamp, messageId, senderId: currentUserId });
+            const mediaHash = generateMediaHash(base64Data, {timestamp, messageId, senderId: currentUserId});
 
             // Создаем оптимистичное сообщение
             const optimisticMessage: Message = {
@@ -3130,7 +3085,7 @@ export default function ChatScreen() {
             );
 
             // Удаляем временный файл
-            await FileSystem.deleteAsync(tempUri, { idempotent: true });
+            await FileSystem.deleteAsync(tempUri, {idempotent: true});
 
             // Обновляем сообщение с URL сервера
             setMessages(prev =>
@@ -3317,11 +3272,17 @@ export default function ChatScreen() {
                     // (например, не старше 48 часов)
                     const isUnreadBySender = isMyMessage && hoursAgo <= 48;
 
+                    // НОВОЕ: Помечаем полученные сообщения как потенциально непрочитанные
+                    // для визуальной индикации при входе в чат
+                    // Увеличиваем временное окно и добавляем дополнительные условия
+                    const isReceivedUnread = !isMyMessage && hoursAgo <= 72; // сообщения не старше 72 часов
+
                     console.log('📜 [HISTORY] Message processing:', {
                         id: msg.id,
                         isMyMessage,
                         hoursAgo: Math.round(hoursAgo * 10) / 10,
                         isUnreadBySender,
+                        isReceivedUnread,
                         messageTime: messageTime.toLocaleString()
                     });
 
@@ -3338,6 +3299,7 @@ export default function ChatScreen() {
                         needsReload: false,
                         // Помечаем свежие отправленные сообщения как потенциально непрочитанные
                         _isUnreadBySender: isUnreadBySender
+                        // ИСПРАВЛЕНИЕ: Убираем _isHistoryUnread - исторические сообщения не должны анимироваться
                     };
                 });
 
@@ -3379,6 +3341,11 @@ export default function ChatScreen() {
                                 }
                             });
                         }
+
+                        // ИСПРАВЛЕНИЕ: НЕ добавляем все сообщения как непрочитанные
+                        // Только действительно новые сообщения должны иметь анимацию
+                        // Исторические сообщения помечаются как прочитанные сразу после загрузки
+                        console.log('📜 [HISTORY] Messages loaded, will mark as read automatically');
 
                         return mergedMessages;
                     });
@@ -3528,13 +3495,48 @@ export default function ChatScreen() {
         isChatActiveRef.current = isChatActive;
     }, [isChatActive]);
 
-    // Отслеживание активности чата
     useEffect(() => {
-        // Устанавливаем чат как активный при монтировании
-        setIsChatActive(true);
+        isColdStartRef.current = isColdStart;
+    }, [isColdStart]);
+
+    // Отслеживание активности чата с правильной инициализацией
+    useEffect(() => {
+        console.log('📖 [CHAT-ACTIVATION] ========== INITIALIZING CHAT ACTIVITY ==========');
+        console.log('📖 [CHAT-ACTIVATION] Room ID:', roomId);
+        console.log('📖 [CHAT-ACTIVATION] Current User ID:', currentUserId);
+        console.log('📖 [CHAT-ACTIVATION] Is Connected:', isConnected);
+
+        // Очищаем предыдущий таймер
+        if (chatActivationTimer.current) {
+            clearTimeout(chatActivationTimer.current);
+        }
+
+        // КРИТИЧНО: Задержка для правильной инициализации всех состояний
+        // Особенно важно для "холодного старта" из уведомлений
+        chatActivationTimer.current = setTimeout(() => {
+            console.log('📖 [CHAT-ACTIVATION] ✅ Activating chat after initialization delay');
+            setIsChatActive(true);
+
+            // Дополнительная задержка для определения типа старта
+            setTimeout(() => {
+                console.log('📖 [CHAT-ACTIVATION] ✅ Setting cold start to false');
+                setIsColdStart(false);
+            }, 1000); // 1 секунда для определения холодного старта
+
+        }, 500); // 500мс базовая задержка для инициализации состояний
+
         // При размонтировании помечаем чат как неактивный
         return () => {
+            console.log('📖 [CHAT-ACTIVATION] ⚠️ Deactivating chat');
+
+            if (chatActivationTimer.current) {
+                clearTimeout(chatActivationTimer.current);
+                chatActivationTimer.current = null;
+            }
+
             setIsChatActive(false);
+            setIsColdStart(true);
+
             // Очищаем кеш прочитанных сообщений
             markedAsReadCache.current.clear();
             // Очищаем анимации непрочитанных отправленных сообщений
@@ -3545,8 +3547,8 @@ export default function ChatScreen() {
         };
     }, [roomId, currentUserId, isConnected]);
 
-    // Отдельный useEffect для массовой отметки сообщений из истории
-    // Срабатывает ОДИН РАЗ после полной инициализации
+    // Упрощенный useEffect для массовой отметки сообщений из истории
+    // Все исторические сообщения отмечаются как прочитанные БЕЗ анимации
     useEffect(() => {
         // Проверяем что все данные загружены и подключение установлено
         if (!isDataLoaded || !isConnected || !currentUserId || !isChatActive) {
@@ -3559,10 +3561,16 @@ export default function ChatScreen() {
         const markHistoryAsRead = () => {
             if (hasMarkedHistory) return;
             hasMarkedHistory = true;
+
+            console.log('📜 [AUTO-MARK] ========== MARKING HISTORY AS READ (NO ANIMATION) ==========');
+            console.log('📜 [AUTO-MARK] Total messages in history:', messages.length);
+
             // Фильтруем только чужие сообщения
             const otherUserMessages = messages
                 .filter(msg => msg.sender_id && msg.sender_id !== currentUserId)
                 .map(msg => msg.id);
+
+            console.log('📜 [AUTO-MARK] Other user messages to mark:', otherUserMessages.length);
 
             if (otherUserMessages.length > 0) {
                 // Добавляем все в кеш
@@ -3578,6 +3586,24 @@ export default function ChatScreen() {
                     };
 
                     sendMessage(bulkReadData);
+                    console.log('📜 [AUTO-MARK] ✅ Bulk read receipt sent for', otherUserMessages.length, 'messages');
+
+                    // ИСПРАВЛЕНИЕ: Никакой анимации для исторических сообщений
+                    // Просто убираем все из непрочитанных сразу
+                    setUnreadMessages(prev => {
+                        const newSet = new Set(prev);
+                        otherUserMessages.forEach(id => newSet.delete(id));
+                        return newSet;
+                    });
+
+                    // Очищаем анимации для исторических сообщений
+                    otherUserMessages.forEach(messageId => {
+                        if (unreadAnimations.current[messageId]) {
+                            delete unreadAnimations.current[messageId];
+                        }
+                    });
+
+                    console.log('📜 [AUTO-MARK] ✅ Historical messages marked as read without animation');
 
                 } catch (error) {
                     console.error('📜 [AUTO-MARK] ❌ Error sending bulk read receipt:', error);
@@ -3590,12 +3616,12 @@ export default function ChatScreen() {
         };
 
         // Даем небольшую задержку чтобы все состояния обновились
-        const timeoutId = setTimeout(markHistoryAsRead, 1000);
+        const timeoutId = setTimeout(markHistoryAsRead, 500);
 
         return () => {
             clearTimeout(timeoutId);
         };
-    }, [isDataLoaded, isConnected, currentUserId, isChatActive]); // Срабатывает только при изменении этих флагов
+    }, [isDataLoaded, isConnected, currentUserId, isChatActive]);
 
     // useEffect для обработки отложенных сообщений после инициализации
     useEffect(() => {
@@ -3607,41 +3633,125 @@ export default function ChatScreen() {
         if (pendingMessagesQueue.current.length === 0) {
             return;
         }
+
+        console.log('📨 [PENDING-QUEUE] ========== PROCESSING PENDING MESSAGES ==========');
+        console.log('📨 [PENDING-QUEUE] Queue length:', pendingMessagesQueue.current.length);
+        console.log('📨 [PENDING-QUEUE] Is Cold Start:', isColdStart);
+
         // Обрабатываем все отложенные сообщения
         const pendingMessages = [...pendingMessagesQueue.current];
         pendingMessagesQueue.current = []; // Очищаем очередь
 
-        pendingMessages.forEach(({ messageId, senderId }) => {
+        pendingMessages.forEach(({messageId, senderId}) => {
             // Проверяем что это не мое сообщение
             if (senderId !== currentUserId) {
-                // Добавляем в список непрочитанных для визуальной индикации
-                setUnreadMessages(prev => {
-                    const newSet = new Set(prev);
-                    newSet.add(messageId);
-                    return newSet;
-                });
+                console.log('📨 [PENDING-QUEUE] Processing pending message:', messageId);
 
-                // Создаем анимацию для этого сообщения
-                if (!unreadAnimations.current[messageId]) {
-                    const AnimatedNative = require('react-native').Animated;
-                    unreadAnimations.current[messageId] = new AnimatedNative.Value(1);
+                // УЛУЧШЕНИЕ: Учитываем холодный старт при обработке отложенных сообщений
+                const shouldShowAnimation = !isColdStart || AppState.currentState === 'active';
 
-                }
+                if (shouldShowAnimation) {
+                    // Добавляем в список непрочитанных для визуальной индикации
+                    setUnreadMessages(prev => {
+                        const newSet = new Set(prev);
+                        newSet.add(messageId);
+                        console.log('📨 [PENDING-QUEUE] ✅ Added pending message to unread:', messageId);
+                        return newSet;
+                    });
 
-                // Через 2 секунды начинаем анимацию прочтения
-                setTimeout(() => {
-                    if (isConnected && currentUserId && isChatActive && isDataLoaded) {
-                        console.log('📨 [PENDING-QUEUE] ✅ Marking pending message as read:', messageId);
-                        markMessageAsRead(messageId, senderId);
-                        animateMessageAsRead(messageId);
+                    // Создаем анимацию для этого сообщения
+                    if (!unreadAnimations.current[messageId]) {
+                        const AnimatedNative = require('react-native').Animated;
+                        unreadAnimations.current[messageId] = new AnimatedNative.Value(1);
+                        console.log('📨 [PENDING-QUEUE] ✅ Created animation for pending message:', messageId);
                     }
-                }, 2000);
+
+                    // Адаптивная задержка для отложенных сообщений
+                    const delay = isColdStart ? 1500 : 2000;
+
+                    setTimeout(() => {
+                        if (isConnected && currentUserId && isChatActive && isDataLoaded) {
+                            console.log('📨 [PENDING-QUEUE] ✅ Marking pending message as read after', delay + 'ms:', messageId);
+                            markMessageAsRead(messageId, senderId);
+                            animateMessageAsRead(messageId);
+                        }
+                    }, delay);
+                } else {
+                    // Без анимации - сразу отмечаем как прочитанное
+                    console.log('📨 [PENDING-QUEUE] Marking pending message as read without animation:', messageId);
+                    markMessageAsRead(messageId, senderId);
+                }
             } else {
                 console.log('📨 [PENDING-QUEUE] ⚠️ Skipping own message:', messageId);
             }
         });
 
-    }, [isDataLoaded, isConnected, currentUserId, isChatActive, markMessageAsRead, animateMessageAsRead]);
+    }, [isDataLoaded, isConnected, currentUserId, isChatActive, isColdStart, markMessageAsRead, animateMessageAsRead]);
+
+    // УЛУЧШЕННЫЙ useEffect для автоматической анимации непрочитанных сообщений
+    useEffect(() => {
+        // Проверяем что инициализация завершена
+        if (!isDataLoaded || !isConnected || !currentUserId || !isChatActive) {
+            return;
+        }
+
+        // Находим сообщения с флагом _isNewUnread, которые еще не в состоянии непрочитанных
+        const newUnreadMessages = messages.filter(msg =>
+            msg._isNewUnread &&
+            msg.sender_id !== currentUserId &&
+            !unreadMessages.has(msg.id)
+        );
+
+        if (newUnreadMessages.length > 0) {
+            console.log('✨ [AUTO-ANIMATE] ========== FOUND NEW UNREAD MESSAGES ==========');
+            console.log('✨ [AUTO-ANIMATE] Count:', newUnreadMessages.length);
+            console.log('✨ [AUTO-ANIMATE] Is Cold Start:', isColdStart);
+
+            newUnreadMessages.forEach(msg => {
+                // КЛЮЧЕВОЕ УЛУЧШЕНИЕ: Учитываем холодный старт и состояние приложения
+                const shouldAnimate = !isColdStart || (AppState.currentState === 'active' && isChatActive);
+
+                console.log('✨ [AUTO-ANIMATE] Message:', msg.id, 'Should animate:', shouldAnimate);
+
+                if (shouldAnimate) {
+                    // Добавляем в список непрочитанных
+                    setUnreadMessages(prev => {
+                        const newSet = new Set(prev);
+                        newSet.add(msg.id);
+                        console.log('✨ [AUTO-ANIMATE] Added to unread messages:', msg.id);
+                        return newSet;
+                    });
+
+                    // Создаем анимацию
+                    if (!unreadAnimations.current[msg.id]) {
+                        const AnimatedNative = require('react-native').Animated;
+                        unreadAnimations.current[msg.id] = new AnimatedNative.Value(1);
+                        console.log('✨ [AUTO-ANIMATE] Created animation for message:', msg.id);
+                    }
+
+                    // Адаптивная задержка для холодного старта
+                    const animationDelay = isColdStart ? 1000 : 2000;
+
+                    // Запускаем анимацию прочтения
+                    setTimeout(() => {
+                        if (currentUserIdRef.current && isConnectedRef.current && isChatActiveRef.current) {
+                            console.log('✨ [AUTO-ANIMATE] ✅ Starting read animation for:', msg.id, 'after', animationDelay + 'ms');
+                            markMessageAsRead(msg.id, msg.sender_id);
+                            animateMessageAsRead(msg.id);
+                        }
+                    }, animationDelay);
+                } else {
+                    // Холодный старт - сразу отмечаем как прочитанное без анимации
+                    console.log('✨ [AUTO-ANIMATE] Cold start - marking as read without animation:', msg.id);
+                    setTimeout(() => {
+                        if (currentUserIdRef.current && isConnectedRef.current) {
+                            markMessageAsRead(msg.id, msg.sender_id);
+                        }
+                    }, 100);
+                }
+            });
+        }
+    }, [messages, isDataLoaded, isConnected, currentUserId, isChatActive, isColdStart, unreadMessages, markMessageAsRead, animateMessageAsRead]);
 
     // Отслеживание состояния приложения
     useEffect(() => {
@@ -3684,6 +3794,104 @@ export default function ChatScreen() {
             subscription?.remove();
         };
     }, [appState]);
+
+    // Инициализация фоновых загрузок
+    useEffect(() => {
+        const initializeBackgroundUploads = async () => {
+            await backgroundUploadManager.loadUploads();
+            await backgroundUploadManager.cleanupOldUploads();
+
+            // Подписываемся на обновления
+            const handleUploadsUpdate = (uploads: BackgroundUpload[]) => {
+                setBackgroundUploads(uploads);
+
+                // Обновляем сообщения с завершенными загрузками
+                const roomUploads = uploads.filter(upload => upload.roomId === String(roomId));
+                roomUploads.forEach(upload => {
+                    if (upload.status === 'completed' && upload.serverUrl) {
+                        // Обновляем сообщение с URL сервера
+                        updateMessageSafely(upload.messageId, {
+                            isUploading: false,
+                            uploadProgress: 100,
+                            serverFileUrl: upload.serverUrl,
+                            message: upload.mediaType === 'image' ? '📷 Изображение' :
+                                upload.mediaType === 'video' ? '🎥 Видео' :
+                                    upload.mediaType === 'audio' ? '🎤 Аудио' :
+                                        upload.fileName
+                        });
+
+                        // Удаляем завершенную загрузку через некоторое время
+                        setTimeout(() => {
+                            backgroundUploadManager.removeUpload(upload.id);
+                        }, 5000);
+                    } else if (upload.status === 'failed') {
+                        // Обновляем сообщение с ошибкой
+                        updateMessageSafely(upload.messageId, {
+                            isUploading: false,
+                            uploadProgress: 0,
+                            message: `❌ Ошибка загрузки ${upload.fileName}`
+                        });
+                    }
+                });
+            };
+
+            backgroundUploadManager.addListener(handleUploadsUpdate);
+
+            // Первоначальная загрузка состояния
+            handleUploadsUpdate(backgroundUploadManager.getAllUploads());
+
+            return () => {
+                backgroundUploadManager.removeListener(handleUploadsUpdate);
+            };
+        };
+
+        initializeBackgroundUploads();
+    }, [roomId]);
+
+    // Восстановление загрузок для текущей комнаты
+    useEffect(() => {
+        if (!roomId || !isDataLoaded) return;
+
+        const roomUploads = backgroundUploadManager.getUploadsForRoom(String(roomId));
+        const activeUploads = roomUploads.filter(upload =>
+            upload.status === 'uploading' || upload.status === 'pending'
+        );
+
+        console.log('📤 [BACKGROUND] Found', activeUploads.length, 'active uploads for room');
+
+        // Обновляем сообщения с активными загрузками
+        activeUploads.forEach(upload => {
+            updateMessageSafely(upload.messageId, {
+                isUploading: true,
+                uploadProgress: upload.progress,
+                message: `📤 Продолжается загрузка... ${upload.progress}%`
+            });
+
+            // Если загрузка зависла, пытаемся возобновить
+            if (upload.status === 'pending' ||
+                (upload.status === 'uploading' && Date.now() - upload.startTime > 600000)) { // 10 минут
+
+                console.log('📤 [BACKGROUND] Attempting to resume stalled upload:', upload.id);
+
+                // Повторно запускаем загрузку
+                uploadFileGeneric(
+                    upload.fileUri,
+                    upload.fileName,
+                    upload.mimeType,
+                    upload.messageId,
+                    (progress) => {
+                        updateMessageSafely(upload.messageId, {
+                            uploadProgress: progress,
+                            message: `📤 Возобновление загрузки... ${progress}%`
+                        });
+                    },
+                    true // Включаем фоновый режим
+                ).catch(error => {
+                    console.error('📤 [BACKGROUND] Failed to resume upload:', error);
+                });
+            }
+        });
+    }, [roomId, isDataLoaded]);
 
     useEffect(() => {
         if (!roomId) {
@@ -3750,6 +3958,9 @@ export default function ChatScreen() {
         const messageContent = messageText.trim();
 
         console.log('📤 [SEND] Sending message with optimistic ID:', optimisticMessageId);
+        if (replyToMessage) {
+            console.log('📤 [SEND] Reply to message:', replyToMessage.id);
+        }
 
         // СНАЧАЛА создаем оптимистичное сообщение для немедленного отображения
         const optimisticMessage: Message = {
@@ -3769,7 +3980,12 @@ export default function ChatScreen() {
             needsReload: false,
             // Помечаем как оптимистичное сообщение
             _isOptimistic: true,
-            _optimisticId: optimisticMessageId
+            _optimisticId: optimisticMessageId,
+            // Добавляем данные реплая если есть
+            reply_to_message_id: replyToMessage?.id,
+            reply_to_message: replyToMessage?.message,
+            reply_to_sender: replyToMessage?.sender__username,
+            reply_to_media_type: replyToMessage?.mediaType
         };
 
         // Добавляем оптимистичное сообщение в список немедленно
@@ -3778,7 +3994,7 @@ export default function ChatScreen() {
         // Прокручиваем к новому сообщению
         setTimeout(() => {
             if (flatListRef.current) {
-                flatListRef.current.scrollToIndex({ index: 0, animated: true });
+                flatListRef.current.scrollToIndex({index: 0, animated: true});
             }
         }, 100);
 
@@ -3806,19 +4022,26 @@ export default function ChatScreen() {
             message: messageContent,
             timestamp: timestamp,
             user1: currentUserId,
-            user2: recipient.id
+            user2: recipient.id,
+            // Добавляем данные реплая если есть
+            reply_to_message_id: replyToMessage?.id,
+            reply_to_message: replyToMessage?.message,
+            reply_to_sender: replyToMessage?.sender__username,
+            reply_to_media_type: replyToMessage?.mediaType
         };
 
         try {
             sendMessage(messageData);
             setMessageText('');
+            // Очищаем реплай после отправки
+            cancelReply();
 
             console.log('📤 [SEND] ✅ Message sent to server, waiting for confirmation...');
 
             // Добавляем таймаут для проверки и возможной очистки оптимистичного сообщения
             setTimeout(() => {
                 setMessages(prevMessages => {
-                    const optimisticMessage = prevMessages.find(msg => 
+                    const optimisticMessage = prevMessages.find(msg =>
                         msg._isOptimistic && msg._optimisticId === optimisticMessageId
                     );
 
@@ -3827,8 +4050,8 @@ export default function ChatScreen() {
                         console.log('📤 [TIMEOUT] Message content:', optimisticMessage.message?.substring(0, 50));
 
                         // Пробуем найти подтверждение среди других сообщений
-                        const confirmedMessage = prevMessages.find(msg => 
-                            !msg._isOptimistic && 
+                        const confirmedMessage = prevMessages.find(msg =>
+                            !msg._isOptimistic &&
                             msg.sender_id === currentUserId &&
                             msg.message?.trim() === optimisticMessage.message?.trim() &&
                             Math.abs(Number(msg.timestamp) - Number(optimisticMessage.timestamp)) < 300 // 5 минут
@@ -3887,6 +4110,12 @@ export default function ChatScreen() {
             ? isOnline
             : recipient?.is_online === 'online';
 
+        // Получаем активные загрузки для текущей комнаты
+        const activeUploads = backgroundUploads.filter(upload =>
+            upload.roomId === String(roomId) &&
+            (upload.status === 'uploading' || upload.status === 'pending')
+        );
+
         if (isSelectionMode) {
             // Панель действий при выделении сообщений
             return (
@@ -3895,11 +4124,11 @@ export default function ChatScreen() {
                         style={styles.selectionBackButton}
                         onPress={exitSelectionMode}
                     >
-                        <MaterialIcons name="close" size={24} color={theme.primary} />
+                        <MaterialIcons name="close" size={24} color={theme.primary}/>
                     </TouchableOpacity>
 
                     <View style={styles.selectionInfo}>
-                        <Text style={[styles.selectionCount, { color: theme.text }]}>
+                        <Text style={[styles.selectionCount, {color: theme.text}]}>
                             {selectedMessages.size} выбрано
                         </Text>
                     </View>
@@ -3910,7 +4139,7 @@ export default function ChatScreen() {
                                 style={styles.selectionActionButton}
                                 onPress={selectAllMessages}
                             >
-                                <MaterialIcons name="select-all" size={24} color={theme.primary} />
+                                <MaterialIcons name="select-all" size={24} color={theme.primary}/>
                             </TouchableOpacity>
                         )}
 
@@ -3918,14 +4147,14 @@ export default function ChatScreen() {
                             style={styles.selectionActionButton}
                             onPress={forwardSelectedMessages}
                         >
-                            <MaterialIcons name="forward" size={24} color={theme.primary} />
+                            <MaterialIcons name="forward" size={24} color={theme.primary}/>
                         </TouchableOpacity>
 
                         <TouchableOpacity
                             style={styles.selectionActionButton}
                             onPress={deleteSelectedMessages}
                         >
-                            <MaterialIcons name="delete" size={24} color={theme.error || '#ff4444'} />
+                            <MaterialIcons name="delete" size={24} color={theme.error || '#ff4444'}/>
                         </TouchableOpacity>
                     </View>
                 </View>
@@ -3939,13 +4168,23 @@ export default function ChatScreen() {
                 activeOpacity={0.7}
             >
                 <View style={styles.userInfo}>
-                    <Text style={[styles.username, { color: theme.text }]}>{recipient?.username || 'Пользователь'}</Text>
-                    <Text style={[
-                        styles.onlineStatus,
-                        {color: userStatus ? theme.online : theme.offline}
-                    ]}>
-                        {userStatus ? 'в сети' : 'не в сети'}
-                    </Text>
+                    <Text style={[styles.username, {color: theme.text}]}>{recipient?.username || 'Пользователь'}</Text>
+                    <View style={styles.statusRow}>
+                        <Text style={[
+                            styles.onlineStatus,
+                            {color: userStatus ? theme.online : theme.offline}
+                        ]}>
+                            {userStatus ? 'в сети' : 'не в сети'}
+                        </Text>
+                        {activeUploads.length > 0 && (
+                            <View style={styles.uploadIndicator}>
+                                <ActivityIndicator size="small" color={theme.primary}/>
+                                <Text style={[styles.uploadIndicatorText, {color: theme.primary}]}>
+                                    {activeUploads.length} загр.
+                                </Text>
+                            </View>
+                        )}
+                    </View>
                 </View>
                 {/* Онлайн индикатор рядом с текстом */}
                 <View style={[
@@ -4072,15 +4311,33 @@ export default function ChatScreen() {
     const getCachedVideoPath = (messageId: number): string => {
         return `${FileSystem.documentDirectory}cached_video_${messageId}.mp4`;
     };
-    // Функция для проверки существования видео в кеше
+    // Функция для проверки существования и целостности видео в кеше
     const checkVideoCacheExists = async (messageId: number): Promise<boolean> => {
         try {
             const cachedPath = getCachedVideoPath(messageId);
             const fileInfo = await FileSystem.getInfoAsync(cachedPath);
 
-            if (fileInfo.exists) {
+            if (fileInfo.exists && fileInfo.size && fileInfo.size > 1024) { // Минимум 1KB для валидного видео
+                console.log('📹 [VIDEO-CACHE] Cache exists:', {
+                    messageId,
+                    size: Math.round(fileInfo.size / 1024) + 'KB',
+                    path: cachedPath.substring(cachedPath.lastIndexOf('/') + 1)
+                });
                 return true;
             } else {
+                if (fileInfo.exists && (!fileInfo.size || fileInfo.size <= 1024)) {
+                    console.warn('📹 [VIDEO-CACHE] ⚠️ Corrupted cache detected (too small), deleting:', {
+                        messageId,
+                        size: fileInfo.size,
+                        path: cachedPath.substring(cachedPath.lastIndexOf('/') + 1)
+                    });
+                    // Удаляем поврежденный кеш
+                    try {
+                        await FileSystem.deleteAsync(cachedPath, {idempotent: true});
+                    } catch (deleteError) {
+                        console.error('📹 [VIDEO-CACHE] Failed to delete corrupted cache:', deleteError);
+                    }
+                }
                 return false;
             }
         } catch (error) {
@@ -4113,7 +4370,36 @@ export default function ChatScreen() {
                 );
 
                 if (downloadResult.status === 200) {
-                    return cachedPath;
+                    // Проверяем целостность скачанного файла
+                    const fileInfo = await FileSystem.getInfoAsync(cachedPath);
+                    const minFileSize = 10 * 1024; // Минимум 10KB для видеофайла
+
+                    if (fileInfo.exists && fileInfo.size && fileInfo.size > minFileSize) {
+                        console.log('📹 [VIDEO-CACHE] ✅ File cached successfully:', {
+                            messageId,
+                            size: Math.round(fileInfo.size / 1024) + 'KB',
+                            downloadStatus: downloadResult.status
+                        });
+                        return cachedPath;
+                    } else {
+                        console.error('📹 [VIDEO-CACHE] ❌ Downloaded file is corrupted or too small:', {
+                            exists: fileInfo.exists,
+                            size: fileInfo.size,
+                            minRequired: minFileSize,
+                            downloadStatus: downloadResult.status
+                        });
+
+                        // Удаляем поврежденный файл
+                        try {
+                            if (fileInfo.exists) {
+                                await FileSystem.deleteAsync(cachedPath, {idempotent: true});
+                                console.log('📹 [VIDEO-CACHE] Corrupted file deleted');
+                            }
+                        } catch (e) {
+                            console.error('📹 [VIDEO-CACHE] Failed to delete corrupted download:', e);
+                        }
+                        throw new Error(`Downloaded file is corrupted (size: ${fileInfo.size || 0} bytes)`);
+                    }
                 } else {
                     throw new Error(`Download failed with status ${downloadResult.status}`);
                 }
@@ -4181,7 +4467,7 @@ export default function ChatScreen() {
             // Попытка загрузить URL через API если его нет
             const serverUrl = await getMediaServerUrl(message.id);
             if (serverUrl) {
-                updateMessageSafely(message.id, { serverFileUrl: serverUrl, mediaUri: serverUrl });
+                updateMessageSafely(message.id, {serverFileUrl: serverUrl, mediaUri: serverUrl});
                 // Рекурсивно вызываем функцию с обновленным сообщением
                 setTimeout(() => {
                     const updatedMessage = messages.find(m => m.id === message.id);
@@ -4208,8 +4494,8 @@ export default function ChatScreen() {
             }
 
             // Помечаем как загружающийся
-            setDownloadingDocuments(prev => ({ ...prev, [messageId]: true }));
-            setDocumentDownloadProgress(prev => ({ ...prev, [messageId]: 0 }));
+            setDownloadingDocuments(prev => ({...prev, [messageId]: true}));
+            setDocumentDownloadProgress(prev => ({...prev, [messageId]: 0}));
 
             let sourceUri = message.mediaUri || message.serverFileUrl;
             let localFilePath = '';
@@ -4224,7 +4510,7 @@ export default function ChatScreen() {
                 const fileInfo = await FileSystem.getInfoAsync(localFilePath);
                 if (fileInfo.exists) {
                     await openDocument(localFilePath, fileName);
-                    setDownloadingDocuments(prev => ({ ...prev, [messageId]: false }));
+                    setDownloadingDocuments(prev => ({...prev, [messageId]: false}));
                     return;
                 }
                 const downloadResult = await FileSystem.downloadAsync(
@@ -4256,7 +4542,7 @@ export default function ChatScreen() {
                 'Ошибка загрузки',
                 `Не удалось загрузить документ "${fileName}".\n\nОшибка: ${error.message}`,
                 [
-                    { text: 'OK', style: 'default' },
+                    {text: 'OK', style: 'default'},
                     {
                         text: 'Попробовать в браузере',
                         style: 'default',
@@ -4269,8 +4555,8 @@ export default function ChatScreen() {
                 ]
             );
         } finally {
-            setDownloadingDocuments(prev => ({ ...prev, [messageId]: false }));
-            setDocumentDownloadProgress(prev => ({ ...prev, [messageId]: 0 }));
+            setDownloadingDocuments(prev => ({...prev, [messageId]: false}));
+            setDocumentDownloadProgress(prev => ({...prev, [messageId]: 0}));
         }
     };
 
@@ -4326,7 +4612,7 @@ export default function ChatScreen() {
                 Alert.alert(
                     'Скачивание видео',
                     'Начинаем загрузку видео...',
-                    [{ text: 'OK' }]
+                    [{text: 'OK'}]
                 );
 
                 const downloadResult = await FileSystem.downloadAsync(
@@ -4392,7 +4678,7 @@ export default function ChatScreen() {
                 Alert.alert(
                     'Скачивание изображения',
                     'Начинаем загрузку...',
-                    [{ text: 'OK' }]
+                    [{text: 'OK'}]
                 );
 
                 const downloadResult = await FileSystem.downloadAsync(
@@ -4448,7 +4734,7 @@ export default function ChatScreen() {
             // Определяем MIME тип по расширению файла
             const getContentType = (fileName: string): string => {
                 const extension = fileName.split('.').pop()?.toLowerCase();
-                const mimeTypes: {[key: string]: string} = {
+                const mimeTypes: { [key: string]: string } = {
                     'pdf': 'application/pdf',
                     'doc': 'application/msword',
                     'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -4500,7 +4786,7 @@ export default function ChatScreen() {
                 'Не удалось открыть файл',
                 `Файл "${fileName}" загружен, но не может быть открыт автоматически.\n\nВозможно, на устройстве нет подходящего приложения для этого типа файла.`,
                 [
-                    { text: 'OK', style: 'default' },
+                    {text: 'OK', style: 'default'},
                     {
                         text: 'Показать в файлах',
                         style: 'default',
@@ -4604,14 +4890,10 @@ export default function ChatScreen() {
 
     // Функция для остановки всех других видео
     const pauseAllOtherVideos = async (exceptMessageId: string | number) => {
-
-
         // Получаем все ID видео которые сейчас воспроизводятся
         const playingVideoIds = Object.keys(inlineVideoStates).filter(
             id => inlineVideoStates[id]?.isPlaying && String(id) !== String(exceptMessageId)
         );
-
-
 
         // Останавливаем каждое видео
         for (const videoId of playingVideoIds) {
@@ -4630,7 +4912,7 @@ export default function ChatScreen() {
                     }));
                 }
             } catch (error) {
-                console.warn('🎥 [PAUSE-ALL] ⚠️ Failed to pause video:', videoId, error);
+                // Игнорируем ошибки остановки видео
             }
         }
     };
@@ -4638,20 +4920,61 @@ export default function ChatScreen() {
     // Функции управления встроенным видео
     const toggleInlineVideo = async (messageId: string | number, videoUri: string) => {
         const currentState = inlineVideoStates[messageId] || {
-            isPlaying: false, isMuted: false, isExpanded: false, duration: 0, position: 0, isLoaded: false, isFullscreen: false
+            isPlaying: false,
+            isMuted: false,
+            isExpanded: false,
+            duration: 0,
+            position: 0,
+            isLoaded: false,
+            isFullscreen: false
         };
         const newPlayingState = !currentState.isPlaying;
 
-        // Проверяем кеш и доступность видео
+        // Если видео не загружено, но мы хотим его воспроизвести - играем с сервера
+        if (!currentState.isLoaded && newPlayingState) {
+            const message = messages.find(msg => String(msg.id) === String(messageId));
+            if (message) {
+                // Получаем серверный URL если его нет
+                let serverUrl = message.serverFileUrl || videoUri;
+                if (!serverUrl?.startsWith('http')) {
+                    serverUrl = await getMediaServerUrl(Number(messageId));
+                    if (serverUrl) {
+                        updateMessageSafely(message.id, {
+                            serverFileUrl: serverUrl
+                        });
+                    }
+                }
+
+                if (serverUrl?.startsWith('http')) {
+                    // Обновляем URI на серверный для немедленного воспроизведения
+                    updateMessageSafely(message.id, {
+                        mediaUri: serverUrl
+                    });
+                    videoUri = serverUrl;
+
+                    // ФОНОВОЕ КЕШИРОВАНИЕ: запускаем кеширование в фоне
+                    cacheVideoToDevice(serverUrl, Number(messageId)).then(cachedPath => {
+                        if (cachedPath) {
+                            // При следующем воспроизведении будет использован кеш
+                        }
+                    }).catch(() => {
+                        // Игнорируем ошибки кеширования
+                    });
+                } else {
+                    return;
+                }
+            }
+        }
+
+        // Проверяем кеш и доступность видео для уже загруженных компонентов
         const message = messages.find(msg => String(msg.id) === String(messageId));
-        if (message) {
-            // ВСЕГДА проверяем кеш перед воспроизведением
+        if (message && currentState.isLoaded) {
+            // Проверяем кеш только для загруженных компонентов
             const cacheExists = await checkVideoCacheExists(Number(messageId));
 
             if (cacheExists) {
                 // Используем кешированную версию
                 const cachedPath = getCachedVideoPath(Number(messageId));
-
 
                 if (videoUri !== cachedPath) {
                     // Обновляем URI если он отличается
@@ -4674,64 +4997,67 @@ export default function ChatScreen() {
                     updateMessageSafely(message.id, {
                         mediaUri: message.serverFileUrl
                     });
-                    return;
+                    videoUri = message.serverFileUrl;
                 } else {
                     // Запрашиваем URL с сервера
                     await requestVideoLoad(message);
                     return;
                 }
             } else if (videoUri.startsWith('http')) {
-                console.log('🎥 [INLINE] Caching video from server during playback...');
                 // Кешируем в фоновом режиме при воспроизведении
                 cacheVideoToDevice(videoUri, Number(messageId)).then(cachedPath => {
                     if (cachedPath) {
-                        console.log('🎥 [INLINE] ✅ Video cached in background');
                         // Обновляем URI на следующее воспроизведение
                         updateMessageSafely(message.id, {
                             mediaUri: cachedPath
                         });
                     }
-                }).catch(err => {
-                    console.warn('🎥 [INLINE] Background caching failed:', err);
+                }).catch(() => {
+                    // Игнорируем ошибки кеширования
                 });
             }
         }
 
         try {
             const videoRef = inlineVideoRefs.current[messageId];
-            if (videoRef) {
-                if (newPlayingState) {
-                    // При запуске видео сначала останавливаем все другие видео
-                    await pauseAllOtherVideos(messageId);
 
-                    // При запуске видео сначала убеждаемся что оно отключено (для избежания ошибок аудио)
-                    if (appState === 'active') {
-                        await videoRef.setIsMutedAsync(true); // Начинаем без звука
-                        await videoRef.playAsync();
-                    } else {
-                        return;
-                    }
-                } else {
-                    await videoRef.pauseAsync();
+            if (!videoRef) {
+                return;
+            }
+
+            if (newPlayingState) {
+                // При запуске видео сначала останавливаем все другие видео
+                await pauseAllOtherVideos(messageId);
+
+                // Проверяем состояние приложения
+                if (appState !== 'active') {
+                    return;
                 }
 
-                setInlineVideoStates(prev => ({
-                    ...prev,
-                    [messageId]: { ...currentState, isPlaying: newPlayingState }
-                }));
+                // При запуске видео сначала убеждаемся что оно отключено (для избежания ошибок аудио)
+                await videoRef.setIsMutedAsync(true); // Начинаем без звука
+                await videoRef.playAsync();
+            } else {
+                await videoRef.pauseAsync();
             }
+
+            // Обновляем состояние
+            setInlineVideoStates(prev => ({
+                ...prev,
+                [messageId]: {...currentState, isPlaying: newPlayingState}
+            }));
+
         } catch (error: any) {
-            console.error('🎥 [INLINE] Error toggling video:', error);
+            // Специальная обработка ошибки незагруженного компонента
+            if (error.message?.includes('has not yet loaded') ||
+                error.message?.includes('not yet loaded')) {
+                return;
+            }
 
             if (error.message?.includes('AudioFocusNotAcquiredException') ||
                 error.message?.includes('background')) {
-                console.warn('🎥 [INLINE] Video control error - app in background');
-                Alert.alert(
-                    'Видео недоступно',
-                    'Управление видео доступно только когда приложение активно'
-                );
-            } else {
-                console.warn('🎥 [INLINE] Unknown video error:', error.message);
+                // Просто игнорируем ошибки фонового режима
+                return;
             }
         }
     };
@@ -4739,51 +5065,48 @@ export default function ChatScreen() {
     const toggleInlineVideoSound = async (messageId: string | number) => {
         // Проверяем, что приложение активно
         if (appState !== 'active') {
-            console.warn('🎥 [INLINE] Cannot toggle sound - app not active:', appState);
-            Alert.alert(
-                'Звук недоступен',
-                'Управление звуком доступно только когда приложение активно'
-            );
             return;
         }
 
         const currentState = inlineVideoStates[messageId] || {
-            isPlaying: false, isMuted: false, isExpanded: false, duration: 0, position: 0, isLoaded: false, isFullscreen: false
+            isPlaying: false,
+            isMuted: false,
+            isExpanded: false,
+            duration: 0,
+            position: 0,
+            isLoaded: false,
+            isFullscreen: false,
+            isResetting: false
         };
+
+        // Проверяем, что видео компонент загружен
+        if (!currentState.isLoaded) {
+            return;
+        }
+
         const newMutedState = !currentState.isMuted;
 
         try {
             const videoRef = inlineVideoRefs.current[messageId];
             if (videoRef) {
-                console.log('🎥 [INLINE] Toggling sound for video:', {
-                    messageId,
-                    currentMuted: currentState.isMuted,
-                    newMuted: newMutedState,
-                    appState: appState
-                });
-
                 await videoRef.setIsMutedAsync(newMutedState);
                 setInlineVideoStates(prev => ({
                     ...prev,
-                    [messageId]: { ...currentState, isMuted: newMutedState }
+                    [messageId]: {...currentState, isMuted: newMutedState}
                 }));
-
-                console.log('🎥 [INLINE] ✅ Sound toggled successfully');
             }
         } catch (error: any) {
-            console.error('🎥 [INLINE] Error toggling sound:', error);
+            // Специальная обработка ошибки незагруженного компонента
+            if (error.message?.includes('has not yet loaded') ||
+                error.message?.includes('not yet loaded')) {
+                return;
+            }
 
             // Обрабатываем специфичные ошибки
             if (error.message?.includes('AudioFocusNotAcquiredException') ||
                 error.message?.includes('background')) {
-                console.warn('🎥 [INLINE] Audio focus error - app in background');
-                Alert.alert(
-                    'Проблема со звуком',
-                    'Не удается управлять звуком. Попробуйте:\n• Убедиться, что приложение активно\n• Перезапустить видео\n• Проверить настройки звука устройства'
-                );
-            } else {
-                // Для других ошибок просто обновляем состояние без звука
-                console.warn('🎥 [INLINE] Unknown audio error, updating state silently');
+                // Просто игнорируем ошибки звука в фоновом режиме
+                return;
             }
         }
     };
@@ -4792,7 +5115,13 @@ export default function ChatScreen() {
     // Улучшенная функция переключения полноэкранного режима
     const toggleVideoFullscreen = async (messageId: string | number, videoUri: string) => {
         const currentState = inlineVideoStates[messageId] || {
-            isPlaying: false, isMuted: false, isExpanded: false, duration: 0, position: 0, isLoaded: false, isFullscreen: false
+            isPlaying: false,
+            isMuted: false,
+            isExpanded: false,
+            duration: 0,
+            position: 0,
+            isLoaded: false,
+            isFullscreen: false
         };
 
         // ПРОВЕРЯЕМ КЕШ ПЕРЕД ОТКРЫТИЕМ ПОЛНОЭКРАННОГО РЕЖИМА
@@ -4830,7 +5159,7 @@ export default function ChatScreen() {
                 try {
                     await videoRef.pauseAsync();
                 } catch (error) {
-                    console.warn('🎥 [FULLSCREEN] Failed to stop inline video:', error);
+                    // Игнорируем ошибки остановки видео
                 }
             }
 
@@ -4864,8 +5193,6 @@ export default function ChatScreen() {
                     isPlaying: false    // Останавливаем воспроизведение
                 }
             }));
-
-            console.log('🎥 [FULLSCREEN] Returned to normal video mode');
         }
     };
 
@@ -4883,18 +5210,41 @@ export default function ChatScreen() {
     const resetVideoToBeginning = async (messageId: string | number) => {
         try {
             const videoRef = inlineVideoRefs.current[messageId];
-            if (videoRef) {
-                await videoRef.setPositionAsync(0);
-                const currentState = inlineVideoStates[messageId];
-                if (currentState) {
-                    setInlineVideoStates(prev => ({
-                        ...prev,
-                        [messageId]: { ...currentState, position: 0, isPlaying: false }
-                    }));
+            const currentState = inlineVideoStates[messageId];
+
+            if (videoRef && currentState) {
+                // Сначала останавливаем воспроизведение
+                if (currentState.isPlaying) {
+                    await videoRef.pauseAsync();
                 }
+
+                // Затем перематываем в начало
+                await videoRef.setPositionAsync(0);
+
+                // Обновляем состояние
+                setInlineVideoStates(prev => ({
+                    ...prev,
+                    [messageId]: {
+                        ...currentState,
+                        position: 0,
+                        isPlaying: false
+                    }
+                }));
             }
         } catch (error) {
             console.error('🎥 [INLINE] Error resetting video:', error);
+            // При ошибке просто обновляем состояние
+            const currentState = inlineVideoStates[messageId];
+            if (currentState) {
+                setInlineVideoStates(prev => ({
+                    ...prev,
+                    [messageId]: {
+                        ...currentState,
+                        position: 0,
+                        isPlaying: false
+                    }
+                }));
+            }
         }
     };
 
@@ -4910,7 +5260,7 @@ export default function ChatScreen() {
                         'Проблема со звуком',
                         'Не удается получить доступ к аудио. Открыть видео в системном плеере?',
                         [
-                            { text: 'Отмена', style: 'cancel' },
+                            {text: 'Отмена', style: 'cancel'},
                             {
                                 text: 'Системный плеер',
                                 onPress: () => {
@@ -4936,7 +5286,7 @@ export default function ChatScreen() {
                 'Ошибка звука',
                 'Не удается управлять звуком видео. Открыть в системном плеере?',
                 [
-                    { text: 'Отмена', style: 'cancel' },
+                    {text: 'Отмена', style: 'cancel'},
                     {
                         text: 'Системный плеер',
                         onPress: () => {
@@ -4961,6 +5311,7 @@ export default function ChatScreen() {
         }
 
         // Проверяем, является ли сообщение непрочитанным
+        // ИСПРАВЛЕНИЕ: Только динамические непрочитанные сообщения (из состояния)
         const isUnread = unreadMessages.has(item.id);
         const animatedValue = unreadAnimations.current[item.id];
 
@@ -4975,13 +5326,13 @@ export default function ChatScreen() {
                 return (
                     <View style={styles.uploadingContainer}>
                         <View style={styles.uploadingContent}>
-                            <ActivityIndicator size="small" color={theme.primary} />
-                            <Text style={[styles.uploadingText, { color: theme.textSecondary }]}>
+                            <ActivityIndicator size="small" color={theme.primary}/>
+                            <Text style={[styles.uploadingText, {color: theme.textSecondary}]}>
                                 {item.mediaType === 'image' ? 'Загрузка изображения...' : 'Загрузка видео...'}
                             </Text>
                             {item.uploadProgress !== undefined && item.uploadProgress > 0 && (
                                 <View style={styles.progressContainer}>
-                                    <View style={[styles.progressBar, { backgroundColor: theme.border }]}>
+                                    <View style={[styles.progressBar, {backgroundColor: theme.border}]}>
                                         <View
                                             style={[
                                                 styles.progressFill,
@@ -4992,7 +5343,7 @@ export default function ChatScreen() {
                                             ]}
                                         />
                                     </View>
-                                    <Text style={[styles.progressText, { color: theme.textSecondary }]}>
+                                    <Text style={[styles.progressText, {color: theme.textSecondary}]}>
                                         {item.uploadProgress}%
                                     </Text>
                                 </View>
@@ -5007,8 +5358,8 @@ export default function ChatScreen() {
                 return (
                     <View style={styles.uploadingContainer}>
                         <View style={styles.uploadingContent}>
-                            <ActivityIndicator size="small" color={theme.primary} />
-                            <Text style={[styles.uploadingText, { color: theme.textSecondary }]}>
+                            <ActivityIndicator size="small" color={theme.primary}/>
+                            <Text style={[styles.uploadingText, {color: theme.textSecondary}]}>
                                 {item.mediaType === 'image' ? 'Загрузка изображения из истории...' : 'Загрузка видео из истории...'}
                             </Text>
                         </View>
@@ -5028,7 +5379,7 @@ export default function ChatScreen() {
                                 'Большой файл не найден в кэше',
                                 `Файл размером ${fileSizeMB}MB был удален из кэша для экономии места. Файлы больше 15MB не сохраняются в истории чата постоянно.\n\nВы можете:\n• Попросить отправителя переслать файл\n• Сохранять важные файлы в галерею сразу после получения`,
                                 [
-                                    { text: 'Понятно', style: 'default' },
+                                    {text: 'Понятно', style: 'default'},
                                     {
                                         text: 'Попросить переслать',
                                         style: 'default',
@@ -5047,16 +5398,16 @@ export default function ChatScreen() {
                                 size={24}
                                 color={theme.textSecondary}
                             />
-                            <Text style={[styles.reloadText, { color: theme.textSecondary }]}>
+                            <Text style={[styles.reloadText, {color: theme.textSecondary}]}>
                                 {item.mediaType === 'image'
                                     ? `📷 Изображение ${fileSizeMB}MB`
                                     : `🎥 Видео ${fileSizeMB}MB`
                                 }
                             </Text>
-                            <Text style={[styles.reloadSubtext, { color: theme.placeholder }]}>
+                            <Text style={[styles.reloadSubtext, {color: theme.placeholder}]}>
                                 Большой файл удален из кэша
                             </Text>
-                            <Text style={[styles.reloadHint, { color: theme.primary }]}>
+                            <Text style={[styles.reloadHint, {color: theme.primary}]}>
                                 Нажмите для подробностей
                             </Text>
                         </View>
@@ -5065,80 +5416,80 @@ export default function ChatScreen() {
             }
 
             if (item.mediaType === 'image') {
-                    // УНИФИЦИРОВАННАЯ ЛОГИКА: точно так же как для видео
-                    const imageUri = item.serverFileUrl ||
-                                     (item.mediaBase64 ? `data:image/jpeg;base64,${item.mediaBase64}` : null);
+                // УНИФИЦИРОВАННАЯ ЛОГИКА: точно так же как для видео
+                const imageUri = item.serverFileUrl ||
+                    (item.mediaBase64 ? `data:image/jpeg;base64,${item.mediaBase64}` : null);
 
-                    if (!imageUri) {
-                        // Изображение не загружено - используем API endpoint как для видео
-                        return (
-                            <LazyMedia
-                                onVisible={async () => {
+                if (!imageUri) {
+                    // Изображение не загружено - используем API endpoint как для видео
+                    return (
+                        <LazyMedia
+                            onVisible={async () => {
 
-                                    if (!item.isLoadingServerUrl && !item.serverFileUrl) {
-                                        updateMessageSafely(item.id, { isLoadingServerUrl: true });
+                                if (!item.isLoadingServerUrl && !item.serverFileUrl) {
+                                    updateMessageSafely(item.id, {isLoadingServerUrl: true});
 
-                                        // ТОТ ЖЕ API ЧТО И ДЛЯ ВИДЕО
-                                        const serverUrl = await getMediaServerUrl(item.id);
-                                        if (serverUrl) {
-                                            updateMessageSafely(item.id, {
-                                                serverFileUrl: serverUrl,
-                                                isLoadingServerUrl: false
-                                            });
-                                        } else {
-                                            updateMessageSafely(item.id, {
-                                                isLoadingServerUrl: false,
-                                                needsReload: true
-                                            });
-                                        }
+                                    // ТОТ ЖЕ API ЧТО И ДЛЯ ВИДЕО
+                                    const serverUrl = await getMediaServerUrl(item.id);
+                                    if (serverUrl) {
+                                        updateMessageSafely(item.id, {
+                                            serverFileUrl: serverUrl,
+                                            isLoadingServerUrl: false
+                                        });
+                                    } else {
+                                        updateMessageSafely(item.id, {
+                                            isLoadingServerUrl: false,
+                                            needsReload: true
+                                        });
+                                    }
+                                }
+                            }}
+                            style={styles.missingMediaContainer}
+                        >
+                            <MaterialIcons name="image" size={48} color={theme.textSecondary}/>
+                            <Text style={[styles.missingMediaText, {color: theme.textSecondary}]}>
+                                Изображение {item.mediaSize ? Math.round(item.mediaSize / (1024 * 1024)) + 'MB' : ''}
+                            </Text>
+                            <Text style={[styles.missingMediaSubtext, {color: theme.placeholder}]}>
+                                Загружается через API...
+                            </Text>
+                        </LazyMedia>
+                    );
+                }
+
+                return (
+                    <LazyMedia style={styles.mediaContainer}>
+                        <TouchableOpacity
+                            onPress={() => openImageViewer(imageUri)}
+                            style={styles.mediaContainer}
+                        >
+                            <DirectImage
+                                uri={imageUri}
+                                style={styles.messageImage}
+                                resizeMode="cover"
+                                onError={async () => {
+                                    console.error('🎨 [IMAGE-ERROR] Image load failed, reloading via API:', item.id);
+
+                                    // УНИФИЦИРОВАННАЯ ОБРАБОТКА ОШИБОК: как для видео
+                                    updateMessageSafely(item.id, {isLoadingServerUrl: true});
+
+                                    const serverUrl = await getMediaServerUrl(item.id);
+                                    if (serverUrl) {
+                                        updateMessageSafely(item.id, {
+                                            serverFileUrl: serverUrl,
+                                            isLoadingServerUrl: false
+                                        });
+                                        console.log('🎨 [AUTO-RELOAD] ✅ Image reloaded via API');
+                                    } else {
+                                        updateMessageSafely(item.id, {
+                                            isLoadingServerUrl: false,
+                                            needsReload: true
+                                        });
                                     }
                                 }}
-                                style={styles.missingMediaContainer}
-                            >
-                                <MaterialIcons name="image" size={48} color={theme.textSecondary} />
-                                <Text style={[styles.missingMediaText, { color: theme.textSecondary }]}>
-                                    Изображение {item.mediaSize ? Math.round(item.mediaSize / (1024 * 1024)) + 'MB' : ''}
-                                </Text>
-                                <Text style={[styles.missingMediaSubtext, { color: theme.placeholder }]}>
-                                    Загружается через API...
-                                </Text>
-                            </LazyMedia>
-                        );
-                    }
-
-                    return (
-                        <LazyMedia style={styles.mediaContainer}>
-                            <TouchableOpacity
-                                onPress={() => openImageViewer(imageUri)}
-                                style={styles.mediaContainer}
-                            >
-                                <DirectImage
-                                    uri={imageUri}
-                                    style={styles.messageImage}
-                                    resizeMode="cover"
-                                    onError={async () => {
-                                        console.error('🎨 [IMAGE-ERROR] Image load failed, reloading via API:', item.id);
-
-                                        // УНИФИЦИРОВАННАЯ ОБРАБОТКА ОШИБОК: как для видео
-                                        updateMessageSafely(item.id, { isLoadingServerUrl: true });
-
-                                        const serverUrl = await getMediaServerUrl(item.id);
-                                        if (serverUrl) {
-                                            updateMessageSafely(item.id, {
-                                                serverFileUrl: serverUrl,
-                                                isLoadingServerUrl: false
-                                            });
-                                            console.log('🎨 [AUTO-RELOAD] ✅ Image reloaded via API');
-                                        } else {
-                                            updateMessageSafely(item.id, {
-                                                isLoadingServerUrl: false,
-                                                needsReload: true
-                                            });
-                                        }
-                                    }}
-                                />
-                            </TouchableOpacity>
-                        </LazyMedia>
+                            />
+                        </TouchableOpacity>
+                    </LazyMedia>
                 );
             } else if (item.mediaType === 'video') {
                 // Прямая загрузка с сервера: только serverFileUrl или base64
@@ -5206,17 +5557,17 @@ export default function ChatScreen() {
                                 }}
                             >
                                 <View style={styles.videoPreviewContent}>
-                                    <MaterialIcons name="play-circle-filled" size={64} color={theme.primary} />
-                                    <Text style={[styles.videoPreviewTitle, { color: theme.text }]}>
+                                    <MaterialIcons name="play-circle-filled" size={64} color={theme.primary}/>
+                                    <Text style={[styles.videoPreviewTitle, {color: theme.text}]}>
                                         🎥 Видео
                                     </Text>
-                                    <Text style={[styles.videoPreviewSize, { color: theme.textSecondary }]}>
+                                    <Text style={[styles.videoPreviewSize, {color: theme.textSecondary}]}>
                                         {item.mediaSize ? Math.round(item.mediaSize / (1024 * 1024)) + ' MB' : 'Размер неизвестен'}
                                     </Text>
-                                    <Text style={[styles.videoPreviewHint, { color: theme.primary }]}>
+                                    <Text style={[styles.videoPreviewHint, {color: theme.primary}]}>
                                         Нажмите ▶ для воспроизведения
                                     </Text>
-                                    <Text style={[styles.videoPreviewNote, { color: theme.placeholder }]}>
+                                    <Text style={[styles.videoPreviewNote, {color: theme.placeholder}]}>
                                         Загружается при прокрутке
                                     </Text>
                                 </View>
@@ -5229,11 +5580,11 @@ export default function ChatScreen() {
                 if (isVideoLoading) {
                     return (
                         <View style={styles.videoLoadingContainer}>
-                            <ActivityIndicator size="large" color={theme.primary} />
-                            <Text style={[styles.videoLoadingText, { color: theme.textSecondary }]}>
+                            <ActivityIndicator size="large" color={theme.primary}/>
+                            <Text style={[styles.videoLoadingText, {color: theme.textSecondary}]}>
                                 Загрузка видео...
                             </Text>
-                            <Text style={[styles.videoLoadingSize, { color: theme.placeholder }]}>
+                            <Text style={[styles.videoLoadingSize, {color: theme.placeholder}]}>
                                 {item.mediaSize ? Math.round(item.mediaSize / (1024 * 1024)) + ' MB' : ''}
                             </Text>
                         </View>
@@ -5265,11 +5616,11 @@ export default function ChatScreen() {
                                 }
                             }}
                         >
-                            <MaterialIcons name="videocam-off" size={48} color={theme.textSecondary} />
-                            <Text style={[styles.missingMediaText, { color: theme.textSecondary }]}>
+                            <MaterialIcons name="videocam-off" size={48} color={theme.textSecondary}/>
+                            <Text style={[styles.missingMediaText, {color: theme.textSecondary}]}>
                                 Видео {item.mediaSize ? Math.round(item.mediaSize / (1024 * 1024)) + 'MB' : ''}
                             </Text>
-                            <Text style={[styles.missingMediaSubtext, { color: theme.placeholder }]}>
+                            <Text style={[styles.missingMediaSubtext, {color: theme.placeholder}]}>
                                 Ошибка загрузки. Нажмите для повтора
                             </Text>
                         </TouchableOpacity>
@@ -5287,7 +5638,13 @@ export default function ChatScreen() {
                 }
                 const messageId = String(item.id);
                 const videoState = inlineVideoStates[messageId] || {
-                    isPlaying: false, isMuted: false, isExpanded: false, duration: 0, position: 0, isLoaded: false
+                    isPlaying: false,
+                    isMuted: false,
+                    isExpanded: false,
+                    duration: 0,
+                    position: 0,
+                    isLoaded: false,
+                    isResetting: false
                 };
 
                 // ИСПРАВЛЕНИЕ: Упрощенная логика без промежуточного expanded состояния
@@ -5318,7 +5675,7 @@ export default function ChatScreen() {
                             isMuted={videoState.isMuted}
                             isLooping={false}
                             progressUpdateIntervalMillis={500} // Обновление прогресса каждые 500мс
-                            videoStyle={{ backgroundColor: 'black' }} // Оптимизация рендеринга
+                            videoStyle={{backgroundColor: 'black'}} // Оптимизация рендеринга
                             onLoad={(data) => {
                                 setInlineVideoStates(prev => ({
                                     ...prev,
@@ -5336,86 +5693,91 @@ export default function ChatScreen() {
                                     uri: videoUri?.substring(videoUri.lastIndexOf('/') + 1),
                                     fullUri: videoUri,
                                     errorType: error?.error?.includes('MediaCodecRenderer') ? 'codec' :
-                                              error?.error?.includes('Decoder') ? 'decoder' :
-                                              error?.error?.includes('FileNotFound') || error?.error?.includes('failed to load') ? 'cache' : 'unknown'
+                                        error?.error?.includes('Decoder') ? 'decoder' :
+                                            error?.error?.includes('FileNotFound') || error?.error?.includes('failed to load') ? 'cache' :
+                                                error?.error?.includes('UnrecognizedInputFormatException') ? 'format' :
+                                                    error?.error?.includes('extractors') ? 'format' :
+                                                        error?.error?.includes('FileDataSourceException') ? 'file_access' : 'unknown'
                                 });
 
-                                // Проверяем, является ли это ошибкой кэша
+                                // Проверяем, является ли это ошибкой кэша или доступа к файлу
                                 const isCacheError = error?.error?.includes('FileNotFound') ||
-                                                    error?.error?.includes('failed to load') ||
-                                                    error?.error?.includes('unable to read file') ||
-                                                    (!videoUri?.startsWith('http') && error?.error);
+                                    error?.error?.includes('failed to load') ||
+                                    error?.error?.includes('unable to read file') ||
+                                    error?.error?.includes('FileDataSourceException');
 
-                                if (isCacheError) {
-                                    // Кэш очищен - повторно загружаем и кешируем с сервера
-                                    console.log('🎥 [AUTO-RELOAD] Cache cleared, fetching and caching from server:', item.id);
+                                const isFormatError = error?.error?.includes('UnrecognizedInputFormatException') ||
+                                    error?.error?.includes('None of the available extractors') ||
+                                    error?.error?.includes('could read the stream');
 
-                                    updateMessageSafely(item.id, {
-                                        videoIsLoading: true
-                                    });
+                                const isLocalFileError = !videoUri?.startsWith('http') && (isCacheError || isFormatError);
 
-                                    try {
-                                        // Получаем и кешируем видео заново
-                                        const newCachedUri = await getVideoUriWithCache(item);
-                                        if (newCachedUri) {
-                                            updateMessageSafely(item.id, {
-                                                mediaUri: newCachedUri,
-                                                videoLoadRequested: true,
-                                                videoIsLoading: false
-                                            });
-                                            console.log('🎥 [AUTO-RELOAD] ✅ Video re-cached successfully');
-                                        } else {
-                                            throw new Error('Failed to get cached video');
-                                        }
-                                    } catch (cacheError) {
-                                        console.error('🎥 [AUTO-RELOAD] Re-caching failed:', cacheError);
+                                if (isLocalFileError || isFormatError) {
+                                    const errorType = isCacheError ? 'cache/file_access' : 'format';
+                                    console.log('🎥 [AUTO-FALLBACK] ========== HANDLING VIDEO ERROR ==========');
+                                    console.log('🎥 [AUTO-FALLBACK] Error type:', errorType);
+                                    console.log('🎥 [AUTO-FALLBACK] Original error:', error?.error?.substring(0, 200));
+                                    console.log('🎥 [AUTO-FALLBACK] Video URI:', videoUri);
+                                    console.log('🎥 [AUTO-FALLBACK] Is local file:', !videoUri?.startsWith('http'));
 
-                                        // Fallback на прямой серверный URL
-                                        if (item.serverFileUrl) {
-                                            updateMessageSafely(item.id, {
-                                                mediaUri: item.serverFileUrl,
-                                                videoLoadRequested: true,
-                                                videoIsLoading: false
-                                            });
-                                        } else {
-                                            updateMessageSafely(item.id, {
-                                                videoIsLoading: false,
-                                                needsReload: true
-                                            });
+                                    // Удаляем поврежденный кеш если это локальный файл
+                                    if (videoUri?.startsWith('file://')) {
+                                        console.log('🎥 [AUTO-FALLBACK] Deleting corrupted cache file...');
+                                        try {
+                                            // Проверяем существование файла перед удалением
+                                            const fileInfo = await FileSystem.getInfoAsync(videoUri);
+                                            if (fileInfo.exists) {
+                                                await FileSystem.deleteAsync(videoUri, {idempotent: true});
+                                                console.log('🎥 [AUTO-FALLBACK] ✅ Corrupted cache file deleted');
+                                            } else {
+                                                console.log('🎥 [AUTO-FALLBACK] File already does not exist');
+                                            }
+                                        } catch (deleteError) {
+                                            console.warn('🎥 [AUTO-FALLBACK] Failed to delete corrupted cache:', deleteError);
                                         }
                                     }
 
-                                    return;
-                                } else if (isCacheError && !item.serverFileUrl) {
-                                    // Нет serverFileUrl - запрашиваем с сервера
-                                    console.log('🎥 [AUTO-RELOAD] Cache cleared, requesting URL from server:', item.id);
-
+                                    console.log('🎥 [AUTO-FALLBACK] Switching to server URL...');
                                     updateMessageSafely(item.id, {
                                         videoIsLoading: true
                                     });
 
                                     try {
-                                        const serverUrl = await getMediaServerUrl(item.id);
+                                        // Получаем серверный URL и используем его напрямую (без кеширования)
+                                        let serverUrl = item.serverFileUrl;
+                                        if (!serverUrl) {
+                                            console.log('🎥 [AUTO-FALLBACK] No cached server URL, requesting from API...');
+                                            serverUrl = await getMediaServerUrl(item.id);
+                                        } else {
+                                            console.log('🎥 [AUTO-FALLBACK] Using cached server URL');
+                                        }
+
                                         if (serverUrl) {
+                                            console.log('🎥 [AUTO-FALLBACK] ✅ Using server URL directly (bypassing cache)');
+                                            console.log('🎥 [AUTO-FALLBACK] Server URL:', serverUrl.substring(0, 100) + '...');
                                             updateMessageSafely(item.id, {
                                                 serverFileUrl: serverUrl,
-                                                mediaUri: serverUrl,
+                                                mediaUri: serverUrl, // Используем серверный URL напрямую
+                                                videoLoadRequested: true,
                                                 videoIsLoading: false,
-                                                videoLoadRequested: true
+                                                needsReload: false
                                             });
-                                            console.log('🎥 [AUTO-RELOAD] ✅ Server URL loaded after cache miss');
                                         } else {
-                                            updateMessageSafely(item.id, {
-                                                videoIsLoading: false,
-                                                needsReload: true
-                                            });
+                                            throw new Error('No server URL available');
                                         }
                                     } catch (serverError) {
-                                        console.error('🎥 [AUTO-RELOAD] Failed to get server URL:', serverError);
+                                        console.error('🎥 [AUTO-FALLBACK] ❌ Failed to get server URL:', serverError);
                                         updateMessageSafely(item.id, {
                                             videoIsLoading: false,
                                             needsReload: true
                                         });
+
+                                        // Показываем пользователю информативное сообщение
+                                        Alert.alert(
+                                            'Проблема с видео',
+                                            'Не удалось загрузить видео. Возможно, файл поврежден или удален с сервера.',
+                                            [{text: 'OK'}]
+                                        );
                                     }
 
                                     return;
@@ -5423,23 +5785,37 @@ export default function ChatScreen() {
 
                                 // Определяем тип ошибки и показываем соответствующее решение
                                 const isCodecError = error?.error?.includes('MediaCodecRenderer') ||
-                                                   error?.error?.includes('Decoder init failed');
+                                    error?.error?.includes('Decoder init failed');
 
                                 if (isCodecError) {
                                     // Ошибка кодека - автоматически открываем в браузере
                                     console.log('🎥 [AUTO-FALLBACK] Codec error detected, opening in browser');
 
-                                    if (videoUri?.startsWith('http')) {
+                                    // Получаем серверный URL для открытия в браузере
+                                    let browserUrl = videoUri;
+                                    if (!browserUrl?.startsWith('http')) {
+                                        browserUrl = item.serverFileUrl;
+                                        if (!browserUrl) {
+                                            try {
+                                                browserUrl = await getMediaServerUrl(item.id);
+                                            } catch (e) {
+                                                console.error('Failed to get server URL for browser:', e);
+                                            }
+                                        }
+                                    }
+
+                                    if (browserUrl?.startsWith('http')) {
                                         // Для HTTP видео - сразу открываем в браузере
                                         Alert.alert(
                                             'Несовместимый кодек',
-                                            'Видео использует кодек, который не поддерживается устройством. Открываем в браузере...',
+                                            'Видео использует кодек, который не поддерживается устройством. Открыть в браузере?',
                                             [
+                                                {text: 'Отмена', style: 'cancel'},
                                                 {
-                                                    text: 'OK',
+                                                    text: 'Открыть в браузере',
                                                     onPress: async () => {
                                                         try {
-                                                            await WebBrowser.openBrowserAsync(videoUri, {
+                                                            await WebBrowser.openBrowserAsync(browserUrl, {
                                                                 presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
                                                                 controlsColor: '#007AFF',
                                                                 toolbarColor: '#000000',
@@ -5458,9 +5834,9 @@ export default function ChatScreen() {
                                         // Для локальных файлов - пробуем системный плеер
                                         Alert.alert(
                                             'Проблема с воспроизведением',
-                                            'Встроенный плеер не может воспроизвести это видео.\n\nОткрыть в системном плеере?',
+                                            'Встроенный плеер не может воспроизвести это видео.\n\nПопробовать системный плеер?',
                                             [
-                                                { text: 'Отмена', style: 'cancel' },
+                                                {text: 'Отмена', style: 'cancel'},
                                                 {
                                                     text: 'Системный плеер',
                                                     onPress: async () => {
@@ -5483,48 +5859,103 @@ export default function ChatScreen() {
                                     }
                                 } else {
                                     // Обычная ошибка загрузки
-                                    updateMessageSafely(item.id, { needsReload: true });
+                                    console.log('🎥 [AUTO-FALLBACK] Unknown video error, marking for reload');
+                                    updateMessageSafely(item.id, {needsReload: true});
                                 }
                             }}
                             onPlaybackStatusUpdate={(status: AVPlaybackStatus) => {
                                 if ('error' in status) {
-                                    console.error('🎥 [INLINE-VIDEO] Playback error:', status.error);
-                                } else if ('durationMillis' in status && status.isLoaded) {
+                                    // Обрабатываем ошибки воспроизведения
+                                    const playbackError = status.error?.toString() || '';
+                                    if (playbackError.includes('FileDataSourceException') ||
+                                        playbackError.includes('FileNotFound') ||
+                                        playbackError.includes('UnrecognizedInputFormatException')) {
+                                        // Ошибка будет обработана в onError выше
+                                    }
+                                } else if ('durationMillis' in status && status.isLoaded && status.durationMillis > 0) {
                                     const currentState = inlineVideoStates[messageId] || {
-                                        isPlaying: false, isMuted: false, isExpanded: false, duration: 0, position: 0, isLoaded: false
+                                        isPlaying: false,
+                                        isMuted: false,
+                                        isExpanded: false,
+                                        duration: 0,
+                                        position: 0,
+                                        isLoaded: false,
+                                        isResetting: false
                                     };
 
                                     // Проверяем, закончилось ли видео
-                                    const isFinished = status.positionMillis >= status.durationMillis - 200; // 100ms погрешность
+                                    const isNearEnd = status.positionMillis >= status.durationMillis - 200; // 200ms до конца
+                                    const isAtEnd = status.positionMillis >= status.durationMillis - 100; // 100ms до конца
 
-                                    if (isFinished && currentState.isPlaying) {
-                                        // Перематываем в начало и останавливаем
-                                        resetVideoToBeginning(messageId);
-                                        return;
-                                    }
+                                    if (isAtEnd && currentState.isPlaying && !currentState.isResetting) {
+                                        console.log('🎥 [VIDEO-END] Video reached end, resetting to beginning:', messageId);
 
-                                    // Обновляем состояние воспроизведения
-                                    const needsUpdate =
-                                        status.isPlaying !== currentState.isPlaying ||
-                                        Math.abs(status.positionMillis - currentState.position) > 1000 || // обновляем каждую секунду
-                                        status.durationMillis !== currentState.duration;
-
-                                    if (needsUpdate) {
+                                        // Помечаем что видео сбрасывается, чтобы избежать повторных вызовов
                                         setInlineVideoStates(prev => ({
                                             ...prev,
                                             [messageId]: {
                                                 ...currentState,
-                                                isPlaying: status.isPlaying,
-                                                position: status.positionMillis,
-                                                duration: status.durationMillis,
-                                                isLoaded: true
+                                                isResetting: true,
+                                                isPlaying: false
                                             }
                                         }));
+
+                                        // Перематываем в начало с небольшой задержкой
+                                        setTimeout(async () => {
+                                            try {
+                                                const videoRef = inlineVideoRefs.current[messageId];
+                                                if (videoRef) {
+                                                    await videoRef.setPositionAsync(0);
+                                                    // Снимаем флаг сброса и готовы к новому воспроизведению
+                                                    setInlineVideoStates(prev => ({
+                                                        ...prev,
+                                                        [messageId]: {
+                                                            ...prev[messageId],
+                                                            position: 0,
+                                                            isResetting: false,
+                                                            isPlaying: false
+                                                        }
+                                                    }));
+                                                }
+                                            } catch (error) {
+                                                console.error('🎥 [VIDEO-END] Error resetting video:', error);
+                                                // Снимаем флаг даже при ошибке
+                                                setInlineVideoStates(prev => ({
+                                                    ...prev,
+                                                    [messageId]: {
+                                                        ...prev[messageId],
+                                                        isResetting: false,
+                                                        isPlaying: false
+                                                    }
+                                                }));
+                                            }
+                                        }, 150);
+                                        return;
+                                    }
+
+                                    // Обычное обновление состояния (не во время сброса)
+                                    if (!currentState.isResetting) {
+                                        const needsUpdate =
+                                            status.isPlaying !== currentState.isPlaying ||
+                                            Math.abs(status.positionMillis - currentState.position) > 1000 || // обновляем каждую секунду
+                                            status.durationMillis !== currentState.duration;
+
+                                        if (needsUpdate) {
+                                            setInlineVideoStates(prev => ({
+                                                ...prev,
+                                                [messageId]: {
+                                                    ...currentState,
+                                                    isPlaying: status.isPlaying,
+                                                    position: status.positionMillis,
+                                                    duration: status.durationMillis,
+                                                    isLoaded: true
+                                                }
+                                            }));
+                                        }
                                     }
                                 }
                             }}
                         />
-
 
 
                         {/* Контролы видео - только для инлайн режима */}
@@ -5550,7 +5981,7 @@ export default function ChatScreen() {
                                     <View
                                         style={[
                                             styles.videoProgressFill,
-                                            { width: `${(videoState.position / videoState.duration) * 100}%` }
+                                            {width: `${(videoState.position / videoState.duration) * 100}%`}
                                         ]}
                                     />
                                 </View>
@@ -5558,7 +5989,7 @@ export default function ChatScreen() {
                                     style={styles.videoProgressTouch}
                                     onPress={(event) => {
                                         if (videoState.duration > 0) {
-                                            const { locationX } = event.nativeEvent;
+                                            const {locationX} = event.nativeEvent;
                                             const progressWidth = 180; // ширина прогресс-бара
                                             const percentage = Math.min(Math.max(locationX / progressWidth, 0), 1);
                                             const newPosition = percentage * videoState.duration;
@@ -5573,7 +6004,8 @@ export default function ChatScreen() {
                         {videoState.isLoaded && (
                             <View style={styles.videoTimeContainerSimple}>
                                 <Text style={styles.videoTimeText}>
-                                    {Math.floor(videoState.position / 1000)}s / {Math.floor((videoState.duration ?? 0) / 1000)}s
+                                    {Math.floor(videoState.position / 1000)}s
+                                    / {Math.floor((videoState.duration ?? 0) / 1000)}s
                                 </Text>
                             </View>
                         )}
@@ -5605,7 +6037,7 @@ export default function ChatScreen() {
                         <LazyMedia
                             onVisible={async () => {
                                 if (!item.isLoadingServerUrl && !item.serverFileUrl) {
-                                    updateMessageSafely(item.id, { isLoadingServerUrl: true });
+                                    updateMessageSafely(item.id, {isLoadingServerUrl: true});
 
                                     const serverUrl = await getMediaServerUrl(item.id);
                                     if (serverUrl) {
@@ -5626,15 +6058,15 @@ export default function ChatScreen() {
                         >
                             {item.isLoadingServerUrl ? (
                                 <View style={styles.audioPlayerContainer}>
-                                    <ActivityIndicator size="small" color={theme.primary} />
-                                    <Text style={[styles.audioLoadingText, { color: theme.textSecondary }]}>
+                                    <ActivityIndicator size="small" color={theme.primary}/>
+                                    <Text style={[styles.audioLoadingText, {color: theme.textSecondary}]}>
                                         Загрузка аудио...
                                     </Text>
                                 </View>
                             ) : (
                                 <View style={styles.audioPlayerContainer}>
-                                    <MaterialIcons name="mic" size={24} color={theme.textSecondary} />
-                                    <Text style={[styles.audioLoadingText, { color: theme.textSecondary }]}>
+                                    <MaterialIcons name="mic" size={24} color={theme.textSecondary}/>
+                                    <Text style={[styles.audioLoadingText, {color: theme.textSecondary}]}>
                                         Голосовое сообщение
                                     </Text>
                                 </View>
@@ -5654,7 +6086,7 @@ export default function ChatScreen() {
                         onPress={() => playAudio(item)}
                         activeOpacity={0.7}
                     >
-                        <View style={[styles.audioPlayButton, { backgroundColor: theme.primary }]}>
+                        <View style={[styles.audioPlayButton, {backgroundColor: theme.primary}]}>
                             <MaterialIcons
                                 name={isPlaying ? "pause" : "play-arrow"}
                                 size={24}
@@ -5663,7 +6095,7 @@ export default function ChatScreen() {
                         </View>
 
                         <View style={styles.audioWaveform}>
-                            <View style={[styles.audioProgressBar, { backgroundColor: theme.border }]}>
+                            <View style={[styles.audioProgressBar, {backgroundColor: theme.border}]}>
                                 <View
                                     style={[
                                         styles.audioProgressFill,
@@ -5674,7 +6106,7 @@ export default function ChatScreen() {
                                     ]}
                                 />
                             </View>
-                            <Text style={[styles.audioDuration, { color: theme.textSecondary }]}>
+                            <Text style={[styles.audioDuration, {color: theme.textSecondary}]}>
                                 {duration > 0
                                     ? `${Math.floor(position / 1000)}:${String(Math.floor((position % 1000) / 10)).padStart(2, '0')} / ${Math.floor(duration / 1000)}:${String(Math.floor((duration % 1000) / 10)).padStart(2, '0')}`
                                     : item.message.match(/\((\d+)с\)/)?.[1] ? `${item.message.match(/\((\d+)с\)/)?.[1]}с` : '0:00'
@@ -5693,7 +6125,7 @@ export default function ChatScreen() {
                         <LazyMedia
                             onVisible={async () => {
                                 if (!item.isLoadingServerUrl && !item.serverFileUrl) {
-                                    updateMessageSafely(item.id, { isLoadingServerUrl: true });
+                                    updateMessageSafely(item.id, {isLoadingServerUrl: true});
 
                                     // ЗАГРУЖАЕМ URL ЧЕРЕЗ API (как для изображений и видео)
                                     const serverUrl = await getMediaServerUrl(item.id);
@@ -5716,18 +6148,18 @@ export default function ChatScreen() {
                         >
                             {item.isLoadingServerUrl ? (
                                 <>
-                                    <ActivityIndicator size="small" color={theme.primary} />
-                                    <Text style={[styles.missingMediaText, { color: theme.textSecondary, marginTop: 8 }]}>
+                                    <ActivityIndicator size="small" color={theme.primary}/>
+                                    <Text style={[styles.missingMediaText, {color: theme.textSecondary, marginTop: 8}]}>
                                         Загрузка документа...
                                     </Text>
                                 </>
                             ) : (
                                 <>
-                                    <MaterialIcons name="description" size={48} color={theme.textSecondary} />
-                                    <Text style={[styles.missingMediaText, { color: theme.textSecondary }]}>
+                                    <MaterialIcons name="description" size={48} color={theme.textSecondary}/>
+                                    <Text style={[styles.missingMediaText, {color: theme.textSecondary}]}>
                                         {item.mediaFileName || 'Документ'} {item.mediaSize ? Math.round(item.mediaSize / (1024 * 1024)) + 'MB' : ''}
                                     </Text>
-                                    <Text style={[styles.missingMediaSubtext, { color: theme.placeholder }]}>
+                                    <Text style={[styles.missingMediaSubtext, {color: theme.placeholder}]}>
                                         Загружается через API...
                                     </Text>
                                 </>
@@ -5775,7 +6207,7 @@ export default function ChatScreen() {
                     >
                         <View style={styles.fileIconContainer}>
                             {isDownloading ? (
-                                <ActivityIndicator size="small" color={theme.primary} />
+                                <ActivityIndicator size="small" color={theme.primary}/>
                             ) : (
                                 <MaterialIcons
                                     name={fileIcon as any}
@@ -5785,20 +6217,20 @@ export default function ChatScreen() {
                             )}
                         </View>
                         <View style={styles.fileInfo}>
-                            <Text style={[styles.fileName, { color: theme.text }]} numberOfLines={5}>
+                            <Text style={[styles.fileName, {color: theme.text}]} numberOfLines={5}>
                                 {item.mediaFileName || 'Документ'}
                             </Text>
-                            <Text style={[styles.fileSize, { color: theme.textSecondary }]}>
+                            <Text style={[styles.fileSize, {color: theme.textSecondary}]}>
                                 {item.mediaSize ? `${Math.round(item.mediaSize / 1024)} КБ` : 'Размер неизвестен'}
                             </Text>
                             {item.mimeType && (
-                                <Text style={[styles.fileMimeType, { color: theme.placeholder }]}>
+                                <Text style={[styles.fileMimeType, {color: theme.placeholder}]}>
                                     {item.mimeType}
                                 </Text>
                             )}
                             {isDownloading && (
                                 <View style={styles.downloadProgressContainer}>
-                                    <View style={[styles.downloadProgressBar, { backgroundColor: theme.border }]}>
+                                    <View style={[styles.downloadProgressBar, {backgroundColor: theme.border}]}>
                                         <View
                                             style={[
                                                 styles.downloadProgressFill,
@@ -5809,7 +6241,7 @@ export default function ChatScreen() {
                                             ]}
                                         />
                                     </View>
-                                    <Text style={[styles.downloadProgressText, { color: theme.textSecondary }]}>
+                                    <Text style={[styles.downloadProgressText, {color: theme.textSecondary}]}>
                                         Загрузка... {downloadProgress}%
                                     </Text>
                                 </View>
@@ -5855,7 +6287,7 @@ export default function ChatScreen() {
             }
 
             // Для полученных сообщений, которые я еще не прочитал
-            if (!isMyMessage && (isUnread || !item.read) && animatedValue) {
+            if (!isMyMessage && (isUnread || item._isNewUnread) && animatedValue) {
                 return {
                     backgroundColor: animatedValue.interpolate({
                         inputRange: [0, 1],
@@ -5867,8 +6299,8 @@ export default function ChatScreen() {
                 };
             }
 
-            // Для новых непрочитанных сообщений без анимации
-            if (!isMyMessage && (item._isNewUnread || !item.read)) {
+            // Для новых непрочитанных сообщений без анимации (статичное отображение)
+            if (!isMyMessage && (isUnread || item._isNewUnread)) {
                 return {
                     backgroundColor: 'rgba(76, 175, 80, 0.8)' // Зеленый для новых непрочитанных
                 };
@@ -5893,12 +6325,22 @@ export default function ChatScreen() {
         const handleLongPress = () => {
             if (isSelectionMode) {
                 toggleMessageSelection(Number(item.id));
-            } else if (isMyMessage) {
+            } else {
+                // Сразу входим в режим выделения при долгом нажатии
+                enterSelectionMode(Number(item.id));
+            }
+        };
+
+        // Обработчик двойного нажатия для контекстного меню
+        const handleDoublePress = () => {
+            if (isSelectionMode) return;
+
+            if (isMyMessage) {
                 Alert.alert(
                     'Действия с сообщением',
                     'Выберите действие:',
                     [
-                        { text: 'Отмена', style: 'cancel' },
+                        {text: 'Отмена', style: 'cancel'},
                         {
                             text: 'Выделить',
                             onPress: () => enterSelectionMode(Number(item.id))
@@ -5913,7 +6355,7 @@ export default function ChatScreen() {
                             onPress: () => deleteMessage(Number(item.id), 'for_everyone')
                         }
                     ],
-                    { cancelable: true }
+                    {cancelable: true}
                 );
             } else {
                 // Для чужих сообщений
@@ -5921,7 +6363,7 @@ export default function ChatScreen() {
                     'Действия с сообщением',
                     'Выберите действие:',
                     [
-                        { text: 'Отмена', style: 'cancel' },
+                        {text: 'Отмена', style: 'cancel'},
                         {
                             text: 'Выделить',
                             onPress: () => enterSelectionMode(Number(item.id))
@@ -5932,113 +6374,157 @@ export default function ChatScreen() {
                             onPress: () => deleteMessage(Number(item.id), 'for_me')
                         }
                     ],
-                    { cancelable: true }
+                    {cancelable: true}
                 );
             }
         };
 
+        // Простой жест свайпа без анимации (для избежания хук-ошибок)
+        const swipeGesture = Gesture.Pan()
+            .activeOffsetX([-10, 10])
+            .onEnd((event) => {
+                const threshold = 60; // Порог для активации реплая
+                const shouldReply = isMyMessage
+                    ? event.translationX < -threshold
+                    : event.translationX > threshold;
+
+                if (shouldReply && !isSelectionMode) {
+                    // Активируем реплай
+                    runOnJS(setReply)(item);
+                }
+            });
+
         return (
-            <AnimatedView
-                style={[
-                    styles.messageContainer,
-                    isMyMessage ? styles.myMessage : styles.otherMessage,
-                    item.mediaType ? styles.mediaMessage : null,
-                    backgroundStyle,
-                    isSelected ? styles.selectedMessage : null,
-                    item.isDeleting ? styles.deletingMessage : null
-                ]}
-            >
-                {/* Индикатор удаления */}
-                {item.isDeleting && (
-                    <View style={styles.deletingIndicator}>
-                        <ActivityIndicator size="small" color={theme.error || '#ff4444'} />
-                        <Text style={[styles.deletingText, { color: theme.error || '#ff4444' }]}>
-                            Удаление...
-                        </Text>
-                    </View>
-                )}
-
-                {/* Индикатор выделения */}
-                {isSelectionMode && (
-                    <View style={styles.selectionIndicator}>
-                        <MaterialIcons
-                            name={isSelected ? "check-circle" : "radio-button-unchecked"}
-                            size={20}
-                            color={isSelected ? theme.primary : theme.placeholder}
-                        />
-                    </View>
-                )}
-
-                {!isMyMessage && (
-                    <TouchableOpacity
-                        onPress={handlePress}
-                        onLongPress={handleLongPress}
-                        delayLongPress={500}
-                        activeOpacity={1}
-                    >
-                        <Text style={[styles.senderName, { color: theme.textSecondary }]}>{item.sender__username}</Text>
-                    </TouchableOpacity>
-                )}
-
-                {/* Медиа контент - БЕЗ overlay для сохранения взаимодействия */}
-                <View style={item.mediaType ? styles.mediaContentWrapper : null}>
-                    {renderMediaContent()}
+            <View style={styles.messageWithReplyIndicator}>
+                {/* Индикатор возможности реплая */}
+                <View style={[
+                    styles.replyIndicator,
+                    isMyMessage ? styles.replyIndicatorRight : styles.replyIndicatorLeft
+                ]}>
+                    <MaterialIcons
+                        name="reply"
+                        size={16}
+                        color={theme.textSecondary}
+                        style={styles.replyIndicatorIcon}
+                    />
                 </View>
 
-                {/* Показываем текст только если это не медиа (фото/видео) или если есть реальное текстовое сообщение */}
-                {item.message && !item.message.match(/^(📷 Изображение|🎥 Видео)$/) && (
+                <GestureDetector gesture={swipeGesture}>
                     <TouchableOpacity
                         onPress={handlePress}
                         onLongPress={handleLongPress}
                         delayLongPress={500}
-                        activeOpacity={1}
+                        activeOpacity={0.7}
                     >
-                        <Text style={[
-                            styles.messageText,
-                            isMyMessage ? styles.myMessageText : styles.otherMessageText,
-                            item.mediaType ? styles.mediaMessageText : null
-                        ]}>
-                            {item.message}
-                        </Text>
-                    </TouchableOpacity>
-                )}
+                        <AnimatedView
+                            style={[
+                                styles.messageContainer,
+                                isMyMessage ? styles.myMessage : styles.otherMessage,
+                                item.mediaType ? styles.mediaMessage : null,
+                                backgroundStyle,
+                                isSelected ? styles.selectedMessage : null,
+                                item.isDeleting ? styles.deletingMessage : null,
+                                item.isDeletedByOther ? styles.deletedByOtherMessage : null
+                            ]}
+                        >
+                            {/* Индикатор удаления */}
+                            {item.isDeleting && (
+                                <View style={styles.deletingIndicator}>
+                                    <ActivityIndicator size="small" color={theme.error || '#ff4444'}/>
+                                    <Text style={[styles.deletingText, {color: theme.error || '#ff4444'}]}>
+                                        Удаление...
+                                    </Text>
+                                </View>
+                            )}
 
-                {/* Показываем пометку об удалении для собеседника */}
-                {item.isDeletedByOther && !isMyMessage && (
-                    <View style={styles.deletionNotice}>
-                        <MaterialIcons name="visibility-off" size={14} color={theme.textSecondary} />
-                        <Text style={[styles.deletionNoticeText, { color: theme.textSecondary }]}>
-                            {item.deletedByUsername || 'Собеседник'} удалил это сообщение из своей переписки
-                        </Text>
-                    </View>
-                )}
+                            {/* Индикатор выделения */}
+                            {isSelectionMode && (
+                                <View style={styles.selectionIndicator}>
+                                    <MaterialIcons
+                                        name={isSelected ? "check-circle" : "radio-button-unchecked"}
+                                        size={20}
+                                        color={isSelected ? theme.primary : theme.placeholder}
+                                    />
+                                </View>
+                            )}
 
-                <TouchableOpacity
-                    onPress={handlePress}
-                    onLongPress={handleLongPress}
-                    delayLongPress={500}
-                    activeOpacity={1}
-                >
-                    <View style={styles.messageFooter}>
-                        <Text style={[
-                            styles.timestamp,
-                            isMyMessage ? styles.myTimestamp : styles.otherTimestamp
-                        ]}>
-                            {formatTimestamp(item.timestamp)}
-                        </Text>
-                        {isMyMessage && (
-                            <View style={styles.readStatusContainer}>
-                                <MaterialIcons 
-                                    name={item.read ? "done-all" : "done"} 
-                                    size={16} 
-                                    color={item.read ? theme.success || '#4CAF50' : 'rgba(255, 255, 255, 0.6)'}
-                                    style={styles.readStatusIcon}
-                                />
+                            {!isMyMessage && (
+                                <Text
+                                    style={[styles.senderName, {color: theme.textSecondary}]}>{item.sender__username}</Text>
+                            )}
+
+                            {/* Отображение реплая */}
+                            {item.reply_to_message_id && (
+                                <View style={[styles.replyContainer, {borderLeftColor: theme.primary}]}>
+                                    <View style={styles.replyHeader}>
+                                        <MaterialIcons name="reply" size={16} color={theme.primary}/>
+                                        <Text style={[styles.replySender, {color: theme.primary}]}>
+                                            {item.reply_to_sender}
+                                        </Text>
+                                    </View>
+                                    <Text
+                                        style={[styles.replyMessage, {color: theme.textSecondary}]}
+                                        numberOfLines={2}
+                                    >
+                                        {item.reply_to_media_type ?
+                                            `${item.reply_to_media_type === 'image' ? '📷' :
+                                                item.reply_to_media_type === 'video' ? '🎥' :
+                                                    item.reply_to_media_type === 'audio' ? '🎤' :
+                                                        '📄'} ${item.reply_to_media_type}`
+                                            : item.reply_to_message}
+                                    </Text>
+                                </View>
+                            )}
+
+                            {/* Медиа контент - БЕЗ overlay для сохранения взаимодействия */}
+                            <View style={item.mediaType ? styles.mediaContentWrapper : null}>
+                                {renderMediaContent()}
                             </View>
-                        )}
-                    </View>
-                </TouchableOpacity>
-            </AnimatedView>
+
+                            {/* Показываем текст только если это не медиа (фото/видео) или если есть реальное текстовое сообщение */}
+                            {item.message && !item.message.match(/^(📷 Изображение|🎥 Видео)$/) && (
+                                <Text style={[
+                                    styles.messageText,
+                                    isMyMessage ? styles.myMessageText : styles.otherMessageText,
+                                    item.mediaType ? styles.mediaMessageText : null
+                                ]}>
+                                    {item.message}
+                                </Text>
+                            )}
+
+                            {/* Показываем пометку об удалении для собеседника */}
+                            {item.isDeletedByOther && !isMyMessage && (
+                                <View style={styles.deletionNotice}>
+                                    <MaterialIcons name="visibility-off" size={14} color={theme.textSecondary}/>
+                                    <Text style={[styles.deletionNoticeText, {color: theme.textSecondary}]}>
+                                        {item.deletedByUsername || 'Собеседник'} удалил это сообщение из своей переписки
+                                    </Text>
+                                </View>
+                            )}
+
+                            <View style={styles.messageFooter}>
+                                <Text style={[
+                                    styles.timestamp,
+                                    isMyMessage ? styles.myTimestamp : styles.otherTimestamp
+                                ]}>
+                                    {formatTimestamp(item.timestamp)}
+                                </Text>
+                                {isMyMessage && !item.isDeletedByOther && (
+                                    <View style={styles.readStatusContainer}>
+                                        <MaterialIcons
+                                            name={item.read ? "done-all" : "done"}
+                                            size={16}
+                                            color={item.read ? theme.success || '#4CAF50' : 'rgba(255, 255, 255, 0.6)'}
+                                            style={styles.readStatusIcon}
+                                        />
+                                    </View>
+                                )}
+                            </View>
+                            </AnimatedView>
+                    </TouchableOpacity>
+
+            </GestureDetector>
+          </View>
         );
     };
 
@@ -6046,1464 +6532,1593 @@ export default function ChatScreen() {
         return (
             <View style={styles.loadingContainer}>
                 <ActivityIndicator size="large" color={theme.primary}/>
-                <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Загрузка чата...</Text>
+                <Text style={[styles.loadingText, {color: theme.textSecondary}]}>Загрузка чата...</Text>
             </View>
         );
     }
 
     return (
-        <View style={styles.container}>
-            <KeyboardAvoidingView
-                style={styles.keyboardView}
-                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-                keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
-            >
-                {/* Header Section */}
-                <View style={styles.header}>
-                    <TouchableOpacity
-                        style={styles.backButton}
-                        onPress={() => router.back()}
-                    >
-                        <MaterialIcons name="arrow-back" size={24} color={theme.primary} />
-                    </TouchableOpacity>
+        <GestureHandlerRootView style={styles.container}>
+            <View style={styles.container}>
+                <KeyboardAvoidingView
+                    style={styles.keyboardView}
+                    behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                    keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+                >
+                    {/* Header Section */}
+                    <View style={styles.header}>
+                        <TouchableOpacity
+                            style={styles.backButton}
+                            onPress={() => router.back()}
+                        >
+                            <MaterialIcons name="arrow-back" size={24} color={theme.primary}/>
+                        </TouchableOpacity>
 
-                    {/* Мини аватарка */}
-                    <View style={styles.miniAvatarContainer}>
-                        <DirectImage
-                            uri={
-                                recipient?.avatar
-                                    ? recipient.avatar.startsWith('http')
-                                      ? recipient.avatar
-                                      : `${API_CONFIG.BASE_URL}${recipient.avatar}`
-                                    : ''
-                            }
-                            style={styles.miniAvatar}
-                        />
+                        {/* Мини аватарка */}
+                        <View style={styles.miniAvatarContainer}>
+                            <DirectImage
+                                uri={
+                                    recipient?.avatar
+                                        ? recipient.avatar.startsWith('http')
+                                            ? recipient.avatar
+                                            : `${API_CONFIG.BASE_URL}${recipient.avatar}`
+                                        : ''
+                                }
+                                style={styles.miniAvatar}
+                            />
+                        </View>
+
+                        <ChatHeader/>
                     </View>
 
-                    <ChatHeader/>
-                </View>
-
-                <FlatList
-                    ref={flatListRef}
-                    data={messages}
-                    style={styles.chatbox}
-                    contentContainerStyle={styles.chatboxContent}
-                    keyExtractor={(item, index) => `msg-${item.id}-${item.mediaType || 'text'}-${index}`}
-                    renderItem={renderMessage}
-                    inverted
-                    onEndReached={loadMoreMessages}
-                    onEndReachedThreshold={0.1}
-                    ListFooterComponent={
-                        isLoadingMore ? (
-                            <View style={styles.loadingMoreContainer}>
-                                <ActivityIndicator size="small" color={theme.primary} />
-                                <Text style={[styles.loadingMoreText, { color: theme.textSecondary }]}>
-                                    Загрузка сообщений...
-                                </Text>
+                    <FlatList
+                        ref={flatListRef}
+                        data={messages}
+                        style={styles.chatbox}
+                        contentContainerStyle={styles.chatboxContent}
+                        keyExtractor={(item, index) => `msg-${item.id}-${item.mediaType || 'text'}-${index}`}
+                        renderItem={renderMessage}
+                        inverted
+                        onEndReached={loadMoreMessages}
+                        onEndReachedThreshold={0.1}
+                        ListFooterComponent={
+                            isLoadingMore ? (
+                                <View style={styles.loadingMoreContainer}>
+                                    <ActivityIndicator size="small" color={theme.primary}/>
+                                    <Text style={[styles.loadingMoreText, {color: theme.textSecondary}]}>
+                                        Загрузка сообщений...
+                                    </Text>
+                                </View>
+                            ) : null
+                        }
+                        ListEmptyComponent={
+                            <View style={styles.emptyContainer}>
+                                <Text style={[styles.emptyText, {color: theme.textSecondary}]}>Нет сообщений</Text>
                             </View>
-                        ) : null
-                    }
-                    ListEmptyComponent={
-                        <View style={styles.emptyContainer}>
-                            <Text style={[styles.emptyText, { color: theme.textSecondary }]}>Нет сообщений</Text>
-                        </View>
-                    }
-                    showsVerticalScrollIndicator={false}
-                    maintainVisibleContentPosition={{
-                        minIndexForVisible: 0,
-                        autoscrollToTopThreshold: 10
-                    }}
-                    // Оптимизации для ленивой загрузки - БЕЗ getItemLayout для динамической высоты
-                    removeClippedSubviews={Platform.OS === 'android'} // Только для Android
-                    maxToRenderPerBatch={8}
-                    updateCellsBatchingPeriod={100}
-                    initialNumToRender={12}
-                    windowSize={7}
-                    // Убираем getItemLayout - он вызывает мерцание с динамической высотой видео
-                />
+                        }
+                        showsVerticalScrollIndicator={false}
+                        maintainVisibleContentPosition={{
+                            minIndexForVisible: 0,
+                            autoscrollToTopThreshold: 10
+                        }}
+                        // Оптимизации для ленивой загрузки - БЕЗ getItemLayout для динамической высоты
+                        removeClippedSubviews={Platform.OS === 'android'} // Только для Android
+                        maxToRenderPerBatch={8}
+                        updateCellsBatchingPeriod={100}
+                        initialNumToRender={12}
+                        windowSize={7}
+                        // Убираем getItemLayout - он вызывает мерцание с динамической высотой видео
+                    />
 
-                <View style={styles.inputContainer}>
-                    {isRecordingAudio ? (
-                        /* Панель записи аудио */
-                        <View style={styles.recordingContainer}>
-                            <TouchableOpacity
-                                style={[styles.cancelRecordButton, { backgroundColor: theme.error || '#ff4444' }]}
-                                onPress={cancelAudioRecording}
-                            >
-                                <MaterialIcons name="close" size={24} color="white" />
-                            </TouchableOpacity>
-
-                            <View style={styles.recordingIndicator}>
-                                <View style={styles.recordingDot} />
-                                <Text style={[styles.recordingText, { color: theme.text }]}>
-                                    {Math.floor(recordingDuration / 60)}:{String(recordingDuration % 60).padStart(2, '0')}
-                                </Text>
+                    {/* Панель реплая */}
+                    {replyToMessage && (
+                        <View
+                            style={[styles.replyPanel, {backgroundColor: theme.surface, borderTopColor: theme.border}]}>
+                            <View style={styles.replyPanelContent}>
+                                <MaterialIcons name="reply" size={18} color={theme.primary}/>
+                                <View style={styles.replyInfo}>
+                                    <Text style={[styles.replyToSender, {color: theme.primary}]}>
+                                        Ответ для {replyToMessage.sender__username}
+                                    </Text>
+                                    <Text
+                                        style={[styles.replyToMessage, {color: theme.textSecondary}]}
+                                        numberOfLines={1}
+                                    >
+                                        {replyToMessage.mediaType ?
+                                            `${replyToMessage.mediaType === 'image' ? '📷' :
+                                                replyToMessage.mediaType === 'video' ? '🎥' :
+                                                    replyToMessage.mediaType === 'audio' ? '🎤' :
+                                                        '📄'} ${replyToMessage.mediaType}`
+                                            : replyToMessage.message}
+                                    </Text>
+                                </View>
+                                <TouchableOpacity
+                                    onPress={cancelReply}
+                                    style={styles.cancelReplyButton}
+                                >
+                                    <MaterialIcons name="close" size={18} color={theme.textSecondary}/>
+                                </TouchableOpacity>
                             </View>
-
-                            <TouchableOpacity
-                                style={[styles.sendRecordButton, { backgroundColor: theme.primary }]}
-                                onPress={stopAndSendAudio}
-                            >
-                                <MaterialIcons name="send" size={24} color="white" />
-                            </TouchableOpacity>
                         </View>
-                    ) : (
-                        /* Обычная панель ввода */
-                        <>
-                            <View style={styles.mediaButtonsContainer}>
+                    )}
+
+                    <View style={styles.inputContainer}>
+                        {isRecordingAudio ? (
+                            /* Панель записи аудио */
+                            <View style={styles.recordingContainer}>
                                 <TouchableOpacity
-                                    style={[styles.mediaButton, { backgroundColor: theme.surface }]}
-                                    onPress={pickImage}
-                                    disabled={!isConnected || !isDataLoaded || !recipient || !currentUserId}
+                                    style={[styles.cancelRecordButton, {backgroundColor: theme.error || '#ff4444'}]}
+                                    onPress={cancelAudioRecording}
                                 >
-                                    <MaterialIcons
-                                        name="photo"
-                                        size={24}
-                                        color={(isConnected && isDataLoaded && recipient && currentUserId) ? theme.primary : theme.placeholder}
-                                    />
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    style={[styles.mediaButton, { backgroundColor: theme.surface }]}
-                                    onPress={pickVideo}
-                                    disabled={!isConnected || !isDataLoaded || !recipient || !currentUserId}
-                                >
-                                    <MaterialIcons
-                                        name="videocam"
-                                        size={24}
-                                        color={(isConnected && isDataLoaded && recipient && currentUserId) ? theme.primary : theme.placeholder}
-                                    />
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    style={[styles.mediaButton, { backgroundColor: theme.surface }]}
-                                    onPress={pickDocument}
-                                    disabled={!isConnected || !isDataLoaded || !recipient || !currentUserId}
-                                >
-                                    <MaterialIcons
-                                        name="attach-file"
-                                        size={24}
-                                        color={(isConnected && isDataLoaded && recipient && currentUserId) ? theme.primary : theme.placeholder}
-                                    />
+                                    <MaterialIcons name="close" size={24} color="white"/>
                                 </TouchableOpacity>
 
-                                {/* Кнопка для ручного переподключения */}
-                                {(!isConnected || reconnectAttempts >= 3) && (
+                                <View style={styles.recordingIndicator}>
+                                    <View style={styles.recordingDot}/>
+                                    <Text style={[styles.recordingText, {color: theme.text}]}>
+                                        {Math.floor(recordingDuration / 60)}:{String(recordingDuration % 60).padStart(2, '0')}
+                                    </Text>
+                                </View>
+
+                                <TouchableOpacity
+                                    style={[styles.sendRecordButton, {backgroundColor: theme.primary}]}
+                                    onPress={stopAndSendAudio}
+                                >
+                                    <MaterialIcons name="send" size={24} color="white"/>
+                                </TouchableOpacity>
+                            </View>
+                        ) : (
+                            /* Обычная панель ввода */
+                            <>
+                                <View style={styles.mediaButtonsContainer}>
                                     <TouchableOpacity
-                                        style={[styles.mediaButton, { backgroundColor: '#ff9800' }]}
-                                        onPress={() => {
-                                            setReconnectAttempts(0);
-                                            setLastReconnectTime(0);
-                                            reconnect();
-                                        }}
+                                        style={[styles.mediaButton, {backgroundColor: theme.surface}]}
+                                        onPress={pickImage}
+                                        disabled={!isConnected || !isDataLoaded || !recipient || !currentUserId}
                                     >
                                         <MaterialIcons
-                                            name="wifi"
+                                            name="photo"
+                                            size={24}
+                                            color={(isConnected && isDataLoaded && recipient && currentUserId) ? theme.primary : theme.placeholder}
+                                        />
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                        style={[styles.mediaButton, {backgroundColor: theme.surface}]}
+                                        onPress={pickVideo}
+                                        disabled={!isConnected || !isDataLoaded || !recipient || !currentUserId}
+                                    >
+                                        <MaterialIcons
+                                            name="videocam"
+                                            size={24}
+                                            color={(isConnected && isDataLoaded && recipient && currentUserId) ? theme.primary : theme.placeholder}
+                                        />
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                        style={[styles.mediaButton, {backgroundColor: theme.surface}]}
+                                        onPress={pickDocument}
+                                        disabled={!isConnected || !isDataLoaded || !recipient || !currentUserId}
+                                    >
+                                        <MaterialIcons
+                                            name="attach-file"
+                                            size={24}
+                                            color={(isConnected && isDataLoaded && recipient && currentUserId) ? theme.primary : theme.placeholder}
+                                        />
+                                    </TouchableOpacity>
+
+                                    {/* Кнопка для ручного переподключения */}
+                                    {(!isConnected || reconnectAttempts >= 3) && (
+                                        <TouchableOpacity
+                                            style={[styles.mediaButton, {backgroundColor: '#ff9800'}]}
+                                            onPress={() => {
+                                                setReconnectAttempts(0);
+                                                setLastReconnectTime(0);
+                                                reconnect();
+                                            }}
+                                        >
+                                            <MaterialIcons
+                                                name="wifi"
+                                                size={24}
+                                                color="white"
+                                            />
+                                        </TouchableOpacity>
+                                    )}
+                                </View>
+                                <TextInput
+                                    style={[styles.input, {backgroundColor: theme.surface, color: theme.text}]}
+                                    value={messageText}
+                                    onChangeText={setMessageText}
+                                    placeholder="Введите сообщение..."
+                                    placeholderTextColor={theme.placeholder}
+                                    multiline
+                                    maxLength={1000}
+                                />
+
+                                {messageText.trim() ? (
+                                    /* Кнопка отправки текста */
+                                    <Pressable
+                                        style={[
+                                            styles.sendButton,
+                                            {
+                                                backgroundColor: isConnected && isDataLoaded ? theme.primary : theme.placeholder,
+                                                opacity: isConnected && isDataLoaded ? 1 : 0.5
+                                            }
+                                        ]}
+                                        onPress={handleSend}
+                                        disabled={!isConnected || !isDataLoaded}
+                                    >
+                                        <MaterialIcons
+                                            name="send"
+                                            size={20}
+                                            color={isConnected && isDataLoaded ? "#fff" : theme.textSecondary}
+                                        />
+                                    </Pressable>
+                                ) : (
+                                    /* Кнопка записи аудио */
+                                    <Pressable
+                                        style={[
+                                            styles.audioRecordButton,
+                                            {
+                                                backgroundColor: isConnected && isDataLoaded ? theme.primary : theme.placeholder,
+                                                opacity: isConnected && isDataLoaded ? 1 : 0.5
+                                            }
+                                        ]}
+                                        onPress={startAudioRecording}
+                                        disabled={!isConnected || !isDataLoaded}
+                                    >
+                                        <MaterialIcons
+                                            name="mic"
                                             size={24}
                                             color="white"
                                         />
-                                    </TouchableOpacity>
+                                    </Pressable>
                                 )}
-                            </View>
-                            <TextInput
-                                style={[styles.input, { backgroundColor: theme.surface, color: theme.text }]}
-                                value={messageText}
-                                onChangeText={setMessageText}
-                                placeholder="Введите сообщение..."
-                                placeholderTextColor={theme.placeholder}
-                                multiline
-                                maxLength={1000}
-                            />
-
-                            {messageText.trim() ? (
-                                /* Кнопка отправки текста */
-                                <Pressable
-                                    style={[
-                                        styles.sendButton,
-                                        {
-                                            backgroundColor: isConnected && isDataLoaded ? theme.primary : theme.placeholder,
-                                            opacity: isConnected && isDataLoaded ? 1 : 0.5
-                                        }
-                                    ]}
-                                    onPress={handleSend}
-                                    disabled={!isConnected || !isDataLoaded}
-                                >
-                                    <MaterialIcons
-                                        name="send"
-                                        size={20}
-                                        color={isConnected && isDataLoaded ? "#fff" : theme.textSecondary}
-                                    />
-                                </Pressable>
-                            ) : (
-                                /* Кнопка записи аудио */
-                                <Pressable
-                                    style={[
-                                        styles.audioRecordButton,
-                                        {
-                                            backgroundColor: isConnected && isDataLoaded ? theme.primary : theme.placeholder,
-                                            opacity: isConnected && isDataLoaded ? 1 : 0.5
-                                        }
-                                    ]}
-                                    onPress={startAudioRecording}
-                                    disabled={!isConnected || !isDataLoaded}
-                                >
-                                    <MaterialIcons
-                                        name="mic"
-                                        size={24}
-                                        color="white"
-                                    />
-                                </Pressable>
-                            )}
-                        </>
-                    )}
-                </View>
-
-                {/* Просмотрщик изображений с поддержкой масштабирования */}
-                <Modal
-                    visible={isImageViewerVisible}
-                    transparent={true}
-                    animationType="fade"
-                    onRequestClose={closeImageViewer}
-                    statusBarTransluceholder="true"
-                >
-                    <GestureHandlerRootView style={{flex: 1}}>
-                        <View style={styles.imageViewerContainer}>
-                            <TouchableOpacity
-                                style={styles.imageViewerCloseButton}
-                                onPress={closeImageViewer}
-                            >
-                                <MaterialIcons name="close" size={32} color="white" />
-                            </TouchableOpacity>
-
-                            {/* Кнопка скачивания изображения в полноэкранном режиме */}
-                            {selectedImage && (
-                                <TouchableOpacity
-                                    style={styles.imageFullscreenDownloadButton}
-                                    onPress={() => {
-                                        const messageId = messages.find(msg =>
-                                            (msg.serverFileUrl === selectedImage ||
-                                            (msg.mediaBase64 && `data:image/jpeg;base64,${msg.mediaBase64}` === selectedImage))
-                                        )?.id;
-                                        if (messageId) {
-                                            downloadImage(selectedImage, Number(messageId));
-                                        }
-                                    }}
-                                >
-                                    <MaterialIcons name="ios-share" size={32} color="white" />
-                                </TouchableOpacity>
-                            )}
-
-                            {/* Индикатор масштаба */}
-                            {zoomLevel > 0 && (
-                                <View style={styles.imageZoomIndicator}>
-                                    <Text style={styles.imageZoomText}>
-                                        {zoomLevel === 1 ? '1.5x' : '2.5x'}
-                                    </Text>
-                                </View>
-                            )}
-                            {/* Контент с жестами */}
-                            <View style={styles.imageModalContent}>
-                                {selectedImage && (
-                                    <GestureDetector gesture={combinedGesture}>
-                                        <View style={styles.imageContainer}>
-                                            <Animated.Image
-                                                source={{uri: selectedImage}}
-                                                style={[styles.fullScreenImage, animatedImageStyle]}
-                                                resizeMode="contain"
-                                                onLoad={() => {
-                                                }}
-                                                onError={(error) => {
-                                                    console.error('🖼️ [IMAGE-VIEWER] Image load error:', error);
-                                                }}
-                                            />
-                                        </View>
-                                    </GestureDetector>
-                                )}
-                            </View>
-                        </View>
-                    </GestureHandlerRootView>
-                </Modal>
-
-                {/* Полноэкранный видеоплеер */}
-
-
-
-                {/* Модальное окно для полноэкранного инлайн видео */}
-                <Modal
-                    visible={isFullscreenModalVisible}
-                    transparent={false}
-                    animationType="fade"
-                    onRequestClose={() => {
-                        setIsFullscreenModalVisible(false);
-                        setFullscreenModalVideoUri(null);
-                        setSelectedVideo(null);
-                        setSelectedMessageId(null);
-
-                        // ИСПРАВЛЕНИЕ: Сбрасываем состояние видео при закрытии модального окна
-                        const activeVideoId = Object.keys(inlineVideoStates).find(id =>
-                            inlineVideoStates[id]?.isFullscreen
-                        );
-                        if (activeVideoId) {
-                            setInlineVideoStates(prev => ({
-                                ...prev,
-                                [activeVideoId]: {
-                                    ...prev[activeVideoId],
-                                    isFullscreen: false,
-                                    isExpanded: false,
-                                    isPlaying: false
-                                }
-                            }));
-                        }
-                    }}
-                >
-                    <View style={styles.fullscreenModalContainer}>
-                        <TouchableOpacity
-                            style={styles.fullscreenModalCloseButton}
-                            onPress={() => {
-                                setIsFullscreenModalVisible(false);
-                                setFullscreenModalVideoUri(null);
-                                setSelectedVideo(null);
-                                setSelectedMessageId(null);
-
-                                // ИСПРАВЛЕНИЕ: Сбрасываем состояние видео при закрытии
-                                const activeVideoId = Object.keys(inlineVideoStates).find(id =>
-                                    inlineVideoStates[id]?.isFullscreen
-                                );
-                                if (activeVideoId) {
-                                    setInlineVideoStates(prev => ({
-                                        ...prev,
-                                        [activeVideoId]: {
-                                            ...prev[activeVideoId],
-                                            isFullscreen: false,
-                                            isExpanded: false,
-                                            isPlaying: false
-                                        }
-                                    }));
-                                }
-                            }}
-                        >
-                            <MaterialIcons name="close" size={32} color="white" />
-                        </TouchableOpacity>
-
-                        {/* Кнопки управления для fullscreen modal */}
-                        {fullscreenModalVideoUri && (
-                            <>
-                                {/* Кнопка скачивания */}
-                                <TouchableOpacity
-                                    style={styles.videoDownloadButtonFullscreen}
-                                    onPress={() => {
-                                        if (fullscreenModalVideoUri && selectedMessageId) {
-                                            downloadVideo(fullscreenModalVideoUri, selectedMessageId);
-                                        }
-                                    }}
-                                >
-                                    <MaterialIcons name="ios-share" size={32} color="white" />
-                                </TouchableOpacity>
-
-
                             </>
                         )}
+                    </View>
 
-                        {fullscreenModalVideoUri && (
-                            <Video
-                                source={{ uri: fullscreenModalVideoUri }}
-                                style={styles.fullscreenModalVideo}
-                                resizeMode={ResizeMode.CONTAIN}
-                                useNativeControls={true}
-                                shouldPlay={true}
-                                isLooping={false}
-                                onLoad={(data) => {
-                                    console.log('🎥 [FULLSCREEN-MODAL] Video loaded:', {
-                                        duration: data.durationMillis,
-                                        naturalSize: data.naturalSize
-                                    });
+                    {/* Просмотрщик изображений с поддержкой масштабирования */}
+                    <Modal
+                        visible={isImageViewerVisible}
+                        transparent={true}
+                        animationType="fade"
+                        onRequestClose={closeImageViewer}
+                        statusBarTransluceholder="true"
+                    >
+                        <GestureHandlerRootView style={{flex: 1}}>
+                            <View style={styles.imageViewerContainer}>
+                                <TouchableOpacity
+                                    style={styles.imageViewerCloseButton}
+                                    onPress={closeImageViewer}
+                                >
+                                    <MaterialIcons name="close" size={32} color="white"/>
+                                </TouchableOpacity>
+
+                                {/* Кнопка скачивания изображения в полноэкранном режиме */}
+                                {selectedImage && (
+                                    <TouchableOpacity
+                                        style={styles.imageFullscreenDownloadButton}
+                                        onPress={() => {
+                                            const messageId = messages.find(msg =>
+                                                (msg.serverFileUrl === selectedImage ||
+                                                    (msg.mediaBase64 && `data:image/jpeg;base64,${msg.mediaBase64}` === selectedImage))
+                                            )?.id;
+                                            if (messageId) {
+                                                downloadImage(selectedImage, Number(messageId));
+                                            }
+                                        }}
+                                    >
+                                        <MaterialIcons name="ios-share" size={32} color="white"/>
+                                    </TouchableOpacity>
+                                )}
+
+                                {/* Индикатор масштаба */}
+                                {zoomLevel > 0 && (
+                                    <View style={styles.imageZoomIndicator}>
+                                        <Text style={styles.imageZoomText}>
+                                            {zoomLevel === 1 ? '1.5x' : '2.5x'}
+                                        </Text>
+                                    </View>
+                                )}
+                                {/* Контент с жестами */}
+                                <View style={styles.imageModalContent}>
+                                    {selectedImage && (
+                                        <GestureDetector gesture={combinedGesture}>
+                                            <View style={styles.imageContainer}>
+                                                <Animated.Image
+                                                    source={{uri: selectedImage}}
+                                                    style={[styles.fullScreenImage, animatedImageStyle]}
+                                                    resizeMode="contain"
+                                                    onLoad={() => {
+                                                    }}
+                                                    onError={(error) => {
+                                                        console.error('🖼️ [IMAGE-VIEWER] Image load error:', error);
+                                                    }}
+                                                />
+                                            </View>
+                                        </GestureDetector>
+                                    )}
+                                </View>
+                            </View>
+                        </GestureHandlerRootView>
+                    </Modal>
+
+                    {/* Полноэкранный видеоплеер */}
+
+
+                    {/* Модальное окно для полноэкранного инлайн видео */}
+                    <Modal
+                        visible={isFullscreenModalVisible}
+                        transparent={false}
+                        animationType="fade"
+                        onRequestClose={() => {
+                            setIsFullscreenModalVisible(false);
+                            setFullscreenModalVideoUri(null);
+                            setSelectedVideo(null);
+                            setSelectedMessageId(null);
+
+                            // ИСПРАВЛЕНИЕ: Сбрасываем состояние видео при закрытии модального окна
+                            const activeVideoId = Object.keys(inlineVideoStates).find(id =>
+                                inlineVideoStates[id]?.isFullscreen
+                            );
+                            if (activeVideoId) {
+                                setInlineVideoStates(prev => ({
+                                    ...prev,
+                                    [activeVideoId]: {
+                                        ...prev[activeVideoId],
+                                        isFullscreen: false,
+                                        isExpanded: false,
+                                        isPlaying: false
+                                    }
+                                }));
+                            }
+                        }}
+                    >
+                        <View style={styles.fullscreenModalContainer}>
+                            <TouchableOpacity
+                                style={styles.fullscreenModalCloseButton}
+                                onPress={() => {
+                                    setIsFullscreenModalVisible(false);
+                                    setFullscreenModalVideoUri(null);
+                                    setSelectedVideo(null);
+                                    setSelectedMessageId(null);
+
+                                    // ИСПРАВЛЕНИЕ: Сбрасываем состояние видео при закрытии
+                                    const activeVideoId = Object.keys(inlineVideoStates).find(id =>
+                                        inlineVideoStates[id]?.isFullscreen
+                                    );
+                                    if (activeVideoId) {
+                                        setInlineVideoStates(prev => ({
+                                            ...prev,
+                                            [activeVideoId]: {
+                                                ...prev[activeVideoId],
+                                                isFullscreen: false,
+                                                isExpanded: false,
+                                                isPlaying: false
+                                            }
+                                        }));
+                                    }
                                 }}
-                                onError={(error) => {
-                                    console.error('🎥 [FULLSCREEN-MODAL] Video error:', error);
+                            >
+                                <MaterialIcons name="close" size={32} color="white"/>
+                            </TouchableOpacity>
 
-                                    // Проверяем тип ошибки
-                                    const errorString = error?.error?.toString() || '';
-                                    const isDecoderError = errorString.includes('MediaCodecRenderer') ||
-                                                          errorString.includes('Decoder init failed') ||
-                                                          errorString.includes('DecoderInitializationException');
+                            {/* Кнопки управления для fullscreen modal */}
+                            {fullscreenModalVideoUri && (
+                                <>
+                                    {/* Кнопка скачивания */}
+                                    <TouchableOpacity
+                                        style={styles.videoDownloadButtonFullscreen}
+                                        onPress={() => {
+                                            if (fullscreenModalVideoUri && selectedMessageId) {
+                                                downloadVideo(fullscreenModalVideoUri, selectedMessageId);
+                                            }
+                                        }}
+                                    >
+                                        <MaterialIcons name="ios-share" size={32} color="white"/>
+                                    </TouchableOpacity>
 
-                                    if (isDecoderError && fullscreenModalVideoUri?.startsWith('http')) {
-                                        // Автоматически открываем в браузере для видео с проблемными кодеками
-                                        console.log('🎥 [AUTO-FALLBACK] Opening video in browser due to decoder error');
 
-                                        Alert.alert(
-                                            'Несовместимый кодек',
-                                            'Видео использует кодек, который не поддерживается устройством. Открыть в браузере?',
-                                            [
-                                                {
-                                                    text: 'Отмена',
-                                                    style: 'cancel',
-                                                    onPress: () => {
-                                                        setIsFullscreenModalVisible(false);
-                                                        setFullscreenModalVideoUri(null);
-                                                    }
-                                                },
-                                                {
-                                                    text: 'Открыть в браузере',
-                                                    onPress: async () => {
-                                                        try {
-                                                            await WebBrowser.openBrowserAsync(fullscreenModalVideoUri, {
-                                                                presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
-                                                                controlsColor: '#007AFF',
-                                                                toolbarColor: '#000000',
-                                                                enableDefaultShare: true,
-                                                                showInRecents: true,
-                                                            });
-                                                        } catch (browserError) {
-                                                            console.error('Browser open failed:', browserError);
-                                                        } finally {
+                                </>
+                            )}
+
+                            {fullscreenModalVideoUri && (
+                                <Video
+                                    source={{uri: fullscreenModalVideoUri}}
+                                    style={styles.fullscreenModalVideo}
+                                    resizeMode={ResizeMode.CONTAIN}
+                                    useNativeControls={true}
+                                    shouldPlay={true}
+                                    isLooping={false}
+                                    onLoad={(data) => {
+                                        console.log('🎥 [FULLSCREEN-MODAL] Video loaded:', {
+                                            duration: data.durationMillis,
+                                            naturalSize: data.naturalSize
+                                        });
+                                    }}
+                                    onError={(error) => {
+                                        console.error('🎥 [FULLSCREEN-MODAL] Video error:', error);
+
+                                        // Проверяем тип ошибки
+                                        const errorString = error?.error?.toString() || '';
+                                        const isDecoderError = errorString.includes('MediaCodecRenderer') ||
+                                            errorString.includes('Decoder init failed') ||
+                                            errorString.includes('DecoderInitializationException');
+
+                                        if (isDecoderError && fullscreenModalVideoUri?.startsWith('http')) {
+                                            // Автоматически открываем в браузере для видео с проблемными кодеками
+                                            console.log('🎥 [AUTO-FALLBACK] Opening video in browser due to decoder error');
+
+                                            Alert.alert(
+                                                'Несовместимый кодек',
+                                                'Видео использует кодек, который не поддерживается устройством. Открыть в браузере?',
+                                                [
+                                                    {
+                                                        text: 'Отмена',
+                                                        style: 'cancel',
+                                                        onPress: () => {
                                                             setIsFullscreenModalVisible(false);
                                                             setFullscreenModalVideoUri(null);
                                                         }
+                                                    },
+                                                    {
+                                                        text: 'Открыть в браузере',
+                                                        onPress: async () => {
+                                                            try {
+                                                                await WebBrowser.openBrowserAsync(fullscreenModalVideoUri, {
+                                                                    presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
+                                                                    controlsColor: '#007AFF',
+                                                                    toolbarColor: '#000000',
+                                                                    enableDefaultShare: true,
+                                                                    showInRecents: true,
+                                                                });
+                                                            } catch (browserError) {
+                                                                console.error('Browser open failed:', browserError);
+                                                            } finally {
+                                                                setIsFullscreenModalVisible(false);
+                                                                setFullscreenModalVideoUri(null);
+                                                            }
+                                                        }
                                                     }
-                                                }
-                                            ]
+                                                ]
+                                            );
+                                        } else {
+                                            Alert.alert('Ошибка', 'Не удалось воспроизвести видео в полноэкранном режиме');
+                                        }
+                                    }}
+                                />
+                            )}
+                            {/* Кнопка скачивания видео - рядом с кнопкой звука */}
+                            <TouchableOpacity
+                                style={styles.videoDownloadButtonFullscreen}
+                                onPress={() => {
+                                    console.log('🎥 [DOWNLOAD] ========== DOWNLOAD BUTTON PRESSED ==========');
+                                    console.log('🎥 [DOWNLOAD] Selected video:', selectedVideo);
+                                    console.log('🎥 [DOWNLOAD] Selected message ID:', selectedMessageId);
+
+                                    let messageId = selectedMessageId;
+                                    if (!messageId) {
+                                        const foundMessage = messages.find(msg =>
+                                            msg.serverFileUrl === selectedVideo ||
+                                            msg.mediaUri === selectedVideo ||
+                                            (msg.mediaBase64 && `data:video/mp4;base64,${msg.mediaBase64}` === selectedVideo)
                                         );
+                                        messageId = foundMessage ? Number(foundMessage.id) : Date.now();
+                                        console.log('🎥 [DOWNLOAD] Found message ID:', messageId);
+                                    }
+
+                                    if (selectedVideo) {
+                                        downloadVideo(selectedVideo, messageId);
                                     } else {
-                                        Alert.alert('Ошибка', 'Не удалось воспроизвести видео в полноэкранном режиме');
+                                        console.error('🎥 [DOWNLOAD] No selected video!');
+                                        Alert.alert('Ошибка', 'Видео недоступно для скачивания');
                                     }
                                 }}
-                            />
-                        )}
-                        {/* Кнопка скачивания видео - рядом с кнопкой звука */}
-                        <TouchableOpacity
-                            style={styles.videoDownloadButtonFullscreen}
-                            onPress={() => {
-                                console.log('🎥 [DOWNLOAD] ========== DOWNLOAD BUTTON PRESSED ==========');
-                                console.log('🎥 [DOWNLOAD] Selected video:', selectedVideo);
-                                console.log('🎥 [DOWNLOAD] Selected message ID:', selectedMessageId);
-
-                                let messageId = selectedMessageId;
-                                if (!messageId) {
-                                    const foundMessage = messages.find(msg =>
-                                        msg.serverFileUrl === selectedVideo ||
-                                        msg.mediaUri === selectedVideo ||
-                                        (msg.mediaBase64 && `data:video/mp4;base64,${msg.mediaBase64}` === selectedVideo)
-                                    );
-                                    messageId = foundMessage ? Number(foundMessage.id) : Date.now();
-                                    console.log('🎥 [DOWNLOAD] Found message ID:', messageId);
-                                }
-
-                                if (selectedVideo) {
-                                    downloadVideo(selectedVideo, messageId);
-                                } else {
-                                    console.error('🎥 [DOWNLOAD] No selected video!');
-                                    Alert.alert('Ошибка', 'Видео недоступно для скачивания');
-                                }
-                            }}
-                        >
-                            <MaterialIcons name="ios-share" size={32} color="white" />
-                        </TouchableOpacity>
+                            >
+                                <MaterialIcons name="ios-share" size={32} color="white"/>
+                            </TouchableOpacity>
 
 
-
-                        {/* Отображение ошибки */}
-                        {videoError && (
-                            <View style={styles.videoErrorContainer}>
-                                <MaterialIcons name="error" size={48} color="red" />
-                                <Text style={styles.videoErrorText}>Ошибка воспроизведения:</Text>
-                                <Text style={styles.videoErrorDetails}>{videoError}</Text>
-                                <TouchableOpacity
-                                    style={styles.retryButton}
-                                    onPress={() => {
-                                        setVideoError(null);
-                                        setIsVideoPlaying(false);
-                                    }}
-                                >
-                                    <Text style={styles.retryButtonText}>Попробовать снова</Text>
-                                </TouchableOpacity>
-                                {selectedVideo?.startsWith('http') && (
+                            {/* Отображение ошибки */}
+                            {videoError && (
+                                <View style={styles.videoErrorContainer}>
+                                    <MaterialIcons name="error" size={48} color="red"/>
+                                    <Text style={styles.videoErrorText}>Ошибка воспроизведения:</Text>
+                                    <Text style={styles.videoErrorDetails}>{videoError}</Text>
                                     <TouchableOpacity
-                                        style={[styles.retryButton, { backgroundColor: 'rgba(0, 123, 255, 0.3)' }]}
-                                        onPress={() => openInSystemPlayer(selectedVideo)}
+                                        style={styles.retryButton}
+                                        onPress={() => {
+                                            setVideoError(null);
+                                            setIsVideoPlaying(false);
+                                        }}
                                     >
-                                        <Text style={styles.retryButtonText}>Открыть в системном плеере</Text>
+                                        <Text style={styles.retryButtonText}>Попробовать снова</Text>
                                     </TouchableOpacity>
-                                )}
-                            </View>
-                        )}
+                                    {selectedVideo?.startsWith('http') && (
+                                        <TouchableOpacity
+                                            style={[styles.retryButton, {backgroundColor: 'rgba(0, 123, 255, 0.3)'}]}
+                                            onPress={() => openInSystemPlayer(selectedVideo)}
+                                        >
+                                            <Text style={styles.retryButtonText}>Открыть в системном плеере</Text>
+                                        </TouchableOpacity>
+                                    )}
+                                </View>
+                            )}
 
 
-
-                    </View>
-                </Modal>
-            </KeyboardAvoidingView>
-        </View>
+                        </View>
+                    </Modal>
+                </KeyboardAvoidingView>
+            </View>
+        </GestureHandlerRootView>
     );
-}
+    }
 
-const createStyles = (theme: any) => {
-    const screenDimensions = Dimensions.get('screen');
+    const createStyles = (theme: any) => {
+        const screenDimensions = Dimensions.get('screen');
 
-    return StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: theme.background,
-    },
-    keyboardView: {
-        flex: 1,
-    },
-    loadingContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: theme.background,
-    },
-    loadingText: {
-        marginTop: 16,
-        fontSize: 16,
-    },
-    header: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 16,
-        paddingTop: 70,
-        paddingBottom: 20,
-        backgroundColor: theme.headerBackground,
-        borderBottomWidth: 1,
-        borderBottomColor: theme.border,
-    },
-    backButton: {
-        padding: 8,
-        marginRight: 8,
-    },
-    miniAvatarContainer: {
-        marginRight: 12,
-    },
-    miniAvatar: {
-        width: 32,
-        height: 32,
-        borderRadius: 16,
-        borderWidth: 2,
-        borderColor: theme.primary,
-        backgroundColor: '#f0f0f0', // Фон на случай загрузки
-    },
-    headerUserInfo: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        flex: 1,
-    },
-    userInfo: {
-        flex: 1,
-    },
-    headerOnlineIndicator: {
-        width: 8,
-        height: 8,
-        borderRadius: 4,
-        marginLeft: 8,
-    },
-    avatarContainer: {
-        position: 'relative',
-        marginRight: 12,
-    },
-    avatar: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-    },
-    onlineIndicator: {
-        position: 'absolute',
-        bottom: 0,
-        right: 0,
-        width: 12,
-        height: 12,
-        borderRadius: 6,
-        borderWidth: 2,
-        borderColor: theme.surface,
-    },
-    username: {
-        fontSize: 16,
-        fontWeight: 'bold',
-        marginBottom: 2,
-    },
-    onlineStatus: {
-        fontSize: 12,
-        fontWeight: '500',
-    },
-    chatbox: {
-        flex: 1,
-        backgroundColor: theme.chatBackground,
-    },
-    chatboxContent: {
-        padding: 16,
-        paddingBottom: 20,
-    },
-    messageContainer: {
-        maxWidth: '80%',
-        marginVertical: 2,
-        padding: 6,
-        borderRadius: 16,
-        elevation: 1,
-        shadowColor: theme.text,
-        shadowOffset: {width: 0, height: 1},
-        shadowOpacity: 0.1,
-        shadowRadius: 1,
-    },
-    myMessage: {
-        alignSelf: 'flex-end',
-        backgroundColor: theme.primary,
-        marginLeft: '20%',
-        borderBottomRightRadius: 4,
-    },
-    otherMessage: {
-        alignSelf: 'flex-start',
-        backgroundColor: theme.surface,
-        marginRight: '20%',
-        borderBottomLeftRadius: 4,
-        borderWidth: 1,
-        borderColor: theme.border,
-    },
-    unreadMessage: {
-        backgroundColor: 'rgba(255, 215, 0, 0.15)', // Легкий золотистый фон
-        borderColor: 'rgba(255, 215, 0, 0.3)',
-        borderWidth: 2,
-    },
-    senderName: {
-        fontSize: 10,
-        marginBottom: 2,
-        fontWeight: '600',
-    },
-    messageText: {
-        fontSize: 16,
-        lineHeight: 22,
-    },
-    myMessageText: {
-        color: 'white',
-    },
-    otherMessageText: {
-        color: theme.text,
-    },
-    timestamp: {
-        fontSize: 9,
-        marginTop: 2,
-        alignSelf: 'flex-end',
-    },
-    myTimestamp: {
-        color: 'rgba(255, 255, 255, 0.8)',
-    },
-    otherTimestamp: {
-        color: theme.textSecondary,
-    },
-    emptyContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        paddingTop: 100,
-    },
-    emptyText: {
-        fontSize: 16,
-    },
-    inputContainer: {
-        flexDirection: 'row',
-        padding: 16,
-        borderTopWidth: 1,
-        borderTopColor: theme.border,
-        backgroundColor: theme.surface,
-        alignItems: 'flex-end',
-    },
-    input: {
-        flex: 1,
-        borderRadius: 20,
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-        marginRight: 12,
-        fontSize: 16,
-        maxHeight: 100,
-        minHeight: 44,
-        textAlignVertical: 'top',
-        borderWidth: 1,
-        borderColor: theme.border,
-    },
-    sendButton: {
-        justifyContent: 'center',
-        alignItems: 'center',
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-    },
-    loadingMoreContainer: {
-        paddingVertical: 16,
-        alignItems: 'center',
-        flexDirection: 'row',
-        justifyContent: 'center',
-    },
-    loadingMoreText: {
-        marginLeft: 8,
-        fontSize: 14,
-    },
-    mediaButtonsContainer: {
-        flexDirection: 'row',
-        marginRight: 8,
-    },
-    mediaButton: {
-        justifyContent: 'center',
-        alignItems: 'center',
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        marginRight: 4,
-        borderWidth: 1,
-        borderColor: theme.border,
-    },
-    mediaContainer: {
-        marginBottom: 8,
-        borderRadius: 0,
-        overflow: 'hidden',
-    },
-    messageImage: {
-        width: 200,
-        minHeight: 150,
-        maxHeight: 300,
+        return StyleSheet.create({
+            container: {
+                flex: 1,
+                backgroundColor: theme.background,
+            },
+            keyboardView: {
+                flex: 1,
+            },
+            loadingContainer: {
+                flex: 1,
+                justifyContent: 'center',
+                alignItems: 'center',
+                backgroundColor: theme.background,
+            },
+            loadingText: {
+                marginTop: 16,
+                fontSize: 16,
+            },
+            header: {
+                flexDirection: 'row',
+                alignItems: 'center',
+                paddingHorizontal: 16,
+                paddingTop: 70,
+                paddingBottom: 20,
+                backgroundColor: theme.headerBackground,
+                borderBottomWidth: 1,
+                borderBottomColor: theme.border,
+            },
+            backButton: {
+                padding: 8,
+                marginRight: 8,
+            },
+            miniAvatarContainer: {
+                marginRight: 12,
+            },
+            miniAvatar: {
+                width: 32,
+                height: 32,
+                borderRadius: 16,
+                borderWidth: 2,
+                borderColor: theme.primary,
+                backgroundColor: '#f0f0f0', // Фон на случай загрузки
+            },
+            headerUserInfo: {
+                flexDirection: 'row',
+                alignItems: 'center',
+                flex: 1,
+            },
+            userInfo: {
+                flex: 1,
+            },
+            headerOnlineIndicator: {
+                width: 8,
+                height: 8,
+                borderRadius: 4,
+                marginLeft: 8,
+            },
+            avatarContainer: {
+                position: 'relative',
+                marginRight: 12,
+            },
+            avatar: {
+                width: 40,
+                height: 40,
+                borderRadius: 20,
+            },
+            onlineIndicator: {
+                position: 'absolute',
+                bottom: 0,
+                right: 0,
+                width: 12,
+                height: 12,
+                borderRadius: 6,
+                borderWidth: 2,
+                borderColor: theme.surface,
+            },
+            username: {
+                fontSize: 16,
+                fontWeight: 'bold',
+                marginBottom: 2,
+            },
+            onlineStatus: {
+                fontSize: 12,
+                fontWeight: '500',
+            },
+            statusRow: {
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+            },
+            uploadIndicator: {
+                flexDirection: 'row',
+                alignItems: 'center',
+                backgroundColor: `${theme.primary}15`,
+                paddingHorizontal: 6,
+                paddingVertical: 2,
+                borderRadius: 10,
+                marginLeft: 8,
+            },
+            uploadIndicatorText: {
+                fontSize: 10,
+                fontWeight: '600',
+                marginLeft: 4,
+            },
+            chatbox: {
+                flex: 1,
+                backgroundColor: theme.chatBackground,
+            },
+            chatboxContent: {
+                padding: 16,
+                paddingBottom: 20,
+            },
+            messageContainer: {
+                maxWidth: '80%',
+                marginVertical: 2,
+                padding: 6,
+                borderRadius: 16,
+                elevation: 1,
+                shadowColor: theme.text,
+                shadowOffset: {width: 0, height: 1},
+                shadowOpacity: 0.1,
+                shadowRadius: 1,
+            },
+            myMessage: {
+                alignSelf: 'flex-end',
+                backgroundColor: theme.primary,
+                marginLeft: '20%',
+                borderBottomRightRadius: 4,
+            },
+            otherMessage: {
+                alignSelf: 'flex-start',
+                backgroundColor: theme.surface,
+                marginRight: '20%',
+                borderBottomLeftRadius: 4,
+                borderWidth: 1,
+                borderColor: theme.border,
+            },
+            unreadMessage: {
+                backgroundColor: 'rgba(255, 215, 0, 0.15)', // Легкий золотистый фон
+                borderColor: 'rgba(255, 215, 0, 0.3)',
+                borderWidth: 2,
+            },
+            senderName: {
+                fontSize: 10,
+                marginBottom: 2,
+                fontWeight: '600',
+            },
+            messageText: {
+                fontSize: 16,
+                lineHeight: 22,
+            },
+            myMessageText: {
+                color: 'white',
+            },
+            otherMessageText: {
+                color: theme.text,
+            },
+            timestamp: {
+                fontSize: 9,
+                marginTop: 2,
+                alignSelf: 'flex-end',
+            },
+            myTimestamp: {
+                color: 'rgba(255, 255, 255, 0.8)',
+            },
+            otherTimestamp: {
+                color: theme.textSecondary,
+            },
+            emptyContainer: {
+                flex: 1,
+                justifyContent: 'center',
+                alignItems: 'center',
+                paddingTop: 100,
+            },
+            emptyText: {
+                fontSize: 16,
+            },
+            inputContainer: {
+                flexDirection: 'row',
+                padding: 16,
+                borderTopWidth: 1,
+                borderTopColor: theme.border,
+                backgroundColor: theme.surface,
+                alignItems: 'flex-end',
+            },
+            input: {
+                flex: 1,
+                borderRadius: 20,
+                paddingHorizontal: 16,
+                paddingVertical: 12,
+                marginRight: 12,
+                fontSize: 16,
+                maxHeight: 100,
+                minHeight: 44,
+                textAlignVertical: 'top',
+                borderWidth: 1,
+                borderColor: theme.border,
+            },
+            sendButton: {
+                justifyContent: 'center',
+                alignItems: 'center',
+                width: 44,
+                height: 44,
+                borderRadius: 22,
+            },
+            loadingMoreContainer: {
+                paddingVertical: 16,
+                alignItems: 'center',
+                flexDirection: 'row',
+                justifyContent: 'center',
+            },
+            loadingMoreText: {
+                marginLeft: 8,
+                fontSize: 14,
+            },
+            mediaButtonsContainer: {
+                flexDirection: 'row',
+                marginRight: 8,
+            },
+            mediaButton: {
+                justifyContent: 'center',
+                alignItems: 'center',
+                width: 40,
+                height: 40,
+                borderRadius: 20,
+                marginRight: 4,
+                borderWidth: 1,
+                borderColor: theme.border,
+            },
+            mediaContainer: {
+                marginBottom: 8,
+                borderRadius: 0,
+                overflow: 'hidden',
+            },
+            messageImage: {
+                width: 200,
+                minHeight: 150,
+                maxHeight: 300,
 
-    },
-    messageVideo: {
-        width: 200,
-        height: 150,
+            },
+            messageVideo: {
+                width: 200,
+                height: 150,
 
-    },
-    mediaMessage: {
-        maxWidth: '85%',
-        borderWidth: 0,
-        borderColor: 'transparent',
-    },
-    mediaMessageText: {
-        fontSize: 12,
-        fontStyle: 'normal',
-        marginTop: 4,
-    },
-    imageViewerContainer: {
-        flex: 1,
-        backgroundColor: 'black',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    imageViewerCloseButton: {
-        position: 'absolute',
-        top: 60,
-        right: 20,
-        zIndex: 10,
-        backgroundColor: 'rgba(0, 0, 0, 0.7)',
-        borderRadius: 25,
-        padding: 8,
-        elevation: 5,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.25,
-        shadowRadius: 3.84,
-    },
-    imageZoomIndicator: {
-        position: 'absolute',
-        top: 60,
-        left: 20,
-        zIndex: 9,
-        backgroundColor: 'rgba(0, 0, 0, 0.7)',
-        borderRadius: 15,
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-    },
-    imageZoomText: {
-        color: 'white',
-        fontSize: 14,
-        fontWeight: 'bold',
-    },
-    imageHintContainer: {
-        position: 'absolute',
-        bottom: 60,
-        left: 20,
-        right: 20,
-        zIndex: 9,
-        backgroundColor: 'rgba(0, 0, 0, 0.6)',
-        borderRadius: 20,
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        alignItems: 'center',
-    },
-    imageHintText: {
-        color: 'rgba(255, 255, 255, 0.8)',
-        fontSize: 12,
-        textAlign: 'center',
-        fontStyle: 'italic',
-    },
-    imageModalContent: {
-        flex: 1,
-        width: '100%',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    imageContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        width: '100%',
-    },
-    fullScreenImage: {
-        width: '100%',
-        height: '100%',
-    },
-    videoPlayOverlay: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: 'rgba(0, 0, 0, 0.05)', // почти прозрачен
-        borderRadius: 12,
-    },
-    videoViewerContainer: {
-        flex: 1,
-        backgroundColor: 'black',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    videoViewerCloseButton: {
-        position: 'absolute',
-        top: 50,
-        right: 20,
-        zIndex: 1000,
-        backgroundColor: 'rgba(0, 0, 0, 0.7)',
-        borderRadius: 25,
-        padding: 8,
-        elevation: 10,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.5,
-        shadowRadius: 4,
-    },
-    videoDownloadButtonFullscreen: {
-        position: 'absolute',
-        top: 50,
-        left: 20,
-        zIndex: 1000,
-        backgroundColor: 'rgba(0, 0, 0, 0.7)',
-        borderRadius: 25,
-        padding: 8,
-        elevation: 10,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.5,
-        shadowRadius: 4,
-    },
-    fullScreenVideo: {
-        width: '100%',
-        height: '100%',
-    },
-    uploadingContainer: {
-        marginBottom: 8,
-        padding: 12,
-        borderRadius: 12,
-        backgroundColor: theme.surface,
-        borderWidth: 1,
-        borderColor: theme.border,
-        minHeight: 80,
-        justifyContent: 'center',
-    },
-    uploadingContent: {
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    uploadingText: {
-        marginTop: 8,
-        fontSize: 14,
-        fontStyle: 'italic',
-    },
-    progressContainer: {
-        marginTop: 8,
-        width: '100%',
-        alignItems: 'center',
-    },
-    progressBar: {
-        width: '80%',
-        height: 4,
-        borderRadius: 2,
-        overflow: 'hidden',
-    },
-    progressFill: {
-        height: '100%',
-        borderRadius: 2,
-    },
-    progressText: {
-        marginTop: 4,
-        fontSize: 12,
-    },
-    reloadContainer: {
-        marginBottom: 8,
-        padding: 16,
-        borderRadius: 12,
-        backgroundColor: theme.surface,
-        borderWidth: 1,
-        borderColor: theme.border,
-        borderStyle: 'dashed',
-        minHeight: 80,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    reloadContent: {
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    reloadText: {
-        marginTop: 8,
-        fontSize: 14,
-        fontStyle: 'italic',
-        textAlign: 'center',
-    },
-    reloadSubtext: {
-        marginTop: 4,
-        fontSize: 12,
-        textAlign: 'center',
-    },
-    reloadHint: {
-        marginTop: 6,
-        fontSize: 11,
-        textAlign: 'center',
-        fontStyle: 'italic',
-    },
-    missingMediaContainer: {
-        marginBottom: 8,
-        padding: 20,
-        borderRadius: 12,
-        backgroundColor: 'rgba(128, 128, 128, 0.1)',
-        borderWidth: 1,
-        borderColor: 'rgba(128, 128, 128, 0.3)',
-        borderStyle: 'dashed',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: 100,
-    },
-    missingMediaText: {
-        marginTop: 8,
-        fontSize: 14,
-        fontWeight: '500',
-        textAlign: 'center',
-    },
-    missingMediaSubtext: {
-        marginTop: 4,
-        fontSize: 12,
-        textAlign: 'center',
-        fontStyle: 'italic',
-    },
-    imageFullscreenDownloadButton: {
-        position: 'absolute',
-        top: 60,
-        left: 20,
-        zIndex: 10,
-        backgroundColor: 'rgba(0, 0, 0, 0.7)',
-        borderRadius: 25,
-        padding: 8,
-        elevation: 5,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.25,
-        shadowRadius: 3.84,
-    },
-    fileContainer: {
-        flexDirection: 'row',
-        alignItems: 'flex-start',
-        marginBottom: 8,
-        padding: 8,
-        borderRadius: 12,
-        backgroundColor: 'rgba(0, 0, 0, 0.05)',
-        borderWidth: 1,
-        borderColor: 'rgba(0, 0, 0, 0.1)',
-        minHeight: 60,
-        width: 220,
-    },
-    fileIconContainer: {
-        marginRight: 8,
-        marginTop: 2,
-        alignItems: 'center',
-        justifyContent: 'center',
-        width: 36,
-        height: 36,
-        borderRadius: 8,
-        backgroundColor: 'rgba(0, 0, 0, 0.05)',
-    },
-    fileInfo: {
-        flex: 1,
-        marginRight: 4,
-    },
-    fileName: {
-        fontSize: 13,
-        fontWeight: '500',
-        marginBottom: 2,
-        flexWrap: 'wrap',
-    },
-    fileSize: {
-        fontSize: 12,
-        marginBottom: 1,
-    },
-    fileMimeType: {
-        fontSize: 10,
-        fontStyle: 'italic',
-    },
-    fileContainerDownloading: {
-        opacity: 0.7,
-        borderColor: theme.primary,
-        borderWidth: 1,
-        backgroundColor: 'rgba(0, 0, 0, 0.02)',
-    },
-    downloadProgressContainer: {
-        marginTop: 6,
-        width: '100%',
-    },
-    downloadProgressBar: {
-        height: 3,
-        borderRadius: 2,
-        overflow: 'hidden',
-        marginBottom: 2,
-    },
-    downloadProgressFill: {
-        height: '100%',
-        borderRadius: 2,
-    },
-    downloadProgressText: {
-        fontSize: 10,
-        fontStyle: 'italic',
-    },
-    videoErrorContainer: {
-        position: 'absolute',
-        top: '50%',
-        left: '50%',
-        transform: [{ translateX: -100 }, { translateY: -100 }],
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: 'rgba(0, 0, 0, 0.8)',
-        padding: 20,
-        borderRadius: 12,
-        width: 200,
-        zIndex: 2,
-    },
-    videoErrorText: {
-        color: 'white',
-        fontSize: 16,
-        fontWeight: 'bold',
-        marginTop: 8,
-        textAlign: 'center',
-    },
-    videoErrorDetails: {
-        color: 'white',
-        fontSize: 12,
-        marginTop: 8,
-        textAlign: 'center',
-        opacity: 0.8,
-    },
-    retryButton: {
-        backgroundColor: 'rgba(255, 255, 255, 0.2)',
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        borderRadius: 8,
-        marginTop: 12,
-    },
-    retryButtonText: {
-        color: 'white',
-        fontSize: 14,
-        fontWeight: 'bold',
-    },
-    audioWarningDot: {
-        position: 'absolute',
-        top: 2,
-        right: 2,
-        width: 8,
-        height: 8,
-        borderRadius: 4,
-        backgroundColor: 'orange',
-    },
-    systemPlayerButton: {
-        position: 'absolute',
-        top: 50,
-        left: 200,
-        backgroundColor: 'rgba(0, 0, 0, 0.7)',
-        padding: 10,
-        borderRadius: 25,
-        zIndex: 1000,
-        elevation: 10,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.5,
-        shadowRadius: 4,
-    },
-    // Стили для встроенного видеоплеера
-    inlineVideoContainer: {
-        position: 'relative',
-        marginBottom: 8,
-        borderRadius: 8,
-        overflow: 'visible',
-        maxWidth: '100%',
-        width: 250,
-        height: 180,                  // фиксированная высота, как было изначально
-        borderWidth: 0.5,
-        borderColor: 'transparent',
-        borderStyle: 'solid',
-    },
-    inlineVideo: {
-        width: '100%',
-        height: '100%',
-        borderRadius: 8,
-    },
+            },
+            mediaMessage: {
+                maxWidth: '85%',
+                borderWidth: 0,
+                borderColor: 'transparent',
+            },
+            mediaMessageText: {
+                fontSize: 12,
+                fontStyle: 'normal',
+                marginTop: 4,
+            },
+            imageViewerContainer: {
+                flex: 1,
+                backgroundColor: 'black',
+                justifyContent: 'center',
+                alignItems: 'center',
+            },
+            imageViewerCloseButton: {
+                position: 'absolute',
+                top: 60,
+                right: 20,
+                zIndex: 10,
+                backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                borderRadius: 25,
+                padding: 8,
+                elevation: 5,
+                shadowColor: '#000',
+                shadowOffset: {width: 0, height: 2},
+                shadowOpacity: 0.25,
+                shadowRadius: 3.84,
+            },
+            imageZoomIndicator: {
+                position: 'absolute',
+                top: 60,
+                left: 20,
+                zIndex: 9,
+                backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                borderRadius: 15,
+                paddingHorizontal: 12,
+                paddingVertical: 6,
+            },
+            imageZoomText: {
+                color: 'white',
+                fontSize: 14,
+                fontWeight: 'bold',
+            },
+            imageHintContainer: {
+                position: 'absolute',
+                bottom: 60,
+                left: 20,
+                right: 20,
+                zIndex: 9,
+                backgroundColor: 'rgba(0, 0, 0, 0.6)',
+                borderRadius: 20,
+                paddingHorizontal: 16,
+                paddingVertical: 8,
+                alignItems: 'center',
+            },
+            imageHintText: {
+                color: 'rgba(255, 255, 255, 0.8)',
+                fontSize: 12,
+                textAlign: 'center',
+                fontStyle: 'italic',
+            },
+            imageModalContent: {
+                flex: 1,
+                width: '100%',
+                justifyContent: 'center',
+                alignItems: 'center',
+            },
+            imageContainer: {
+                flex: 1,
+                justifyContent: 'center',
+                alignItems: 'center',
+                width: '100%',
+            },
+            fullScreenImage: {
+                width: '100%',
+                height: '100%',
+            },
+            videoPlayOverlay: {
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                justifyContent: 'center',
+                alignItems: 'center',
+                backgroundColor: 'rgba(0, 0, 0, 0.05)', // почти прозрачен
+                borderRadius: 12,
+            },
+            videoViewerContainer: {
+                flex: 1,
+                backgroundColor: 'black',
+                justifyContent: 'center',
+                alignItems: 'center',
+            },
+            videoViewerCloseButton: {
+                position: 'absolute',
+                top: 50,
+                right: 20,
+                zIndex: 1000,
+                backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                borderRadius: 25,
+                padding: 8,
+                elevation: 10,
+                shadowColor: '#000',
+                shadowOffset: {width: 0, height: 2},
+                shadowOpacity: 0.5,
+                shadowRadius: 4,
+            },
+            videoDownloadButtonFullscreen: {
+                position: 'absolute',
+                top: 50,
+                left: 20,
+                zIndex: 1000,
+                backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                borderRadius: 25,
+                padding: 8,
+                elevation: 10,
+                shadowColor: '#000',
+                shadowOffset: {width: 0, height: 2},
+                shadowOpacity: 0.5,
+                shadowRadius: 4,
+            },
+            fullScreenVideo: {
+                width: '100%',
+                height: '100%',
+            },
+            uploadingContainer: {
+                marginBottom: 8,
+                padding: 12,
+                borderRadius: 12,
+                backgroundColor: theme.surface,
+                borderWidth: 1,
+                borderColor: theme.border,
+                minHeight: 80,
+                justifyContent: 'center',
+            },
+            uploadingContent: {
+                alignItems: 'center',
+                justifyContent: 'center',
+            },
+            uploadingText: {
+                marginTop: 8,
+                fontSize: 14,
+                fontStyle: 'italic',
+            },
+            progressContainer: {
+                marginTop: 8,
+                width: '100%',
+                alignItems: 'center',
+            },
+            progressBar: {
+                width: '80%',
+                height: 4,
+                borderRadius: 2,
+                overflow: 'hidden',
+            },
+            progressFill: {
+                height: '100%',
+                borderRadius: 2,
+            },
+            progressText: {
+                marginTop: 4,
+                fontSize: 12,
+            },
+            reloadContainer: {
+                marginBottom: 8,
+                padding: 16,
+                borderRadius: 12,
+                backgroundColor: theme.surface,
+                borderWidth: 1,
+                borderColor: theme.border,
+                borderStyle: 'dashed',
+                minHeight: 80,
+                justifyContent: 'center',
+                alignItems: 'center',
+            },
+            reloadContent: {
+                alignItems: 'center',
+                justifyContent: 'center',
+            },
+            reloadText: {
+                marginTop: 8,
+                fontSize: 14,
+                fontStyle: 'italic',
+                textAlign: 'center',
+            },
+            reloadSubtext: {
+                marginTop: 4,
+                fontSize: 12,
+                textAlign: 'center',
+            },
+            reloadHint: {
+                marginTop: 6,
+                fontSize: 11,
+                textAlign: 'center',
+                fontStyle: 'italic',
+            },
+            missingMediaContainer: {
+                marginBottom: 8,
+                padding: 20,
+                borderRadius: 12,
+                backgroundColor: 'rgba(128, 128, 128, 0.1)',
+                borderWidth: 1,
+                borderColor: 'rgba(128, 128, 128, 0.3)',
+                borderStyle: 'dashed',
+                alignItems: 'center',
+                justifyContent: 'center',
+                minHeight: 100,
+            },
+            missingMediaText: {
+                marginTop: 8,
+                fontSize: 14,
+                fontWeight: '500',
+                textAlign: 'center',
+            },
+            missingMediaSubtext: {
+                marginTop: 4,
+                fontSize: 12,
+                textAlign: 'center',
+                fontStyle: 'italic',
+            },
+            imageFullscreenDownloadButton: {
+                position: 'absolute',
+                top: 60,
+                left: 20,
+                zIndex: 10,
+                backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                borderRadius: 25,
+                padding: 8,
+                elevation: 5,
+                shadowColor: '#000',
+                shadowOffset: {width: 0, height: 2},
+                shadowOpacity: 0.25,
+                shadowRadius: 3.84,
+            },
+            fileContainer: {
+                flexDirection: 'row',
+                alignItems: 'flex-start',
+                marginBottom: 8,
+                padding: 8,
+                borderRadius: 12,
+                backgroundColor: 'rgba(0, 0, 0, 0.05)',
+                borderWidth: 1,
+                borderColor: 'rgba(0, 0, 0, 0.1)',
+                minHeight: 60,
+                width: 220,
+            },
+            fileIconContainer: {
+                marginRight: 8,
+                marginTop: 2,
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 36,
+                height: 36,
+                borderRadius: 8,
+                backgroundColor: 'rgba(0, 0, 0, 0.05)',
+            },
+            fileInfo: {
+                flex: 1,
+                marginRight: 4,
+            },
+            fileName: {
+                fontSize: 13,
+                fontWeight: '500',
+                marginBottom: 2,
+                flexWrap: 'wrap',
+            },
+            fileSize: {
+                fontSize: 12,
+                marginBottom: 1,
+            },
+            fileMimeType: {
+                fontSize: 10,
+                fontStyle: 'italic',
+            },
+            fileContainerDownloading: {
+                opacity: 0.7,
+                borderColor: theme.primary,
+                borderWidth: 1,
+                backgroundColor: 'rgba(0, 0, 0, 0.02)',
+            },
+            downloadProgressContainer: {
+                marginTop: 6,
+                width: '100%',
+            },
+            downloadProgressBar: {
+                height: 3,
+                borderRadius: 2,
+                overflow: 'hidden',
+                marginBottom: 2,
+            },
+            downloadProgressFill: {
+                height: '100%',
+                borderRadius: 2,
+            },
+            downloadProgressText: {
+                fontSize: 10,
+                fontStyle: 'italic',
+            },
+            videoErrorContainer: {
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
+                transform: [{translateX: -100}, {translateY: -100}],
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                padding: 20,
+                borderRadius: 12,
+                width: 200,
+                zIndex: 2,
+            },
+            videoErrorText: {
+                color: 'white',
+                fontSize: 16,
+                fontWeight: 'bold',
+                marginTop: 8,
+                textAlign: 'center',
+            },
+            videoErrorDetails: {
+                color: 'white',
+                fontSize: 12,
+                marginTop: 8,
+                textAlign: 'center',
+                opacity: 0.8,
+            },
+            retryButton: {
+                backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                paddingHorizontal: 16,
+                paddingVertical: 8,
+                borderRadius: 8,
+                marginTop: 12,
+            },
+            retryButtonText: {
+                color: 'white',
+                fontSize: 14,
+                fontWeight: 'bold',
+            },
+            audioWarningDot: {
+                position: 'absolute',
+                top: 2,
+                right: 2,
+                width: 8,
+                height: 8,
+                borderRadius: 4,
+                backgroundColor: 'orange',
+            },
+            systemPlayerButton: {
+                position: 'absolute',
+                top: 50,
+                left: 200,
+                backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                padding: 10,
+                borderRadius: 25,
+                zIndex: 1000,
+                elevation: 10,
+                shadowColor: '#000',
+                shadowOffset: {width: 0, height: 2},
+                shadowOpacity: 0.5,
+                shadowRadius: 4,
+            },
+            // Стили для встроенного видеоплеера
+            inlineVideoContainer: {
+                position: 'relative',
+                marginBottom: 8,
+                borderRadius: 8,
+                overflow: 'visible',
+                maxWidth: '100%',
+                width: 250,
+                height: 180,                  // фиксированная высота, как было изначально
+                borderWidth: 0.5,
+                borderColor: 'transparent',
+                borderStyle: 'solid',
+            },
+            inlineVideo: {
+                width: '100%',
+                height: '100%',
+                borderRadius: 8,
+            },
 
-    fullscreenVideo: {
-        width: '100%',
-        height: '100%',
-        borderRadius: 0,
-    },
-    // Новые стили для полноэкранного режима на весь экран устройства
-    deviceFullscreenVideoContainer: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        zIndex: 2000, // Выше чем обычный полноэкранный режим
-        backgroundColor: 'black',
-        marginBottom: 0,
-        borderRadius: 0,
-    },
-    deviceFullscreenVideo: {
-        width: '100%',
-        height: '100%',
-        borderRadius: 0,
-    },
-    // Стили для модального полноэкранного видео
-    fullscreenModalContainer: {
-        flex: 1,
-        backgroundColor: 'black',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    fullscreenModalVideo: {
-        width: '100%',
-        height: '100%',
-    },
-    fullscreenModalCloseButton: {
-        position: 'absolute',
-        top: 50,
-        right: 20,
-        zIndex: 10,
-        backgroundColor: 'rgba(0, 0, 0, 0.7)',
-        borderRadius: 25,
-        padding: 10,
-    },
-    inlineVideoControls: {
-        position: 'absolute',
-        bottom: 6,
-        right: 6,
-        flexDirection: 'row',
-        backgroundColor: 'rgba(0, 0, 0, 0.8)',
-        borderRadius: 18,
-        padding: 3,
-        zIndex: 2,
-        maxWidth: '90%', // Ограничиваем ширину контролов
-    },
-    inlineVideoButton: {
-        padding: 5,
-        marginHorizontal: 1,
-        borderRadius: 12,
-        backgroundColor: 'rgba(255, 255, 255, 0.2)',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minWidth: 26,
-        minHeight: 26,
-    },
-    videoProgressContainerSimple: {
-        marginTop: 8,               // небольшое отступление от кнопок
-        marginHorizontal: 6,       // отступы по бокам, чтобы не прилипало к краям
-    },
-    videoProgressBar: {
-        height: 3,
-        backgroundColor: 'rgba(255, 255, 255, 0.3)',
-        borderRadius: 2,
-        overflow: 'hidden',
-    },
-    videoProgressFill: {
-        height: '100%',
-        backgroundColor: '#007AFF',
-        borderRadius: 2,
-    },
-    videoProgressTouch: {
-        position: 'absolute',
-        top: -8,
-        bottom: -8,
-        left: 0,
-        right: 0,
-    },
-    // Текущий стиль теперь просто контейнер без абсолютного позиционирования
-    videoTimeContainer: {
-        // Сохранён для совместимости, но не используется в рендере
-    },
+            fullscreenVideo: {
+                width: '100%',
+                height: '100%',
+                borderRadius: 0,
+            },
+            // Новые стили для полноэкранного режима на весь экран устройства
+            deviceFullscreenVideoContainer: {
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                zIndex: 2000, // Выше чем обычный полноэкранный режим
+                backgroundColor: 'black',
+                marginBottom: 0,
+                borderRadius: 0,
+            },
+            deviceFullscreenVideo: {
+                width: '100%',
+                height: '100%',
+                borderRadius: 0,
+            },
+            // Стили для модального полноэкранного видео
+            fullscreenModalContainer: {
+                flex: 1,
+                backgroundColor: 'black',
+                justifyContent: 'center',
+                alignItems: 'center',
+            },
+            fullscreenModalVideo: {
+                width: '100%',
+                height: '100%',
+            },
+            fullscreenModalCloseButton: {
+                position: 'absolute',
+                top: 50,
+                right: 20,
+                zIndex: 10,
+                backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                borderRadius: 25,
+                padding: 10,
+            },
+            inlineVideoControls: {
+                position: 'absolute',
+                bottom: 6,
+                right: 6,
+                flexDirection: 'row',
+                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                borderRadius: 18,
+                padding: 3,
+                zIndex: 2,
+                maxWidth: '90%', // Ограничиваем ширину контролов
+            },
+            inlineVideoButton: {
+                padding: 5,
+                marginHorizontal: 1,
+                borderRadius: 12,
+                backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                alignItems: 'center',
+                justifyContent: 'center',
+                minWidth: 26,
+                minHeight: 26,
+            },
+            videoProgressContainerSimple: {
+                marginTop: 8,               // небольшое отступление от кнопок
+                marginHorizontal: 6,       // отступы по бокам, чтобы не прилипало к краям
+            },
+            videoProgressBar: {
+                height: 3,
+                backgroundColor: 'rgba(255, 255, 255, 0.3)',
+                borderRadius: 2,
+                overflow: 'hidden',
+            },
+            videoProgressFill: {
+                height: '100%',
+                backgroundColor: '#007AFF',
+                borderRadius: 2,
+            },
+            videoProgressTouch: {
+                position: 'absolute',
+                top: -8,
+                bottom: -8,
+                left: 0,
+                right: 0,
+            },
+            // Текущий стиль теперь просто контейнер без абсолютного позиционирования
+            videoTimeContainer: {
+                // Сохранён для совместимости, но не используется в рендере
+            },
 
-    // Новый простой стиль для времени под прогресс‑баром
-    videoTimeContainerSimple: {
-        marginTop: 4,
-        marginHorizontal: 6,
-        backgroundColor: 'rgba(0, 0, 0, 0)',
-        paddingHorizontal: 6,
-        paddingVertical: 1,
-        borderRadius: 3,
-        alignSelf: 'flex-start',
-    },
-    videoTimeText: {
-        color: 'white',
-        fontSize: 10,
-        fontFamily: 'monospace',
-    },
+            // Новый простой стиль для времени под прогресс‑баром
+            videoTimeContainerSimple: {
+                marginTop: 4,
+                marginHorizontal: 6,
+                backgroundColor: 'rgba(0, 0, 0, 0)',
+                paddingHorizontal: 6,
+                paddingVertical: 1,
+                borderRadius: 3,
+                alignSelf: 'flex-start',
+            },
+            videoTimeText: {
+                color: 'white',
+                fontSize: 10,
+                fontFamily: 'monospace',
+            },
 
-    // Стили для превью видео (ленивая загрузка)
-    videoPreviewContainer: {
-        marginBottom: 8,
-        borderRadius: 12,
-        backgroundColor: theme.surface,
-        borderWidth: 0.3,           // почти незаметная граница
-        borderColor: 'transparent', // полностью прозрачная
-        borderStyle: 'solid',
-        padding: 16,
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: 110,
-        maxWidth: '100%',
-        width: 250, // Соответствует ширине инлайн видео
-    },
-    videoPreviewContent: {
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    videoPreviewTitle: {
-        fontSize: 16,
-        fontWeight: 'bold',
-        marginTop: 8,
-        marginBottom: 4,
-    },
-    videoPreviewSize: {
-        fontSize: 14,
-        marginBottom: 8,
-    },
-    videoPreviewHint: {
-        fontSize: 12,
-        fontStyle: 'italic',
-        textAlign: 'center',
-    },
-    videoPreviewNote: {
-        fontSize: 10,
-        fontStyle: 'italic',
-        textAlign: 'center',
-        marginTop: 4,
-        opacity: 0.7,
-    },
-    // Стили для индикатора загрузки видео
-    videoLoadingContainer: {
-        marginBottom: 8,
-        borderRadius: 12,
-        backgroundColor: theme.surface,
-        borderWidth: 1,
-        borderColor: theme.border,
-        padding: 16,
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: 110,
-        maxWidth: '100%',
-        width: 240, // Соответствует ширине инлайн видео
-    },
-    videoLoadingText: {
-        fontSize: 14,
-        marginTop: 12,
-        marginBottom: 4,
-    },
-    videoLoadingSize: {
-        fontSize: 12,
-    },
-    // Стили для аудио записи
-    recordingContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        width: '100%',
-        paddingVertical: 8,
-    },
-    cancelRecordButton: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    sendRecordButton: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    recordingIndicator: {
-        flex: 1,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginHorizontal: 16,
-    },
-    recordingDot: {
-        width: 12,
-        height: 12,
-        borderRadius: 6,
-        backgroundColor: '#ff4444',
-        marginRight: 8,
-    },
-    recordingText: {
-        fontSize: 18,
-        fontWeight: 'bold',
-        fontFamily: 'monospace',
-    },
-    audioRecordButton: {
-        justifyContent: 'center',
-        alignItems: 'center',
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-    },
-    // Стили для аудио плеера
-    audioContainer: {
-        marginBottom: 8,
-        borderRadius: 12,
-        overflow: 'hidden',
-    },
-    audioPlayerContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        padding: 8,
-        borderRadius: 12,
-        backgroundColor: 'rgba(0, 0, 0, 0.05)',
-        minWidth: 200,
-    },
-    audioPlayButton: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginRight: 8,
-    },
-    audioWaveform: {
-        flex: 1,
-    },
-    audioProgressBar: {
-        height: 4,
-        borderRadius: 2,
-        overflow: 'hidden',
-        marginBottom: 4,
-    },
-    audioProgressFill: {
-        height: '100%',
-        borderRadius: 2,
-    },
-    audioDuration: {
-        fontSize: 12,
-    },
-    audioLoadingText: {
-        fontSize: 14,
-        marginLeft: 8,
-    },
-    // Стили для выделения сообщений
-    selectionHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        flex: 1,
-        justifyContent: 'space-between',
-    },
-    selectionBackButton: {
-        padding: 8,
-    },
-    selectionInfo: {
-        flex: 1,
-        marginLeft: 8,
-    },
-    selectionCount: {
-        fontSize: 16,
-        fontWeight: 'bold',
-    },
-    selectionActions: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    selectionActionButton: {
-        padding: 8,
-        marginLeft: 4,
-    },
-    selectedMessage: {
-        backgroundColor: theme.primary ? `${theme.primary}20` : 'rgba(0, 123, 255, 0.1)',
-        borderColor: theme.primary,
-        borderWidth: 2,
-        transform: [{ scale: 0.98 }],
-    },
-    selectionIndicator: {
-        position: 'absolute',
-        top: 4,
-        left: 4,
-        zIndex: 10,
-        backgroundColor: 'rgba(255, 255, 255, 0.9)',
-        borderRadius: 12,
-        padding: 2,
-    },
-    mediaContentWrapper: {
-        position: 'relative',
-        // Медиа контент остается интерактивным
-    },
-    // Стили для пометки об удалении
-    deletionNotice: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginTop: 4,
-        paddingTop: 4,
-        borderTopWidth: 1,
-        borderTopColor: 'rgba(128, 128, 128, 0.2)',
-    },
-    deletionNoticeText: {
-        fontSize: 11,
-        fontStyle: 'italic',
-        marginLeft: 4,
-        opacity: 0.7,
-    },
-    // Стили для процесса удаления
-    deletingMessage: {
-        opacity: 0.6,
-        backgroundColor: 'rgba(255, 68, 68, 0.1)',
-        borderColor: '#ff4444',
-        borderWidth: 1,
-    },
-    deletingIndicator: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 4,
-        paddingHorizontal: 8,
-        paddingVertical: 4,
-        backgroundColor: 'rgba(255, 68, 68, 0.1)',
-        borderRadius: 12,
-    },
-    deletingText: {
-        fontSize: 12,
-        fontStyle: 'italic',
-        marginLeft: 4,
-    },
-    // Стили для статуса прочтения
-    messageFooter: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'flex-end',
-        marginTop: 2,
-    },
-    readStatusContainer: {
-        marginLeft: 4,
-    },
-    readStatusIcon: {
-        opacity: 0.8,
-    },
-    unreadMessageBorder: {
-        borderLeftWidth: 3,
-        borderLeftColor: theme.primary,
-        paddingLeft: 8,
-    },
-    });
-};
+            // Стили для превью видео (ленивая загрузка)
+            videoPreviewContainer: {
+                marginBottom: 8,
+                borderRadius: 12,
+                backgroundColor: theme.surface,
+                borderWidth: 0.3,           // почти незаметная граница
+                borderColor: 'transparent', // полностью прозрачная
+                borderStyle: 'solid',
+                padding: 16,
+                alignItems: 'center',
+                justifyContent: 'center',
+                minHeight: 110,
+                maxWidth: '100%',
+                width: 250, // Соответствует ширине инлайн видео
+            },
+            videoPreviewContent: {
+                alignItems: 'center',
+                justifyContent: 'center',
+            },
+            videoPreviewTitle: {
+                fontSize: 16,
+                fontWeight: 'bold',
+                marginTop: 8,
+                marginBottom: 4,
+            },
+            videoPreviewSize: {
+                fontSize: 14,
+                marginBottom: 8,
+            },
+            videoPreviewHint: {
+                fontSize: 12,
+                fontStyle: 'italic',
+                textAlign: 'center',
+            },
+            videoPreviewNote: {
+                fontSize: 10,
+                fontStyle: 'italic',
+                textAlign: 'center',
+                marginTop: 4,
+                opacity: 0.7,
+            },
+            // Стили для индикатора загрузки видео
+            videoLoadingContainer: {
+                marginBottom: 8,
+                borderRadius: 12,
+                backgroundColor: theme.surface,
+                borderWidth: 1,
+                borderColor: theme.border,
+                padding: 16,
+                alignItems: 'center',
+                justifyContent: 'center',
+                minHeight: 110,
+                maxWidth: '100%',
+                width: 240, // Соответствует ширине инлайн видео
+            },
+            videoLoadingText: {
+                fontSize: 14,
+                marginTop: 12,
+                marginBottom: 4,
+            },
+            videoLoadingSize: {
+                fontSize: 12,
+            },
+            // Стили для аудио записи
+            recordingContainer: {
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                width: '100%',
+                paddingVertical: 8,
+            },
+            cancelRecordButton: {
+                width: 44,
+                height: 44,
+                borderRadius: 22,
+                justifyContent: 'center',
+                alignItems: 'center',
+            },
+            sendRecordButton: {
+                width: 44,
+                height: 44,
+                borderRadius: 22,
+                justifyContent: 'center',
+                alignItems: 'center',
+            },
+            recordingIndicator: {
+                flex: 1,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginHorizontal: 16,
+            },
+            recordingDot: {
+                width: 12,
+                height: 12,
+                borderRadius: 6,
+                backgroundColor: '#ff4444',
+                marginRight: 8,
+            },
+            recordingText: {
+                fontSize: 18,
+                fontWeight: 'bold',
+                fontFamily: 'monospace',
+            },
+            audioRecordButton: {
+                justifyContent: 'center',
+                alignItems: 'center',
+                width: 44,
+                height: 44,
+                borderRadius: 22,
+            },
+            // Стили для аудио плеера
+            audioContainer: {
+                marginBottom: 8,
+                borderRadius: 12,
+                overflow: 'hidden',
+            },
+            audioPlayerContainer: {
+                flexDirection: 'row',
+                alignItems: 'center',
+                padding: 8,
+                borderRadius: 12,
+                backgroundColor: 'rgba(0, 0, 0, 0.05)',
+                minWidth: 200,
+            },
+            audioPlayButton: {
+                width: 40,
+                height: 40,
+                borderRadius: 20,
+                justifyContent: 'center',
+                alignItems: 'center',
+                marginRight: 8,
+            },
+            audioWaveform: {
+                flex: 1,
+            },
+            audioProgressBar: {
+                height: 4,
+                borderRadius: 2,
+                overflow: 'hidden',
+                marginBottom: 4,
+            },
+            audioProgressFill: {
+                height: '100%',
+                borderRadius: 2,
+            },
+            audioDuration: {
+                fontSize: 12,
+            },
+            audioLoadingText: {
+                fontSize: 14,
+                marginLeft: 8,
+            },
+            // Стили для выделения сообщений
+            selectionHeader: {
+                flexDirection: 'row',
+                alignItems: 'center',
+                flex: 1,
+                justifyContent: 'space-between',
+            },
+            selectionBackButton: {
+                padding: 8,
+            },
+            selectionInfo: {
+                flex: 1,
+                marginLeft: 8,
+            },
+            selectionCount: {
+                fontSize: 16,
+                fontWeight: 'bold',
+            },
+            selectionActions: {
+                flexDirection: 'row',
+                alignItems: 'center',
+            },
+            selectionActionButton: {
+                padding: 8,
+                marginLeft: 4,
+            },
+            selectedMessage: {
+                backgroundColor: theme.primary ? `${theme.primary}20` : 'rgba(0, 123, 255, 0.1)',
+                borderColor: theme.primary,
+                borderWidth: 2,
+                transform: [{scale: 0.98}],
+            },
+            selectionIndicator: {
+                position: 'absolute',
+                top: 4,
+                left: 4,
+                zIndex: 10,
+                backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                borderRadius: 12,
+                padding: 2,
+            },
+            mediaContentWrapper: {
+                position: 'relative',
+                // Медиа контент остается интерактивным
+            },
+            // Стили для пометки об удалении
+            deletionNotice: {
+                flexDirection: 'row',
+                alignItems: 'center',
+                marginTop: 4,
+                paddingTop: 4,
+                borderTopWidth: 1,
+                borderTopColor: 'rgba(128, 128, 128, 0.2)',
+            },
+            deletionNoticeText: {
+                fontSize: 11,
+                fontStyle: 'italic',
+                marginLeft: 4,
+                opacity: 0.7,
+            },
+            // Стили для процесса удаления
+            deletingMessage: {
+                opacity: 0.6,
+                backgroundColor: 'rgba(255, 68, 68, 0.1)',
+                borderColor: '#ff4444',
+                borderWidth: 1,
+            },
+            deletingIndicator: {
+                flexDirection: 'row',
+                alignItems: 'center',
+                marginBottom: 4,
+                paddingHorizontal: 8,
+                paddingVertical: 4,
+                backgroundColor: 'rgba(255, 68, 68, 0.1)',
+                borderRadius: 12,
+            },
+            deletingText: {
+                fontSize: 12,
+                fontStyle: 'italic',
+                marginLeft: 4,
+            },
+            // Стили для сообщений удаленных собеседником
+            deletedByOtherMessage: {
+                opacity: 0.7,
+                borderColor: 'rgba(255, 152, 0, 0.5)',
+                borderWidth: 1,
+                borderStyle: 'dashed',
+                backgroundColor: 'rgba(255, 152, 0, 0.1)',
+            },
+            // Стили для статуса прочтения
+            messageFooter: {
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'flex-end',
+                marginTop: 2,
+            },
+            readStatusContainer: {
+                marginLeft: 4,
+            },
+            readStatusIcon: {
+                opacity: 0.8,
+            },
+            unreadMessageBorder: {
+                borderLeftWidth: 3,
+                borderLeftColor: theme.primary,
+                paddingLeft: 8,
+            },
+            // Стили для реплаев
+            replyContainer: {
+                marginBottom: 6,
+                padding: 8,
+                backgroundColor: 'rgba(128, 128, 128, 0.1)',
+                borderLeftWidth: 3,
+                borderRadius: 6,
+                marginHorizontal: 4,
+            },
+            replyHeader: {
+                flexDirection: 'row',
+                alignItems: 'center',
+                marginBottom: 2,
+            },
+            replySender: {
+                fontSize: 12,
+                fontWeight: 'bold',
+                marginLeft: 4,
+            },
+            replyMessage: {
+                fontSize: 13,
+                fontStyle: 'italic',
+                lineHeight: 16,
+            },
+            replyPanel: {
+                borderTopWidth: 1,
+                paddingHorizontal: 16,
+                paddingVertical: 8,
+            },
+            replyPanelContent: {
+                flexDirection: 'row',
+                alignItems: 'center',
+            },
+            replyInfo: {
+                flex: 1,
+                marginLeft: 8,
+            },
+            replyToSender: {
+                fontSize: 12,
+                fontWeight: 'bold',
+            },
+            replyToMessage: {
+                fontSize: 13,
+                marginTop: 1,
+            },
+            cancelReplyButton: {
+                padding: 4,
+            },
+            // Стили для индикатора реплая
+            messageWithReplyIndicator: {
+                position: 'relative',
+            },
+            replyIndicator: {
+                position: 'absolute',
+                top: '50%',
+                zIndex: 1,
+                opacity: 0.3,
+                backgroundColor: 'rgba(128, 128, 128, 0.1)',
+                borderRadius: 12,
+                padding: 4,
+                transform: [{translateY: -12}],
+            },
+            replyIndicatorLeft: {
+                left: -30,
+            },
+            replyIndicatorRight: {
+                right: -30,
+            },
+            replyIndicatorIcon: {
+                opacity: 0.6,
+            },
+        });
+    };
