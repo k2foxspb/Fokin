@@ -362,10 +362,19 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
         user1_id = data.get('user1')
         user2_id = data.get('user2')
 
+        # Данные для реплая
+        reply_to_message_id = data.get('reply_to_message_id')
+        reply_to_message_text = data.get('reply_to_message_text')
+        reply_to_sender_name = data.get('reply_to_sender_name')
+        reply_to_media_type = data.get('reply_to_media_type')
+
         # Определяем получателя (тот, кто не является отправителем)
         recipient_id = user2_id if user1_id == self.user.id else user1_id
 
         logger.info(f"Processing text message: sender={self.user.id}, recipient={recipient_id}, message='{message_content[:50]}'")
+
+        if reply_to_message_id:
+            logger.info(f"Text message is reply to: {reply_to_message_id}")
 
         if message_content and recipient_id:
             try:
@@ -374,7 +383,11 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
 
                 message_instance = await self.save_message(
                     self.user, message_content, room, 
-                    media_type='text'
+                    media_type='text',
+                    reply_to_message_id=reply_to_message_id,
+                    reply_to_message_text=reply_to_message_text,
+                    reply_to_sender_name=reply_to_sender_name,
+                    reply_to_media_type=reply_to_media_type
                 )
 
                 if message_instance:
@@ -399,10 +412,19 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
         media_size = data.get('mediaSize')
         media_base64 = data.get('mediaBase64')
 
+        # Данные для реплая
+        reply_to_message_id = data.get('reply_to_message_id')
+        reply_to_message_text = data.get('reply_to_message_text')
+        reply_to_sender_name = data.get('reply_to_sender_name')
+        reply_to_media_type = data.get('reply_to_media_type')
+
         # Определяем получателя
         recipient_id = user2_id if user1_id == self.user.id else user1_id
 
         logger.info(f"📷 [CONSUMER] Media message details: type={media_type}, hash={media_hash}, size={media_size}, filename={media_filename}")
+
+        if reply_to_message_id:
+            logger.info(f"📷 [CONSUMER] Media message is reply to: {reply_to_message_id}")
 
         if media_type and media_hash and recipient_id:
             try:
@@ -415,7 +437,11 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
                     media_type=media_type,
                     media_hash=media_hash,
                     media_filename=media_filename,
-                    media_size=media_size
+                    media_size=media_size,
+                    reply_to_message_id=reply_to_message_id,
+                    reply_to_message_text=reply_to_message_text,
+                    reply_to_sender_name=reply_to_sender_name,
+                    reply_to_media_type=reply_to_media_type
                 )
 
                 if message_instance:
@@ -518,20 +544,29 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
         """Отправка обычного сообщения всем участникам"""
         timestamp = message_instance.timestamp.isoformat()
 
+        # Подготавливаем данные сообщения
+        message_data = {
+            'type': 'chat_message',
+            'message': message_instance.message,
+            'sender__username': self.user.username,
+            'sender_id': self.user.id,
+            'recipient_id': recipient_id,
+            'timestamp': int(message_instance.timestamp.timestamp()),
+            'id': message_instance.id,
+            'read': message_instance.read
+        }
+
+        # Добавляем данные реплая если есть
+        if message_instance.reply_to_message:
+            message_data.update({
+                'reply_to_message_id': message_instance.reply_to_message.id,
+                'reply_to_message_text': message_instance.reply_to_message_text,
+                'reply_to_sender_name': message_instance.reply_to_sender_name,
+                'reply_to_media_type': message_instance.reply_to_media_type
+            })
+
         # Отправляем сообщение в группу чата
-        await self.channel_layer.group_send(
-            self.room_group_name,
-            {
-                'type': 'chat_message',
-                'message': message_instance.message,
-                'sender__username': self.user.username,
-                'sender_id': self.user.id,
-                'recipient_id': recipient_id,
-                'timestamp': int(message_instance.timestamp.timestamp()),
-                'id': message_instance.id,
-                'read': message_instance.read
-            }
-        )
+        await self.channel_layer.group_send(self.room_group_name, message_data)
 
         # Отправляем уведомление получателю
         await self.channel_layer.group_send(
@@ -575,6 +610,15 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
             'read': message_instance.read
         }
 
+        # Добавляем данные реплая если есть
+        if message_instance.reply_to_message:
+            message_data.update({
+                'reply_to_message_id': message_instance.reply_to_message.id,
+                'reply_to_message_text': message_instance.reply_to_message_text,
+                'reply_to_sender_name': message_instance.reply_to_sender_name,
+                'reply_to_media_type': message_instance.reply_to_media_type
+            })
+
         # Добавляем base64 данные если есть
         if media_base64:
             message_data['mediaBase64'] = media_base64
@@ -617,10 +661,19 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
         media_size = event.get('mediaSize')
         media_base64 = event.get('mediaBase64')
 
+        # Данные реплая
+        reply_to_message_id = event.get('reply_to_message_id')
+        reply_to_message_text = event.get('reply_to_message_text')
+        reply_to_sender_name = event.get('reply_to_sender_name')
+        reply_to_media_type = event.get('reply_to_media_type')
+
         if media_type:
             logger.info(f"📡 [SEND] Sending media message to client: type={media_type}, hash={media_hash}")
         else:
             logger.info(f"📡 [SEND] Sending text message to client: sender={sender}, message='{message[:50]}'")
+
+        if reply_to_message_id:
+            logger.info(f"📡 [SEND] Message is reply to: {reply_to_message_id}")
 
         # Базовые данные сообщения
         response_data = {
@@ -631,6 +684,15 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
             'sender_id': sender_id,
             'read': read_status
         }
+
+        # Добавляем данные реплая если есть
+        if reply_to_message_id:
+            response_data.update({
+                'reply_to_message_id': reply_to_message_id,
+                'reply_to_message_text': reply_to_message_text,
+                'reply_to_sender_name': reply_to_sender_name,
+                'reply_to_media_type': reply_to_media_type
+            })
 
         # Добавляем медиа данные если есть
         if media_type and media_hash:
@@ -650,13 +712,19 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
 
     @database_sync_to_async
     def save_message(self, sender, message_content, room, media_type='text', 
-                    media_hash=None, media_filename=None, media_size=None):
+                    media_hash=None, media_filename=None, media_size=None,
+                    reply_to_message_id=None, reply_to_message_text=None, 
+                    reply_to_sender_name=None, reply_to_media_type=None):
         try:
             from media_api.models import UploadedFile
 
             recipient = room.user2 if room.user1 == sender else room.user1
 
             logger.info(f"💾 [DB] Saving message: type={media_type}, hash={media_hash}")
+
+            # Логируем информацию о реплае если есть
+            if reply_to_message_id:
+                logger.info(f"💾 [DB] Reply to message: id={reply_to_message_id}, sender={reply_to_sender_name}")
 
             # Ищем медиафайл по hash если это медиа-сообщение
             media_file = None
@@ -688,6 +756,15 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
                 except Exception as file_error:
                     logger.error(f"💾 [DB] Error finding media file: {file_error}")
 
+            # Ищем исходное сообщение для реплая
+            reply_to_message_obj = None
+            if reply_to_message_id:
+                try:
+                    reply_to_message_obj = PrivateMessage.objects.get(id=reply_to_message_id)
+                    logger.info(f"💾 [DB] Found reply_to message: {reply_to_message_obj.id}")
+                except PrivateMessage.DoesNotExist:
+                    logger.warning(f"💾 [DB] Reply_to message {reply_to_message_id} not found")
+
             message = PrivateMessage.objects.create(
                 room=room,
                 sender=sender,
@@ -699,10 +776,15 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
                 media_filename=media_filename,
                 media_size=media_size,
                 media_file=media_file,
+                # Поля для реплаев
+                reply_to_message=reply_to_message_obj,
+                reply_to_message_text=reply_to_message_text,
+                reply_to_sender_name=reply_to_sender_name,
+                reply_to_media_type=reply_to_media_type,
                 is_deleted=False  # Явно указываем значение
             )
 
-            logger.info(f"💾 [DB] ✅ Message saved with ID: {message.id}, media_file: {media_file.id if media_file else None}")
+            logger.info(f"💾 [DB] ✅ Message saved with ID: {message.id}, media_file: {media_file.id if media_file else None}, reply_to: {reply_to_message_id}")
             return message
         except Exception as e:
             logger.error(f"💾 [DB] ❌ Error saving message: {e}")
