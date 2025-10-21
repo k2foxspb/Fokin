@@ -112,10 +112,6 @@ class ChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
             self.channel_name
         )
 
-        # Устанавливаем статус пользователя онлайн
-        await self.set_user_online(self.user.id)
-        await self.broadcast_user_status(self.user.id, 'online')
-
         await self.accept()
 
         await self.channel_layer.group_send(
@@ -144,11 +140,6 @@ class ChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
                 self.room_group_name,
                 self.channel_name
             )
-
-        # Устанавливаем статус пользователя офлайн
-        if self.user:
-            await self.set_user_offline(self.user.id)
-            await self.broadcast_user_status(self.user.id, 'offline')
 
     async def receive(self, text_data):
         try:
@@ -238,9 +229,6 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
         # Добавляем пользователя в список активных
         PrivateChatConsumer.connected_users.add(self.user.id)
 
-        # Устанавливаем статус пользователя онлайн
-
-
         await self.accept()
 
         # Помечаем сообщения как прочитанные и обновляем счетчики
@@ -278,10 +266,6 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
         # Удаляем пользователя из списка активных
         if hasattr(self, 'user') and self.user:
             PrivateChatConsumer.connected_users.discard(self.user.id)
-
-            # Устанавливаем статус пользователя офлайн
-            await self.set_user_offline(self.user.id)
-            await self.broadcast_user_status(self.user.id, 'offline')
 
         if hasattr(self, 'room_group_name'):
             await self.channel_layer.group_discard(
@@ -794,8 +778,14 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
     def get_user_chats_for_update(self, user_id):
         """Получаем обновленный список чатов пользователя"""
         try:
+            from .models import MessageDeletion
             User = get_user_model()
             user = User.objects.get(id=user_id)
+
+            # Получаем ID сообщений, которые пользователь удалил для себя
+            user_deleted_message_ids = MessageDeletion.objects.filter(
+                user=user
+            ).values_list('message__id', flat=True)
 
             # Получаем все чаты пользователя
             rooms = PrivateChatRoom.objects.filter(
@@ -807,17 +797,23 @@ class PrivateChatConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
                 # Определяем собеседника
                 other_user = room.user2 if room.user1 == user else room.user1
 
-                # Получаем последнее сообщение
+                # Получаем последнее сообщение, исключая удалённые
                 last_message = PrivateMessage.objects.filter(
                     room=room
+                ).exclude(
+                    Q(is_deleted=True) |  # Глобально удаленные сообщения
+                    Q(id__in=user_deleted_message_ids)  # Сообщения, удаленные пользователем для себя
                 ).order_by('-timestamp').first()
 
                 if last_message:  # Показываем только чаты с сообщениями
-                    # Считаем непрочитанные сообщения
+                    # Считаем непрочитанные сообщения (исключая удалённые)
                     unread_count = PrivateMessage.objects.filter(
                         room=room,
                         recipient=user,
                         read=False
+                    ).exclude(
+                        Q(is_deleted=True) |  # Глобально удаленные сообщения
+                        Q(id__in=user_deleted_message_ids)  # Сообщения, удаленные пользователем для себя
                     ).count()
 
                     chat_info = {
@@ -1445,13 +1441,22 @@ class NotificationConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
     @database_sync_to_async
     def get_messages_by_sender(self, user_id):
         try:
+            from .models import MessageDeletion
             User = get_user_model()
             user = User.objects.get(id=user_id)
 
-            # Получаем непрочитанные сообщения, сгруппированные по отправителям
+            # Получаем ID сообщений, которые пользователь удалил для себя
+            user_deleted_message_ids = MessageDeletion.objects.filter(
+                user=user
+            ).values_list('message__id', flat=True)
+
+            # Получаем непрочитанные сообщения, исключая глобально удаленные и пользовательские удаления
             unread_messages = PrivateMessage.objects.filter(
                 recipient=user,
                 read=False
+            ).exclude(
+                Q(is_deleted=True) |  # Глобально удаленные сообщения
+                Q(id__in=user_deleted_message_ids)  # Сообщения, удаленные пользователем для себя
             ).select_related('sender', 'room').order_by('sender', '-timestamp')
 
             # Группируем по отправителям
@@ -1469,11 +1474,28 @@ class NotificationConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
                     }
                 senders_data[sender_id]['count'] += 1
 
-                # ИСПРАВЛЕНО: Обновляем на самое новое сообщение
+                # ИСПРАВЛЕНО: Обновляем на самое новое сообщение (исключая удалённые)
                 if message.timestamp.timestamp() > senders_data[sender_id]['timestamp']:
                     senders_data[sender_id]['last_message'] = message.message
                     senders_data[sender_id]['timestamp'] = message.timestamp.timestamp()
                     senders_data[sender_id]['message_id'] = message.id
+
+            # Дополнительно проверяем для каждого отправителя, что last_message не удалено
+            for sender_id, data in senders_data.items():
+                # Если по какой-то причине последнее сообщение всё ещё удалено,
+                # найдём ближайшее не удалённое для этого отправителя
+                latest_non_deleted = PrivateMessage.objects.filter(
+                    recipient=user,
+                    sender_id=sender_id
+                ).exclude(
+                    Q(is_deleted=True) |  # Глобально удаленные сообщения
+                    Q(id__in=user_deleted_message_ids)  # Сообщения, удаленные пользователем для себя
+                ).order_by('-timestamp').first()
+
+                if latest_non_deleted and latest_non_deleted.id != data['message_id']:
+                    data['last_message'] = latest_non_deleted.message
+                    data['timestamp'] = latest_non_deleted.timestamp.timestamp()
+                    data['message_id'] = latest_non_deleted.id
 
             return list(senders_data.values())
 
@@ -1528,10 +1550,6 @@ class ChatListConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
                     self.channel_name
                 )
 
-                # Устанавливаем статус пользователя онлайн
-                await self.set_user_online(self.user_id)
-                await self.broadcast_user_status(self.user_id, 'online')
-
                 await self.accept()
             except Token.DoesNotExist:
                 await self.close()
@@ -1545,10 +1563,6 @@ class ChatListConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
                 f'chat_list_{self.user_id}',
                 self.channel_name
             )
-
-            # Устанавливаем статус пользователя офлайн
-            await self.set_user_offline(self.user_id)
-            await self.broadcast_user_status(self.user_id, 'offline')
 
     async def receive(self, text_data):
         try:
@@ -1580,8 +1594,14 @@ class ChatListConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
     @database_sync_to_async
     def get_user_chats(self, user_id):
         try:
+            from .models import MessageDeletion
             User = get_user_model()
             user = User.objects.get(id=user_id)
+
+            # Получаем ID сообщений, которые пользователь удалил для себя
+            user_deleted_message_ids = MessageDeletion.objects.filter(
+                user=user
+            ).values_list('message__id', flat=True)
 
             # Получаем все чаты пользователя
             rooms = PrivateChatRoom.objects.filter(
@@ -1593,17 +1613,23 @@ class ChatListConsumer(BaseConsumerMixin, AsyncWebsocketConsumer):
                 # Определяем собеседника
                 other_user = room.user2 if room.user1 == user else room.user1
 
-                # Получаем последнее сообщение
+                # Получаем последнее сообщение, исключая удалённые
                 last_message = PrivateMessage.objects.filter(
                     room=room
+                ).exclude(
+                    Q(is_deleted=True) |  # Глобально удаленные сообщения
+                    Q(id__in=user_deleted_message_ids)  # Сообщения, удаленные пользователем для себя
                 ).order_by('-timestamp').first()
 
                 if last_message:  # Показываем только чаты с сообщениями
-                    # Считаем непрочитанные сообщения
+                    # Считаем непрочитанные сообщения (исключая удалённые)
                     unread_count = PrivateMessage.objects.filter(
                         room=room,
                         recipient=user,
                         read=False
+                    ).exclude(
+                        Q(is_deleted=True) |  # Глобально удаленные сообщения
+                        Q(id__in=user_deleted_message_ids)  # Сообщения, удаленные пользователем для себя
                     ).count()
 
                     chat_info = {
