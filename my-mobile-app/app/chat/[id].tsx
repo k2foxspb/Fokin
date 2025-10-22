@@ -6905,12 +6905,13 @@ export default function ChatScreen() {
                                         style={[styles.replyToMessage, {color: theme.textSecondary}]}
                                         numberOfLines={1}
                                     >
-                                        {replyToMessage.mediaType ?
-                                            `${replyToMessage.mediaType === 'image' ? '📷' :
-                                                replyToMessage.mediaType === 'video' ? '🎥' :
-                                                    replyToMessage.mediaType === 'audio' ? '🎤' :
-                                                        '📄'} ${replyToMessage.mediaType}`
-                                            : replyToMessage.message}
+                                        {replyToMessage.mediaType && replyToMessage.mediaType !== 'text' ?
+                                            `${replyToMessage.mediaType === 'image' ? '📷 Изображение' :
+                                                replyToMessage.mediaType === 'video' ? '🎥 Видео' :
+                                                    replyToMessage.mediaType === 'audio' ? '🎤 Аудио' :
+                                                        replyToMessage.mediaType === 'file' ? '📄 Файл' :
+                                                            '📎 Медиа'}`
+                                            : replyToMessage.message || 'Сообщение'}
                                     </Text>
                                 </View>
                                 <TouchableOpacity
