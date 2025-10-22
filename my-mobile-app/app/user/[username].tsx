@@ -8,7 +8,8 @@ import {
     Alert,
     RefreshControl,
     Modal,
-    Dimensions
+    Dimensions,
+    FlatList
 } from 'react-native';
 import {router, useLocalSearchParams} from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -32,6 +33,23 @@ interface UserProfile {
     is_online?: string;
 }
 
+interface Photo {
+    id: number;
+    image_url: string;
+    thumbnail_url: string;
+    caption: string;
+    uploaded_at: string;
+}
+
+interface Album {
+    id: number;
+    title: string;
+    hidden_flag: boolean;
+    created_at: string;
+    photos_count: number;
+    cover_photo: Photo | null;
+}
+
 export default function UserProfile() {
     const { theme } = useTheme();
     const { username } = useLocalSearchParams<{ username: string }>();
@@ -41,6 +59,8 @@ export default function UserProfile() {
     const [isLoadingChat, setIsLoadingChat] = useState(false);
     const [currentUserId, setCurrentUserId] = useState<number | null>(null);
     const [currentUsername, setCurrentUsername] = useState<string | null>(null);
+    const [albums, setAlbums] = useState<Album[]>([]);
+    const [albumsLoading, setAlbumsLoading] = useState(false);
 
     const styles = createStyles(theme);
 
@@ -79,9 +99,42 @@ export default function UserProfile() {
         }
     };
 
+    const fetchAlbums = async () => {
+        if (!profile) return;
+
+        setAlbumsLoading(true);
+        try {
+            const token = await AsyncStorage.getItem('userToken');
+            if (!token) return;
+
+            const response = await axios.get(
+                `${API_CONFIG.BASE_URL}/photo/api/user/${profile.username}/albums/`,
+                {
+                    headers: {Authorization: `Token ${token}`}
+                }
+            );
+
+            console.log('Albums data:', response.data);
+            if (response.data && response.data.length > 0) {
+                console.log('First album:', response.data[0]);
+                console.log('First album cover_photo:', response.data[0].cover_photo);
+            }
+
+            setAlbums(response.data || []);
+        } catch (error) {
+            console.error('Не удалось загрузить альбомы:', error);
+            setAlbums([]);
+        } finally {
+            setAlbumsLoading(false);
+        }
+    };
+
     const onRefresh = async () => {
         setRefreshing(true);
         await fetchProfile();
+        if (profile) {
+            await fetchAlbums();
+        }
         setRefreshing(false);
     };
 
@@ -91,6 +144,12 @@ export default function UserProfile() {
             fetchProfile();
         }
     }, [username]);
+
+    useEffect(() => {
+        if (profile) {
+            fetchAlbums();
+        }
+    }, [profile]);
 
     const handleViewAlbums = () => {
         if (profile) {
@@ -298,16 +357,66 @@ export default function UserProfile() {
                             )}
                         </TouchableOpacity>
 
-                        <TouchableOpacity
-                            style={styles.actionButton}
-                            onPress={handleViewAlbums}
-                        >
-                            <View style={styles.actionIconContainer}>
-                                <Ionicons name="images-outline" size={20} color={theme.primary} />
+
+                    </View>
+                    <View style={styles.albumsSection}>
+                        <View style={styles.sectionHeader}>
+                            <Text style={styles.sectionTitle}>Альбомы</Text>
+                            <TouchableOpacity
+                                onPress={handleViewAlbums}
+                                style={styles.viewAllButton}
+                            >
+                                <Text style={styles.viewAllText}>Все альбомы</Text>
+                                <Ionicons name="chevron-forward" size={16} color={theme.primary}/>
+                            </TouchableOpacity>
+                        </View>
+
+                        {albumsLoading ? (
+                            <View style={styles.albumsLoading}>
+                                <Text style={styles.loadingText}>Загрузка альбомов...</Text>
                             </View>
-                            <Text style={styles.actionButtonText}>Альбомы</Text>
-                            <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
-                        </TouchableOpacity>
+                        ) : albums.length > 0 ? (
+                            <FlatList
+                                data={albums.slice(0, 6)} // Показываем максимум 6 альбомов
+                                horizontal
+                                showsHorizontalScrollIndicator={false}
+                                keyExtractor={(item) => item.id.toString()}
+                                contentContainerStyle={styles.albumsList}
+                                renderItem={({ item }) => (
+                                    <TouchableOpacity
+                                        style={styles.albumCard}
+                                        onPress={() => router.push(`/album/${item.id}`)}
+                                    >
+                                        <View style={styles.albumImageContainer}>
+                                            {item.cover_photo ? (
+                                                <CachedImage
+                                                    uri={item.cover_photo.thumbnail_url || item.cover_photo.image_url}
+                                                    style={styles.albumImage}
+                                                    resizeMode="cover"
+                                                />
+                                            ) : (
+                                                <View style={styles.albumPlaceholder}>
+                                                    <Ionicons name="images-outline" size={32} color={theme.textSecondary}/>
+                                                </View>
+                                            )}
+                                        </View>
+                                        <View style={styles.albumInfo}>
+                                            <Text style={styles.albumName} numberOfLines={2}>
+                                                {item.title}
+                                            </Text>
+                                            <Text style={styles.albumCount}>
+                                                {item.photos_count} фото
+                                            </Text>
+                                        </View>
+                                    </TouchableOpacity>
+                                )}
+                            />
+                        ) : (
+                            <View style={styles.emptyAlbums}>
+                                <Ionicons name="images-outline" size={48} color={theme.textSecondary}/>
+                                <Text style={styles.emptyAlbumsText}>Пока нет альбомов</Text>
+                            </View>
+                        )}
                     </View>
 
                     {/* Отступ для нижней навигации */}
@@ -617,5 +726,90 @@ const createStyles = (theme: any) => StyleSheet.create({
     fullImage: {
         width: '100%',
         height: '100%',
+    },
+    albumsSection: {
+        marginHorizontal: 16,
+        marginBottom: 16,
+    },
+    sectionHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 12,
+    },
+    viewAllButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    viewAllText: {
+        fontSize: 14,
+        color: theme.primary,
+        fontWeight: '500',
+        marginRight: 4,
+    },
+    albumsList: {
+        paddingHorizontal: 4,
+    },
+    albumCard: {
+        width: 150,
+        marginRight: 12,
+        backgroundColor: theme.surface,
+        borderRadius: 12,
+        elevation: 2,
+        shadowColor: theme.text,
+        shadowOffset: {width: 0, height: 1},
+        shadowOpacity: 0.1,
+        shadowRadius: 3,
+        overflow: 'hidden',
+    },
+    albumImageContainer: {
+        width: '100%',
+        height: 150,
+        position: 'relative',
+    },
+    albumImage: {
+        width: '100%',
+        height: '100%',
+    },
+    albumPlaceholder: {
+        width: '100%',
+        height: '100%',
+        backgroundColor: theme.border,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    albumInfo: {
+        padding: 12,
+    },
+    albumName: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: theme.text,
+        marginBottom: 4,
+        lineHeight: 18,
+    },
+    albumCount: {
+        fontSize: 12,
+        color: theme.textSecondary,
+    },
+    albumsLoading: {
+        padding: 40,
+        alignItems: 'center',
+    },
+    emptyAlbums: {
+        padding: 40,
+        alignItems: 'center',
+        backgroundColor: theme.surface,
+        borderRadius: 12,
+        elevation: 1,
+        shadowColor: theme.text,
+        shadowOffset: {width: 0, height: 1},
+        shadowOpacity: 0.05,
+        shadowRadius: 2,
+    },
+    emptyAlbumsText: {
+        fontSize: 16,
+        color: theme.textSecondary,
+        marginTop: 8,
     },
 });

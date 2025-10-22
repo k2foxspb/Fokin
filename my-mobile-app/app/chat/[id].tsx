@@ -295,6 +295,39 @@ export default function ChatScreen() {
     const lastScale = useSharedValue(1);
     const lastTranslateX = useSharedValue(0);
     const lastTranslateY = useSharedValue(0);
+    const scrollDownOpacity = useSharedValue(0);
+
+    // Обработчик скролла для кнопки "вниз"
+    const handleScroll = useCallback((event: any) => {
+        const offsetY = event.nativeEvent.contentOffset.y;
+
+        // Показываем кнопку если прокрутили вверх больше чем на 200px от начала
+        const shouldShowButton = offsetY > 200;
+
+        console.log('📜 [SCROLL] Offset:', offsetY, 'Should show:', shouldShowButton, 'Current state:', showScrollDownButton);
+
+        if (shouldShowButton && !showScrollDownButton) {
+            console.log('📜 [SCROLL] Showing scroll down button');
+            setShowScrollDownButton(true);
+            scrollDownOpacity.value = withTiming(1, { duration: 300 });
+        } else if (!shouldShowButton && showScrollDownButton) {
+            console.log('📜 [SCROLL] Hiding scroll down button');
+            setShowScrollDownButton(false);
+            scrollDownOpacity.value = withTiming(0, { duration: 300 });
+        }
+    }, [showScrollDownButton]);
+
+    // Анимированный стиль для кнопки "вниз"
+    const scrollDownButtonStyle = useAnimatedStyle(() => {
+        return {
+            opacity: scrollDownOpacity.value,
+            transform: [
+                {
+                    scale: scrollDownOpacity.value
+                }
+            ]
+        };
+    });
     const [zoomLevel, setZoomLevel] = useState(0); // 0 - обычный, 1 - 1.5x, 2 - 2.5x
     const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
     const [isVideoViewerVisible, setIsVideoViewerVisible] = useState(false);
@@ -375,6 +408,9 @@ export default function ChatScreen() {
 
     // Состояния для реплаев
     const [replyToMessage, setReplyToMessage] = useState<Message | null>(null);
+
+    // Состояние для кнопки "вниз" при скролле
+    const [showScrollDownButton, setShowScrollDownButton] = useState(false);
 
     const flatListRef = useRef<FlatList>(null);
     const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -487,6 +523,24 @@ export default function ChatScreen() {
         console.log('🔍 [LOAD-HISTORY] Reached max pages without finding message');
         return false;
     };
+
+    // Функция для прокрутки к последним сообщениям (к началу списка)
+    const scrollToBottom = useCallback(() => {
+        if (flatListRef.current && messages.length > 0) {
+            console.log('📜 [SCROLL-DOWN] Scrolling to latest messages');
+            flatListRef.current.scrollToIndex({
+                index: 0,
+                animated: true,
+                viewPosition: 0
+            });
+            // Принудительно скрываем кнопку
+            setTimeout(() => {
+                console.log('📜 [SCROLL-DOWN] Force hiding button after scroll');
+                setShowScrollDownButton(false);
+                scrollDownOpacity.value = withTiming(0, { duration: 300 });
+            }, 500);
+        }
+    }, [messages.length]);
 
     // Функция для прокрутки к конкретному сообщению
     const scrollToMessage = useCallback(async (messageId: number) => {
@@ -3500,17 +3554,7 @@ export default function ChatScreen() {
                     // для визуальной индикации при входе в чат
                     // Увеличиваем временное окно и добавляем дополнительные условия
                     const isReceivedUnread = !isMyMessage && hoursAgo <= 72; // сообщения не старше 72 часов
-
-                    console.log('📜 [HISTORY] Message processing:', {
-                        id: msg.id,
-                        isMyMessage,
-                        hoursAgo: Math.round(hoursAgo * 10) / 10,
-                        isUnreadBySender,
-                        isReceivedUnread,
-                        messageTime: messageTime.toLocaleString(),
-                        hasReply: !!(msg.reply_to_message_id || msg.replyToMessageId)
-                    });
-
+                    
                     // ИСПРАВЛЕНИЕ: Унифицированная обработка полей реплая из API
                     const replyToMessageId = msg.reply_to_message_id || msg.replyToMessageId || null;
                     const replyToMessage = msg.reply_to_message || msg.replyToMessage || msg.reply_message || null;
@@ -6835,6 +6879,8 @@ export default function ChatScreen() {
                         inverted
                         onEndReached={loadMoreMessages}
                         onEndReachedThreshold={0.1}
+                        onScroll={handleScroll}
+                        scrollEventThrottle={100}
                         onScrollToIndexFailed={(info) => {
                             console.log('📜 [SCROLL-FAILED] Scroll to index failed:', info);
                             // Пробуем прокрутить к ближайшему доступному индексу
@@ -6880,6 +6926,19 @@ export default function ChatScreen() {
                         windowSize={7}
                         // Убираем getItemLayout - он вызывает мерцание с динамической высотой видео
                     />
+
+                    {/* Кнопка "вниз к последним сообщениям" */}
+                    {showScrollDownButton && (
+                        <Animated.View style={[styles.scrollDownButton, scrollDownButtonStyle]}>
+                            <TouchableOpacity
+                                style={[styles.scrollDownButtonInner, {backgroundColor: theme.primary}]}
+                                onPress={scrollToBottom}
+                                activeOpacity={0.8}
+                            >
+                                <MaterialIcons name="keyboard-arrow-down" size={28} color="white" />
+                            </TouchableOpacity>
+                        </Animated.View>
+                    )}
 
                     {/* Индикатор загрузки сообщения для реплая */}
                     {isLoadingReplyMessage && (
@@ -8420,6 +8479,30 @@ export default function ChatScreen() {
             loadingReplyText: {
                 fontSize: 14,
                 marginLeft: 8,
+            },
+            // Стили для кнопки "вниз"
+            scrollDownButton: {
+                position: 'absolute',
+                bottom: 100,
+                right: 20,
+                zIndex: 1000,
+                shadowColor: '#000',
+                shadowOffset: {width: 0, height: 2},
+                shadowOpacity: 0.25,
+                shadowRadius: 3.84,
+                elevation: 5,
+            },
+            scrollDownButtonInner: {
+                width: 50,
+                height: 50,
+                borderRadius: 25,
+                justifyContent: 'center',
+                alignItems: 'center',
+                shadowColor: '#000',
+                shadowOffset: {width: 0, height: 2},
+                shadowOpacity: 0.15,
+                shadowRadius: 2,
+                elevation: 3,
             },
         });
     };
